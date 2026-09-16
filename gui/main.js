@@ -26,7 +26,8 @@ const IPC_CHANNELS = [
   "config:get", "orchestrator:state",
   "projects:list", "projects:add", "projects:remove", "projects:switch", "sessions:list",
   "projects:reveal", "projects:pick",
-  "sensitive:respond"
+  "sensitive:respond",
+  "recovery:list", "recovery:report", "recovery:resume", "recovery:cancel", "recovery:clear"
 ];
 
 if (process.env.DEEPSEEK_CODE_GUI_SMOKE === "1") {
@@ -273,6 +274,21 @@ function registerIpcHandlers() {
   handle("session:rewind-apply", async (_event, options) => {
     try { return await host.rewindApply(options || {}); }
     catch (error) { return { error: error.message }; }
+  });
+  handle("recovery:list", async (_event, options) => {
+    try { return await host.getRecoveryList(options || {}); } catch { return []; }
+  });
+  handle("recovery:report", async () => {
+    try { return await host.getRecoveryReport(); } catch { return { found: [], done: [], blocked: [], next: [] }; }
+  });
+  handle("recovery:resume", async (_event, id, options) => {
+    try { return await host.recoveryResume(id, options || {}); } catch (error) { return { error: error.message, code: error.code }; }
+  });
+  handle("recovery:cancel", async (_event, id) => {
+    try { return await host.recoveryCancel(id); } catch (error) { return { error: error.message, code: error.code }; }
+  });
+  handle("recovery:clear", async (_event, id) => {
+    try { return await host.recoveryClear(id); } catch (error) { return { error: error.message, code: error.code }; }
   });
   handle("context:snapshot", async () => host?.getSnapshot() || { units: [] });
   handle("model:usage", () => host?.getUsage() || {});

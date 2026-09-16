@@ -19,6 +19,7 @@ export async function buildKernelOptions(root, overrides = {}, loadConfigImpl = 
   if (config.models) result.deepseek.models = config.models;
   if (config.limits) result.limits = config.limits;
   if (config.orchestration) result.orchestration = config.orchestration;
+  if (config.edits) result.edits = config.edits;
   if (overrides.context?.semantic) {
     result.context = {
       ...config.context,

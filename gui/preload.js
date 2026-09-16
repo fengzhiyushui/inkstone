@@ -48,4 +48,10 @@ contextBridge.exposeInMainWorld("deepseek", {
   listSessions: () => ipcRenderer.invoke("sessions:list"),
   pickProjectFolder: () => ipcRenderer.invoke("projects:pick"),
   revealProject: (root) => ipcRenderer.invoke("projects:reveal", root),
+  // D-G7 Recovery Center
+  listRecovery: (options) => ipcRenderer.invoke("recovery:list", options || {}),
+  getRecoveryReport: () => ipcRenderer.invoke("recovery:report"),
+  recoveryResume: (id, options) => ipcRenderer.invoke("recovery:resume", id, options || {}),
+  recoveryCancel: (id) => ipcRenderer.invoke("recovery:cancel", id),
+  recoveryClear: (id) => ipcRenderer.invoke("recovery:clear", id),
 });

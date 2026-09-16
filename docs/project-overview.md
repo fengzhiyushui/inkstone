@@ -129,6 +129,9 @@ ToolCall
 > **v1.7.0(#9.3 收官):**
 > - **敏感文件独立风险提醒**:改 `.env` / `*.pem` / `*.key` / `.npmrc` 等文件前,三端红色告知「完整原文会写入变更记录」并由用户拍板;拒绝则该文件不改动(`SENSITIVE_EDIT_DECLINED`)。走 [`edits/sensitive-notice.js`](../src/edits/sensitive-notice.js) 判定 + `editService.apply` 预检的独立回调,**不经 permission-engine、不进审批缓存、所有档位一律提问**(策略见 [`apps/sensitive-notice-contract.js`](../src/apps/sensitive-notice-contract.js))。判定只取 `secret-file` / `credential-file`,不含 `ignored-directory` / `hidden-tool-dir`。
 > - **展示层脱敏**:CLI/TUI 经 `formatChange`、GUI 经 `changes:describe` 桥,显示前过 `redactor`;**存储保持原文供回滚**。
+>
+> **v1.7.1(生产接线):**
+> - `config.edits` 进入 `DEFAULT_CONFIG` 并经 `buildKernelOptions` / `createKernel` → `createEditService` 全链路生效。默认 `maxCaptureBytes: 1 MiB`、`changeRetention: { maxRecords: 200, maxAgeDays: 90 }`;传 `null` 可分别关闭截断与清理。**此前内核不注入 `edits`,保留期代码虽在、生产路径永不 prune** —— 本版堵上。
 
 ---
 

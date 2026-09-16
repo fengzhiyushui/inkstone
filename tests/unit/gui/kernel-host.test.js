@@ -62,6 +62,46 @@ test("kernel host exposes safe default state and usage", async () => {
   assert.deepEqual(host.getConfig(), { runtime: "v2" });
 });
 
+test("kernel host exposes recovery delegates", async () => {
+  const calls = [];
+  const host = createKernelHost({
+    projectRoot: "/repo",
+    kernelFactory: async () => ({
+      session: { subscribe: () => ({ unsubscribe() {} }), getTimeline: async () => [] },
+      agent: { send: async () => ({ status: "complete" }), approve: () => {}, interrupt: () => {} },
+      recovery: {
+        list: async () => [{ id: "rec_tx_1" }],
+        report: async () => ({ found: ["a"], done: [], blocked: [], next: [] }),
+        resume: async (id) => { calls.push(["resume", id]); return { status: "resumed" }; },
+        cancel: async (id) => { calls.push(["cancel", id]); return { status: "cancelled" }; },
+        clear: async (id) => { calls.push(["clear", id]); return { status: "cleared" }; }
+      },
+      context: { snapshot: async () => ({ units: [] }) },
+      config: { getPublicConfig: () => ({ runtime: "v2" }) },
+      runtime: { getState: () => ({ current: "idle", channel: null }) }
+    })
+  });
+
+  await host.init();
+  assert.deepEqual(await host.getRecoveryList(), [{ id: "rec_tx_1" }]);
+  assert.deepEqual(await host.getRecoveryReport(), { found: ["a"], done: [], blocked: [], next: [] });
+  assert.deepEqual(await host.recoveryResume("rec_pause_1"), { status: "resumed" });
+  assert.deepEqual(await host.recoveryCancel("rec_pause_1"), { status: "cancelled" });
+  assert.deepEqual(await host.recoveryClear("rec_tx_1"), { status: "cleared" });
+  assert.deepEqual(calls, [["resume", "rec_pause_1"], ["cancel", "rec_pause_1"], ["clear", "rec_tx_1"]]);
+});
+
+test("kernel host recovery list/report degrade when kernel not ready", async () => {
+  const host = createKernelHost({
+    projectRoot: "/repo",
+    kernelFactory: async () => null
+  });
+  // init fails / no kernel → ready() false
+  try { await host.init(); } catch { /* factory may fail */ }
+  assert.deepEqual(await host.getRecoveryList(), []);
+  assert.deepEqual(await host.getRecoveryReport(), { found: [], done: [], blocked: [], next: [] });
+});
+
 test("buildKernelOptions bridges legacy config into V2 DeepSeek options", async () => {
   const options = await buildKernelOptions("/repo", {}, async () => ({
     apiKey: "sk-gui",

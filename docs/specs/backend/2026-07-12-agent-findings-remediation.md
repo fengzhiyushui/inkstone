@@ -1,7 +1,7 @@
 # agent 审计发现补救计划与处理状态
 
-- 日期:2026-07-12;状态更新:2026-08-09
-- 状态:**#1–#5 已在 v1.1.0 解决**;**#6、#7(env 部分)与 #9 易项(9.1/9.2/9.4/9.5/9.7)已在 v1.2.0 解决**(计划 [`../../plans/backend/2026-07-16-v1.2.0-agent-findings-p2.md`](../../plans/backend/2026-07-16-v1.2.0-agent-findings-p2.md));**#7 后半(命令级分类)已在 v1.3.1 解决**;**#8、#9.6 已在 v1.3.2 解决**(计划 [`../../plans/backend/2026-07-26-v1.3.0-agent-findings-p3.md`](../../plans/backend/2026-07-26-v1.3.0-agent-findings-p3.md));**#9.3 后端卫生部分已在 v1.6.2 解决**(大小上限 + 回滚守卫 + 保留期 + 目录限权,见 [`../../plans/backend/2026-08-09-v1.6-backlog-closure.md`](../../plans/backend/2026-08-09-v1.6-backlog-closure.md));**#9.3 已在 v1.7.0 完全闭环**(后端卫生 v1.6.2 + 敏感文件风险提醒与展示层脱敏 v1.7.0);**#10 阶段 1–2 已在 v1.6.3 完成**(刻画测试 + 边界分析,阶段 3–4 定级待拍板)。**10 项审计发现除 #10 阶段 3–4 外全部闭环。**
+- 日期:2026-07-12;状态更新:2026-09-15
+- 状态:**#1–#5 已在 v1.1.0 解决**;**#6、#7(env 部分)与 #9 易项(9.1/9.2/9.4/9.5/9.7)已在 v1.2.0 解决**(计划 [`../../plans/backend/2026-07-16-v1.2.0-agent-findings-p2.md`](../../plans/backend/2026-07-16-v1.2.0-agent-findings-p2.md));**#7 后半(命令级分类)已在 v1.3.1 解决**;**#8、#9.6 已在 v1.3.2 解决**(计划 [`../../plans/backend/2026-07-26-v1.3.0-agent-findings-p3.md`](../../plans/backend/2026-07-26-v1.3.0-agent-findings-p3.md));**#9.3 后端卫生部分已在 v1.6.2 解决**(大小上限 + 回滚守卫 + 保留期 + 目录限权,见 [`../../plans/backend/2026-08-09-v1.6-backlog-closure.md`](../../plans/backend/2026-08-09-v1.6-backlog-closure.md));**#9.3 已在 v1.7.0 完全闭环**(后端卫生 v1.6.2 + 敏感文件风险提醒与展示层脱敏 v1.7.0);**#10 阶段 1–2 已在 v1.6.3 完成**(刻画测试 + 边界分析)。**阶段 3–4 按维护者 2026-09-15 决定延后到大版本,不在补丁/小版本做结构重构**([design](2026-08-09-v1.6.3-agent-runtime-refactor-design.md));`changeRetention` 生产接线已在 **v1.7.1** 补上。
 - 来源:6 个并行只读 agent 对全仓库子系统的审计(docs / kernel / context / model+tools+security / frontends / sessions+edits)
 - 关联:D-G4 设计 [`../frontend/2026-07-12-v3-phase-dg4-cli-alignment-design.md`](../frontend/2026-07-12-v3-phase-dg4-cli-alignment-design.md)
 - **重要:本文所有条目本轮均不实现**,仅提供根因、改法、影响文件、风险、验证方式、优先级,供后续逐项立项(各自走 spec/plan 或直接小改)。

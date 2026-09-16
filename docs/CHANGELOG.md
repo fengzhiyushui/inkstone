@@ -15,6 +15,21 @@
 
 ---
 
+## v1.7.1 — 2026-09-15 · changeRetention 生产接线 + D-G7 GUI 恢复中心 + #10 延后定案
+
+> 审阅后挂账清零:补上 v1.6.2 实现了却未接线的变更记录保留期;落地 D-G7 GUI Recovery Center;#10 重构按维护者决定延后到大版本。
+
+- **`changeRetention` 接线到内核生产路径(v1.6.2 遗留)**:此前 `finalizeChange` 已实现保留期清理,但 `createKernel` → `createEditService` 从未注入 `edits`,生产路径**永不 prune**。现:
+  - `DEFAULT_CONFIG.edits = { maxCaptureBytes: 1 MiB, changeRetention: { maxRecords: 200, maxAgeDays: 90 } }`,并经 `normalizeEdits` 深归一(部分字段补默认;`null` 显式关闭截断/清理);
+  - `loadConfig` / `normalizeConfig` / `buildKernelOptions` 透传 `config.edits`;
+  - `createKernel` / `buildToolPlane` 把 `options.edits` 注入 `createEditService` → `createChangeStore`。
+  - 覆盖:配置归一化 ×4、editService 直连清理、默认不清理、kernel-options 透传、`createKernel` 全链路清理;全量回归 **1083+**(含 D-G7 新增)。
+- **D-G7 GUI Recovery Center(收 V2-18 Task 13)**:`kernel-host` 暴露 list/report/resume/cancel/clear;IPC 白名单 + preload;侧栏「恢复」入口 + RecoveryView(列表/扫描摘要/动作);中英双语。计划见 [`plans/frontend/2026-09-15-d-g7-gui-recovery-center.md`](plans/frontend/2026-09-15-d-g7-gui-recovery-center.md)。kernel recovery 契约零改动。
+- **#10 `agent-runtime` 阶段 3–4 延后到大版本(维护者 2026-09-15 拍板)**:不以补丁/小版本做结构重构;阶段 1–2 成果(刻画测试 + 边界分析)继续作为护栏。台账与 design 状态行已同步。
+- 版本同步为 `1.7.1`(四处)。
+
+---
+
 ## v1.7.0 — 2026-08-09 · 敏感文件风险提醒 + 展示层脱敏(#9.3 收官)
 
 > #9.3(明文变更记录)的最后一片。后端卫生已在 v1.6.2 落地,本版补齐需要三端前端配合的两件事,**#9.3 至此完全闭环**,审计补账单 10 项全清。

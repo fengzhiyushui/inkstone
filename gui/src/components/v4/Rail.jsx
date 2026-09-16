@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
   Home, FolderKanban, GitCompare, Network, Puzzle, Plus, ChevronDown, ChevronRight,
-  FolderPlus, MessageSquare, Diamond, Settings, PanelLeftClose, PanelLeftOpen
+  FolderPlus, MessageSquare, Diamond, Settings, PanelLeftClose, PanelLeftOpen, LifeBuoy
 } from "lucide-react";
 import { filterProjectTree, groupSessionsByDate, sessionStamp } from "../../state/session-groups.js";
 
@@ -38,6 +38,7 @@ export default function Rail({
     { id: "home", label: t("rail.home"), icon: Home },
     { id: "projects", label: t("rail.projects"), icon: FolderKanban, badge: projects.length || null },
     { id: "changes", label: t("rail.changes"), icon: GitCompare, badge: (state.changes || []).length || null },
+    { id: "recovery", label: t("rail.recovery"), icon: LifeBuoy },
     { id: "mcp", label: t("rail.mcp"), icon: Network },
     { id: "plugins", label: t("rail.plugins"), icon: Puzzle }
   ];

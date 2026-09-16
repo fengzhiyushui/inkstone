@@ -124,6 +124,15 @@ export function useKernel(dispatch) {
 
       dismissChangeDiff: () => dispatch({ type: "change_diff_dismissed" }),
 
+      // D-G7 Recovery Center
+      listRecovery: (options) => api?.listRecovery ? api.listRecovery(options) : Promise.resolve([]),
+      getRecoveryReport: () => api?.getRecoveryReport
+        ? api.getRecoveryReport()
+        : Promise.resolve({ found: [], done: [], blocked: [], next: [] }),
+      recoveryResume: (id, options) => api?.recoveryResume ? api.recoveryResume(id, options) : Promise.resolve({ error: "recovery unavailable" }),
+      recoveryCancel: (id) => api?.recoveryCancel ? api.recoveryCancel(id) : Promise.resolve({ error: "recovery unavailable" }),
+      recoveryClear: (id) => api?.recoveryClear ? api.recoveryClear(id) : Promise.resolve({ error: "recovery unavailable" }),
+
       revealInEditor: (path, line) => {
         dispatch({ type: "change_diff_dismissed" });
         dispatch({ type: "reveal_requested", path, line });

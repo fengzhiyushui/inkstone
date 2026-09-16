@@ -8,11 +8,11 @@ import TitleBar from "./components/TitleBar.jsx";
 import Rail from "./components/v4/Rail.jsx";
 import HomeView from "./components/v4/HomeView.jsx";
 import ChatView from "./components/v4/ChatView.jsx";
-import { ProjectsView, ChangesView, McpView, PluginsView } from "./components/v4/SecondaryViews.jsx";
+import { ProjectsView, ChangesView, McpView, PluginsView, RecoveryView } from "./components/v4/SecondaryViews.jsx";
 import Settings from "./components/Settings/Settings.jsx";
 import SensitiveNoticeModal from "./components/v4/SensitiveNoticeModal.jsx";
 
-const VERSION = "1.7.0";
+const VERSION = "1.7.1";
 
 export default function App() {
   const [state, dispatch] = useWorkbench();
@@ -24,6 +24,23 @@ export default function App() {
   useEffect(() => { document.documentElement.lang = state.language; }, [state.language]);
   useEffect(() => { kernel.refreshChanges(); }, [state.changesTick, kernel]);
   useEffect(() => { kernel.loadSessions().catch(() => {}); }, [state.currentProject, kernel]);
+
+  // D-G7 Recovery Center 数据(视图打开时拉取)
+  const [recovery, setRecovery] = useState({ items: [], report: null, busy: null });
+  const refreshRecovery = useCallback(async () => {
+    try {
+      const [items, report] = await Promise.all([
+        kernel.listRecovery ? kernel.listRecovery() : Promise.resolve([]),
+        kernel.getRecoveryReport ? kernel.getRecoveryReport() : Promise.resolve(null)
+      ]);
+      setRecovery((prev) => ({ ...prev, items: items || [], report: report || null }));
+    } catch {
+      setRecovery((prev) => ({ ...prev, items: [], report: null }));
+    }
+  }, [kernel]);
+  useEffect(() => {
+    if (view === "recovery") refreshRecovery().catch(() => {});
+  }, [view, state.currentProject, refreshRecovery]);
 
   // 设置页全窗打开时记住来源视图,关闭后回到原处。
   const returnRef = useRef("home");
@@ -173,6 +190,27 @@ export default function App() {
           )}
           {view === "mcp" && <McpView t={t} />}
           {view === "plugins" && <PluginsView t={t} />}
+          {view === "recovery" && (
+            <RecoveryView
+              t={t}
+              items={recovery.items}
+              report={recovery.report}
+              busy={recovery.busy}
+              onRefresh={() => refreshRecovery()}
+              onResume={async (id) => {
+                setRecovery((p) => ({ ...p, busy: id }));
+                try { await kernel.recoveryResume(id); } finally { setRecovery((p) => ({ ...p, busy: null })); await refreshRecovery(); }
+              }}
+              onCancel={async (id) => {
+                setRecovery((p) => ({ ...p, busy: id }));
+                try { await kernel.recoveryCancel(id); } finally { setRecovery((p) => ({ ...p, busy: null })); await refreshRecovery(); }
+              }}
+              onClear={async (id) => {
+                setRecovery((p) => ({ ...p, busy: id }));
+                try { await kernel.recoveryClear(id); } finally { setRecovery((p) => ({ ...p, busy: null })); await refreshRecovery(); }
+              }}
+            />
+          )}
           {view === "settings" && <Settings t={t} state={state} kernel={kernel} dispatch={dispatch} version={VERSION} onClose={closeSettings} />}
         </main>
       </div>

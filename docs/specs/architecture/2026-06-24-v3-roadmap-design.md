@@ -219,6 +219,7 @@ D-G4 CLI 对齐:render-events 吃同一契约 · /recovery 走同一 facade · �
 D-G5 输出终端:xterm 渲染 tool:result,不接交互式 PTY(避开 node-pty Windows 大坑)
 D-G6 TUI 对齐:分支/检查点/审批/恢复,与 CLI/GUI 术语能力齐平
 D-G7 Recovery Center 完整检查器:事务/阻塞/保留产物/恢复动作(收 V2-18 Task 13)
+     # ✅ 2026-09-15 落地(v1.7.1):kernel-host recovery 代理 + IPC/preload + 侧栏 RecoveryView(列表/报告/续跑/取消/清除);kernel 契约零改动
 ```
 
 ### 8.3 三种 diff 来源态(必须严格区分,颜色/标签)

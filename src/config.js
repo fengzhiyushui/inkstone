@@ -46,6 +46,12 @@ export const DEFAULT_CONFIG = {
     },
     budget: { maxTokens: null, maxModelCalls: 40 },
     parallel: { maxParallelWorkers: 4, maxCopyFiles: 5000, sweepTtlMs: 3600000 }
+  },
+  // 变更记录卫生(v1.6.2 实现,v1.7.1 接线到内核):超限截断 + 保留期清理。
+  // maxCaptureBytes=null 关闭截断;changeRetention=null 关闭清理。
+  edits: {
+    maxCaptureBytes: 1024 * 1024,
+    changeRetention: { maxRecords: 200, maxAgeDays: 90 }
   }
 };
 
@@ -67,7 +73,8 @@ export async function loadConfig(root, options = {}) {
     reasoningEffort: process.env.DEEPSEEK_REASONING_EFFORT || fileConfig.reasoningEffort || DEFAULT_CONFIG.reasoningEffort,
     models: normalizeModels(fileConfig.models),
     limits: limitsFromEnv(normalizeLimits(fileConfig.limits)),
-    context: normalizeContext(fileConfig.context)
+    context: normalizeContext(fileConfig.context),
+    edits: normalizeEdits(fileConfig.edits)
   };
 
   if (!config.apiKey && !options.allowMissingKey) {
@@ -109,8 +116,48 @@ export function normalizeConfig(config) {
     models: normalizeModels(config.models),
     limits: normalizeLimits(config.limits),
     context: normalizeContext(config.context),
-    orchestration: normalizeOrchestration(config.orchestration)
+    orchestration: normalizeOrchestration(config.orchestration),
+    edits: normalizeEdits(config.edits)
   };
+}
+
+export function normalizeEdits(raw = {}) {
+  const safe = raw && typeof raw === "object" ? raw : {};
+  const d = DEFAULT_CONFIG.edits;
+  // null 显式关闭截断(与 changes.js 默认一致的关闭语义)
+  const maxCaptureBytes = safe.maxCaptureBytes === null
+    ? null
+    : (() => {
+        const n = Number(safe.maxCaptureBytes);
+        return Number.isFinite(n) && n > 0 ? Math.trunc(n) : d.maxCaptureBytes;
+      })();
+  // null 显式关闭保留期清理;缺字段用默认补齐
+  let changeRetention = null;
+  if (safe.changeRetention === null) {
+    changeRetention = null;
+  } else if (safe.changeRetention && typeof safe.changeRetention === "object") {
+    const posInt = (v, fb) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 ? Math.trunc(n) : fb;
+    };
+    const dr = d.changeRetention;
+    changeRetention = {
+      maxRecords: safe.changeRetention.maxRecords === null
+        ? null
+        : posInt(safe.changeRetention.maxRecords, dr.maxRecords),
+      maxAgeDays: safe.changeRetention.maxAgeDays === null
+        ? null
+        : posInt(safe.changeRetention.maxAgeDays, dr.maxAgeDays)
+    };
+    if (changeRetention.maxRecords === null && changeRetention.maxAgeDays === null) {
+      changeRetention = null;
+    }
+  } else if (safe.changeRetention === undefined) {
+    changeRetention = { ...d.changeRetention };
+  } else {
+    changeRetention = { ...d.changeRetention };
+  }
+  return { maxCaptureBytes, changeRetention };
 }
 
 export function normalizeModels(raw) {

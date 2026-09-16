@@ -564,6 +564,36 @@ function createKernelHost({
     await init();
     return { ok: true, root };
   }
+
+  // D-G7 Recovery Center:代理 kernel.recovery。disabled 时 list/report 空结构,
+  // resume/cancel/clear 透传 RECOVERY_DISABLED(与 CLI/TUI 语义一致)。
+  async function getRecoveryList(options = {}) {
+    if (!ready()) return [];
+    try {
+      return await kernel.recovery?.list?.(options) || [];
+    } catch {
+      return [];
+    }
+  }
+  async function getRecoveryReport() {
+    const empty = { found: [], done: [], blocked: [], next: [] };
+    if (!ready()) return empty;
+    try {
+      return await kernel.recovery?.report?.() || empty;
+    } catch {
+      return empty;
+    }
+  }
+  async function recoveryResume(id, options = {}) {
+    return requireKernel().recovery.resume(id, options);
+  }
+  async function recoveryCancel(id) {
+    return requireKernel().recovery.cancel(id);
+  }
+  async function recoveryClear(id) {
+    return requireKernel().recovery.clear(id);
+  }
+
   // 会话枚举:侧栏要「每个项目分区内挂自己的会话」,所以跨全部已登记项目扫描各自的会话目录,
   // 再按 proj_<hash> 归并(同 hash 的组合并、会话按 mtime 倒序)。未登记项目的会话仍会出现,
   // 由渲染层归入「独立对话」。单项目扫描失败不影响其余项目。
@@ -602,6 +632,7 @@ function createKernelHost({
            getPreferences, setPreferences, listTree, readFile, writeFile, listChanges, describeChange,
            getSettings, setConfig, listApiProfiles, saveApiProfile, deleteApiProfile, activateApiProfile,
            listModels, testConnection, activateBranch, listProjects, addProject, removeProject, switchProject, listSessions,
+           getRecoveryList, getRecoveryReport, recoveryResume, recoveryCancel, recoveryClear,
            resolveSensitiveNotice, abortPendingSensitive, dispose };
 }
 
