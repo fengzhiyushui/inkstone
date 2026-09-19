@@ -15,6 +15,18 @@
 
 ---
 
+## v1.7.2 — 2026-09-19 · GUI 三处现有缺陷 + 敏感模态截图欠账
+
+> 纯 GUI 补丁,内核零改动;是 v1.8.0 换肤(P2 卡片重排)的硬前置。
+
+- **agent 回复从不进消息流**:`workbench-state` 的 `event_received` 不处理 `agent:final`,`messages` 只在用户发送时写入,`ChatView` 的 `.a-msg` 分支自 v1.4.6 起从未渲染过。现 `agent:final` 追加 `{ role:"assistant", text }`(空 content 不追加;stopped 也入流)。
+- **状态行数据首屏一次永不刷新**:`getUsage` / `listCheckpoints` 只在挂载时拉一次。现新增纯函数 `refreshLoadsFor(eventType)`,在 `agent:final / agent:error / turn:cancelled / file:rollback_applied` 后重拉两项(不在 model:*/tool:* 上刷,避免每回合十几次 IPC)。
+- **敏感文件模态引用 7 个不存在的 CSS 变量**(v1.7.0 引入):`--bg/--bg-1/--bg-2/--bg-3/--fg-1/--mut/--bdr` 在任何样式表中均无定义,红色提醒模态在所有主题下底色透明、文字无色。按语义映射到 `tokens.css` 18 槽修正;新增 `css-vars.test.js` 通用守卫——`shell.css`/`theme.css` 里任何 `var(--x)` 引用未定义槽位即红。实测守卫列出 10 处 `var()` 引用(覆盖 8 个行号;719 行含 `--bdr/--bg-2/--fg-1` 三处),全部落在方案映射表内,无表外同类 bug。
+- **v1.7.0 承诺的模态冒烟截图补上**:smoke 链新增 `shell-sensitive-notice` 一景(主进程 push 构造事件,走与内核相同的 `kernel:event` 通道),截图入库 `docs/prototypes/v1.8.0-ergo-restyle/screenshots/`。
+- 版本同步为 `1.7.2`(四处);全量回归 **1089 单测** + `npm run check` + renderer build + gui-smoke 通过。
+
+---
+
 ## v1.7.1 — 2026-09-15 · changeRetention 生产接线 + D-G7 GUI 恢复中心 + #10 延后定案
 
 > 审阅后挂账清零:补上 v1.6.2 实现了却未接线的变更记录保留期;落地 D-G7 GUI Recovery Center;#10 重构按维护者决定延后到大版本。

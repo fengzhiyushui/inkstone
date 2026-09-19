@@ -80,6 +80,7 @@ docs/
 - [deepseek-code-v1-design](specs/architecture/2026-05-29-deepseek-code-v1-design.md) — V1 整体设计
 - [deepseek-code-v2-clean-runtime-design](specs/architecture/2026-05-30-deepseek-code-v2-clean-runtime-design.md) — V2 干净运行时架构
 - [v3-roadmap-design](specs/architecture/2026-06-24-v3-roadmap-design.md) — **V3 路线图**:四阶段 + 三支柱 + 目标 Agent 架构 + 三层多 agent + 前端三端
+- [post-v3-roadmap-design](specs/architecture/2026-09-17-post-v3-roadmap-design.md) — **V3 之后路线图(草案,待拍板)**:收拢五处散落的"未来"碎片(D-G 未勾项 / 非目标 / 台账延后 / 重写报告 / v1.8 换肤审计)→ 一张处置表 → 装箱 v1.7.2 / v1.8.0 / 分发 / v1.9.0 / v2.0.0;§7 六项待维护者拍板
 
 ### specs/backend — 后端设计
 - [v2-7 approval-resume](specs/backend/2026-05-30-v2-7-approval-resume-design.md)
@@ -115,6 +116,7 @@ docs/
 - [v3-phase-d4 gui-change-tracking](specs/frontend/2026-07-02-v3-phase-d4-change-tracking-design.md) — **D-4 GUI agent 改动跟踪**:SCM「AGENT 改动」分区(来源标签 agent/手动 + 已回滚标)→ 主区「修改前 vs 修改后」对比(方案 C:记录内 before/after 直喂 DiffEditor,零 diff 反推)+ hunk chips 跳编辑器(行号 clamp);只读桥 `changes:list` 列表瘦身 / `changes:describe` 单文件切片;kernel 零改动
 - [v3-phase-d5 tui-redesign](specs/frontend/2026-07-06-v3-phase-d5-tui-redesign-design.md) — **D-5 TUI 重设计**:行内滚动流 agent 会话(原生滚动区 + 底部固定输入/状态栏)+ 流式 onDelta 透传 + 工具/diff/审批卡片 + slash 补全 + /config 共享 api-profiles(激活重建 kernel 保上下文);手写 ANSI,zh/en 双语,kernel 核心零改动
 - [v1.4.0 frontend-redesign](specs/frontend/2026-07-28-v1.4.0-frontend-redesign-design.md) — **v1.4.0 前端界面整体重做(✅ 设计定稿 + 已实现,终稿 = prototypes/v1.4.0-redesign/v4/)**:GUI 借鉴 Codex/Claude Desktop、TUI 仿 opencode;10 套主题(3 浅 7 深)单一 token 源,色值取自各方案官方定义源并通过 WCAG 对比度校验;五轮 HTML 稿迭代定型(侧栏=功能区/项目分区/独立对话,每项目独立分区内挂会话、新建会话继承项目目录;指标 5 形态可选;TUI 首页 opencode 构图 + /theme + /shell);已在 feat/v1.4 分支按 plan 实施完成;kernel 零改动
+- [v1.8.0 ergo-restyle](specs/frontend/2026-09-17-v1.8.0-ergo-restyle-design.md) — **v1.8.0 工学换肤(✅ 已评审 2026-09-17)**:换视觉语言不换信息架构;10 套主题重编为**四段带**(暗 3 / 柔暗 2 / 柔明 2 / 明 3——正文 ≥7:1 闸门使中灰 L90–164 成死区,"过渡"只能两侧各自延伸);卡片两段式 + composer 柔光 + 主题中枢;γ 分层落地(DOM 冻结)、β 重建保留为升级口;不做粒子与网格,极简舒适;对比度闸门升级为常驻单测
 - [D-G7 gui-recovery-center](plans/frontend/2026-09-15-d-g7-gui-recovery-center.md) — **✅ v1.7.1**:GUI Recovery Center(收 V2-18 Task 13);kernel-host 代理 + IPC + RecoveryView
 
 ### plans/roadmap — 宏观阶段
@@ -143,6 +145,8 @@ docs/
 - 文件位于 [`plans/backend/`](plans/backend/)
 
 ### plans/frontend — 前端实施计划
+- [v1.7.2 gui-defects](plans/frontend/2026-09-17-v1.7.2-gui-defects.md) — **v1.7.2 GUI 三处现有缺陷 + 敏感模态截图欠账(patch)**:agent 回复从不入流 / 状态行数据首屏一次不刷新 / `.sn-*` 引用 7 个未定义 CSS 变量;各附 HEAD 复现证据、失败测试全文、内容锚点;**v1.8.0 P2 的硬前置**
+- [v1.8.0 ergo-restyle plan](plans/frontend/2026-09-17-v1.8.0-ergo-restyle-plan.md) — **v1.8.0 工学换肤实施方案(P0 tokens 地基 → P1 壳层视觉 → P2 卡片/推理摘要/外观 → P3 收口)**:每层文件路径 / 断言值 / 验收命令写到零上下文可执行;附录 A 六套新主题色值(两名独立复核 110 项闸门);前置 v1.7.2
 - [v2-5 interface-migration](plans/frontend/2026-05-30-v2-5-interface-migration.md)
 - [v2-14 gui-workbench-branch-rewind](plans/frontend/2026-05-31-v2-14-gui-workbench-branch-rewind.md)
 - [v2-15 natural-agent-workbench](plans/frontend/2026-05-31-v2-15-natural-agent-workbench.md)
@@ -161,6 +165,6 @@ docs/
 
 ## 版本与里程碑
 
-当前版本 **v1.7.1**(2026-09-15,changeRetention 生产接线 + #10 阶段 3–4 延后定案)。首个正式版本 v1.0.0 整合此前全部内部迭代;完整能力总结与后续版本日志见 [`CHANGELOG.md`](CHANGELOG.md),版本升级判定见上文[版本命名规则](#版本命名规则)。**每个已发布版本在 git 中有对应的带注解 tag**(`git tag -l` / `git show v1.7.1`)。
+当前版本 **v1.7.2**(2026-09-19,GUI 三处现有缺陷 + 敏感模态截图欠账)。首个正式版本 v1.0.0 整合此前全部内部迭代;完整能力总结与后续版本日志见 [`CHANGELOG.md`](CHANGELOG.md),版本升级判定见上文[版本命名规则](#版本命名规则)。**每个已发布版本在 git 中有对应的带注解 tag**(`git tag -l` / `git show v1.7.2`)。
 
 v1.0.0 的开发历程分三代(详细里程碑见上方 specs/plans 索引与 git 历史):**V1 原型** → **V2 干净运行时**(内核统一 / 工具平面 / 编辑回滚 / 验证修复 / 上下文引擎 / 分支 rewind / 持久化恢复 / 运行护栏)→ **V3 三支柱**(语义级上下文 · 多智能体调度 · 前端三端重构 + CLI 对齐 D-G4)。

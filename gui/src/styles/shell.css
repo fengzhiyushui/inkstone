@@ -689,12 +689,12 @@
 .sn-backdrop {
   position: fixed; inset: 0; z-index: 60;
   display: flex; align-items: center; justify-content: center;
-  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  background: color-mix(in srgb, var(--bg-base) 72%, transparent);
   backdrop-filter: blur(2px);
 }
 .sn-card {
   width: min(560px, calc(100vw - 48px));
-  background: var(--bg-1);
+  background: var(--bg-panel);
   border: 1px solid var(--err);
   border-left: 3px solid var(--err);
   border-radius: 10px;
@@ -703,21 +703,21 @@
 }
 .sn-head { display: flex; align-items: center; gap: 8px; color: var(--err); }
 .sn-title { font-weight: 600; font-size: 14px; }
-.sn-body { margin: 12px 0 8px; color: var(--fg-1); font-size: 13px; line-height: 1.6; }
+.sn-body { margin: 12px 0 8px; color: var(--text); font-size: 13px; line-height: 1.6; }
 .sn-paths { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .sn-paths li { display: flex; align-items: center; gap: 10px; }
 .sn-paths code {
   color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent);
   padding: 2px 7px; border-radius: 4px; font-size: 12px;
 }
-.sn-reason { color: var(--mut); font-size: 12px; }
-.sn-record { margin: 0 0 16px; color: var(--mut); font-size: 12px; }
-.sn-record code { color: var(--mut); }
+.sn-reason { color: var(--text-mut); font-size: 12px; }
+.sn-record { margin: 0 0 16px; color: var(--text-mut); font-size: 12px; }
+.sn-record code { color: var(--text-mut); }
 .sn-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .sn-btn {
   padding: 7px 16px; border-radius: 6px; font-size: 13px; cursor: pointer;
-  border: 1px solid var(--bdr); background: var(--bg-2); color: var(--fg-1);
+  border: 1px solid var(--border-strong); background: var(--bg-element); color: var(--text);
 }
 .sn-refuse { border-color: var(--err); color: var(--err); font-weight: 600; }
 .sn-refuse:hover { background: color-mix(in srgb, var(--err) 12%, transparent); }
-.sn-allow:hover { background: var(--bg-3); }
+.sn-allow:hover { background: var(--bg-element); }

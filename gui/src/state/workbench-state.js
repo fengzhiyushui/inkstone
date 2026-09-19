@@ -91,6 +91,11 @@ export function applyWorkbenchAction(state, action) {
     if (event.type === "gui:sensitive_notice") {
       patch.sensitiveNotice = { requestId: event.request_id, descriptor: event.descriptor || null };
     }
+    // 缺陷①(v1.7.2):agent 的最终回复此前从不进消息流,.a-msg 分支永远渲染不出来。
+    // 空 content 不追加(避免空气泡);stopped 也入流,让用户看到为什么停了。
+    if (event.type === "agent:final" && typeof event.content === "string" && event.content.length > 0) {
+      patch.messages = current.messages.concat([{ role: "assistant", text: event.content }]);
+    }
     if (event.type === "agent:error" || event.type === "session:rewind_conflict" || event.type === "session:rewind_failed" || event.type === "session:rewind_recovery_failed") {
       patch.inspectorMode = "details";
     }

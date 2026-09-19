@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import { getApi } from "../lib/api.js";
-import { buildInitialLoads, branchesAction, eventToAction, errorToAction } from "./kernel-loads.js";
+import { buildInitialLoads, branchesAction, eventToAction, errorToAction, refreshLoadsFor } from "./kernel-loads.js";
 import { targetFromCheckpoint } from "../state/workbench-state.js";
 
 // Subscribes to window.deepseek events → dispatch, runs first-paint loads, and exposes
@@ -15,7 +15,15 @@ export function useKernel(dispatch) {
     }
     let cancelled = false;
     const unsub = typeof api.onKernelEvent === "function"
-      ? api.onKernelEvent((e) => dispatch(eventToAction(e)))
+      ? api.onKernelEvent((e) => {
+          dispatch(eventToAction(e));
+          for (const load of refreshLoadsFor(e && e.type)) {
+            const fn = api[load.call];
+            if (typeof fn !== "function") continue;
+            fn().then((res) => { if (!cancelled) dispatch(load.toAction(res)); })
+              .catch((err) => { if (!cancelled) dispatch(errorToAction(load.call, err)); });
+          }
+        })
       : null;
 
     (async () => {

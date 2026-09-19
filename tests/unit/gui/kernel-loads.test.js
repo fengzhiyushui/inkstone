@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildInitialLoads, branchesAction, eventToAction, errorToAction } from "../../../gui/src/hooks/kernel-loads.js";
+import { buildInitialLoads, branchesAction, eventToAction, errorToAction, refreshLoadsFor } from "../../../gui/src/hooks/kernel-loads.js";
 
 test("buildInitialLoads maps single-call apis to reducer actions", () => {
   const byCall = Object.fromEntries(buildInitialLoads().map((c) => [c.call, c]));
@@ -32,4 +32,17 @@ test("errorToAction reports area with a short message", () => {
   assert.equal(a.type, "error_reported");
   assert.equal(a.area, "branches");
   assert.match(a.message, /boom/);
+});
+
+test("refreshLoadsFor re-pulls usage + checkpoints on turn end, nothing otherwise", () => {
+  for (const type of ["agent:final", "agent:error", "turn:cancelled", "file:rollback_applied"]) {
+    const calls = refreshLoadsFor(type).map((l) => l.call).sort();
+    assert.deepEqual(calls, ["getUsage", "listCheckpoints"], type);
+  }
+  assert.deepEqual(refreshLoadsFor("model:request"), []);
+  assert.deepEqual(refreshLoadsFor("agent:step"), []);
+  assert.deepEqual(refreshLoadsFor(undefined), []);
+  // toAction 与首屏加载同形状,reducer 无需新 action
+  const usage = refreshLoadsFor("agent:final").find((l) => l.call === "getUsage");
+  assert.equal(usage.toAction({ requests: 1 }).type, "usage_loaded");
 });

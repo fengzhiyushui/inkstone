@@ -319,3 +319,20 @@ test("D4: changes/changeDiff/pendingReveal actions", () => {
   s = state.applyWorkbenchAction(s, { type: "change_diff_dismissed" });
   assert.equal(s.changeDiff, null);
 });
+
+test("agent:final appends an assistant message to the stream", () => {
+  let s = state.createInitialState();
+  s = state.applyWorkbenchAction(s, { type: "message_added", message: { role: "user", text: "hi" } });
+  s = state.applyWorkbenchAction(s, { type: "event_received", event: { type: "agent:final", content: "done", status: "complete" } });
+  assert.equal(s.messages.length, 2);
+  assert.deepEqual(s.messages[1], { role: "assistant", text: "done" });
+  // stopped(预算截停)同样入流——用户要看到"为什么停了"
+  s = state.applyWorkbenchAction(s, { type: "event_received", event: { type: "agent:final", content: "Stopped: budget", status: "stopped" } });
+  assert.equal(s.messages[2].text, "Stopped: budget");
+});
+
+test("agent:final with empty content does not append a blank bubble", () => {
+  const s0 = state.createInitialState();
+  const s = state.applyWorkbenchAction(s0, { type: "event_received", event: { type: "agent:final", content: "" } });
+  assert.equal(s.messages.length, 0);
+});

@@ -170,6 +170,21 @@ async function createWindow() {
           await click(".rail-foot .iconbtn:last-child"); await shoot("shell-settings");
           await click(".s-nav .sn-item:nth-child(3)"); await shoot("shell-appearance");
           await click(".s-nav .sn-item:nth-child(4)"); await shoot("shell-status-display");
+          // v1.7.2:敏感文件提醒模态截图(#9.3)。冒烟无 API Key 走不到真实编辑,
+          // 由主进程直接 push 一条构造事件,走与内核完全相同的 kernel:event 通道。
+          await click(".rail-fn .fn-item:nth-child(1)");            // 回首页,模态压在其上
+          win.webContents.send("kernel:event", {
+            type: "gui:sensitive_notice",
+            request_id: "smoke_sn_1",
+            descriptor: {
+              kind: "sensitive-file-write", severity: "danger", count: 1,
+              paths: [{ path: ".env", reason: "secret-file", reasonKey: "sensitive.reason.secret" }],
+              recordDir: ".deepseek-code/changes"
+            }
+          });
+          await new Promise((r) => setTimeout(r, 350));
+          await shoot("shell-sensitive-notice");
+          await click(".sn-refuse");                                 // 关掉再截后续
           await click(".settings-back");                                  // 回首页再截窄屏
           win.setSize(800, 720);
           await new Promise((r) => setTimeout(r, 500));

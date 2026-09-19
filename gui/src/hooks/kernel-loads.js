@@ -15,6 +15,14 @@ export function buildInitialLoads() {
   ];
 }
 
+// 回合边界后需要重拉的数据(缺陷②,v1.7.2):usage 与检查点在回合结束前不会变,
+// 所以只在终态事件上刷新,不在 model:*/tool:* 上刷新(那会每回合打十几次 IPC)。
+const TURN_END = new Set(["agent:final", "agent:error", "turn:cancelled", "file:rollback_applied"]);
+export function refreshLoadsFor(eventType) {
+  if (!TURN_END.has(eventType)) return [];
+  return buildInitialLoads().filter((l) => l.call === "getUsage" || l.call === "listCheckpoints");
+}
+
 // Branches need two calls (list + active) combined into one action.
 export function branchesAction(branches, active) {
   return {
