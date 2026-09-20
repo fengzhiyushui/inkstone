@@ -146,7 +146,7 @@ docs/
 
 ### plans/frontend — 前端实施计划
 - [v1.7.2 gui-defects](plans/frontend/2026-09-17-v1.7.2-gui-defects.md) — **v1.7.2 GUI 三处现有缺陷 + 敏感模态截图欠账(patch)**:agent 回复从不入流 / 状态行数据首屏一次不刷新 / `.sn-*` 引用 7 个未定义 CSS 变量;各附 HEAD 复现证据、失败测试全文、内容锚点;**v1.8.0 P2 的硬前置**
-- [v1.8.0 ergo-restyle plan](plans/frontend/2026-09-17-v1.8.0-ergo-restyle-plan.md) — **v1.8.0 工学换肤实施方案(P0 tokens 地基 → P1 壳层视觉 → P2 卡片/推理摘要/外观 → P3 收口)**:每层文件路径 / 断言值 / 验收命令写到零上下文可执行;附录 A 六套新主题色值(两名独立复核 110 项闸门);前置 v1.7.2
+- [v1.8.0 ergo-restyle plan](plans/frontend/2026-09-17-v1.8.0-ergo-restyle-plan.md) — **v1.8.0 工学换肤实施方案(P0 tokens 地基 → P1 壳层视觉 → P2 卡片/推理摘要/外观 → P3 收口)**:每层文件路径 / 断言值 / 验收命令写到零上下文可执行;附录 A 六套新主题色值(两名独立复核 110 项闸门);前置 v1.7.2(**✅ 已实施完成**,1107 测试全绿,P0–P3 四层各自五项准入)
 - [v2-5 interface-migration](plans/frontend/2026-05-30-v2-5-interface-migration.md)
 - [v2-14 gui-workbench-branch-rewind](plans/frontend/2026-05-31-v2-14-gui-workbench-branch-rewind.md)
 - [v2-15 natural-agent-workbench](plans/frontend/2026-05-31-v2-15-natural-agent-workbench.md)
@@ -165,6 +165,6 @@ docs/
 
 ## 版本与里程碑
 
-当前版本 **v1.7.2**(2026-09-19,GUI 三处现有缺陷 + 敏感模态截图欠账)。首个正式版本 v1.0.0 整合此前全部内部迭代;完整能力总结与后续版本日志见 [`CHANGELOG.md`](CHANGELOG.md),版本升级判定见上文[版本命名规则](#版本命名规则)。**每个已发布版本在 git 中有对应的带注解 tag**(`git tag -l` / `git show v1.7.2`)。
+当前版本 **v1.8.0**(2026-09-20,工学换肤:`tokens` 四段带 + 对比度常驻闸门 + 壳层视觉层 + 卡片两段式 + 设置›外观 ThemeHub)。首个正式版本 v1.0.0 整合此前全部内部迭代;完整能力总结与后续版本日志见 [`CHANGELOG.md`](CHANGELOG.md),版本升级判定见上文[版本命名规则](#版本命名规则)。**每个已发布版本在 git 中有对应的带注解 tag**(`git tag -l` / `git show v1.7.2`)。
 
 v1.0.0 的开发历程分三代(详细里程碑见上方 specs/plans 索引与 git 历史):**V1 原型** → **V2 干净运行时**(内核统一 / 工具平面 / 编辑回滚 / 验证修复 / 上下文引擎 / 分支 rewind / 持久化恢复 / 运行护栏)→ **V3 三支柱**(语义级上下文 · 多智能体调度 · 前端三端重构 + CLI 对齐 D-G4)。

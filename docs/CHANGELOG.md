@@ -9,6 +9,21 @@
 
 ---
 
+## v1.8.0 — 2026-09-20 · 工学换肤(Electron 壳层 v1.8 γ)
+
+> 小版本:**换视觉语言,不换信息架构**。内核零改动(`src/core src/deepseek src/tools src/edits src/sessions src/context src/security src/workspace` 八目录 diff 为空)。计划见 [`plans/frontend/2026-09-17-v1.8.0-ergo-restyle-plan.md`](plans/frontend/2026-09-17-v1.8.0-ergo-restyle-plan.md),设计见 [`specs/frontend/2026-09-17-v1.8.0-ergo-restyle-design.md`](specs/frontend/2026-09-17-v1.8.0-ergo-restyle-design.md)。
+
+- **10 主题重编为四段带**:暗 3(`sumi`/`slate`/`vesper`)· 柔暗 2(`nord`/`ash`)· 柔明 2(`snow`/`sand`)· 明 3(`lotus`/`latte`/`paper`);保留 `sumi`/`nord`/`latte`/`paper` 四套原值,新增 6 套,退役 6 套(`dawn`/`mocha`/`moon`/`forest`/`clay`/`rose`,旧 id 静默迁移)。
+- **对比度闸门常驻**:`scripts/check-theme-contrast.mjs` 的 11 对 × 10 套 = 110 项升级为单测(`110/110 PASS`);亮度/对比度实现单一来源 `gui/src/state/contrast.js`,GUI 设置›外观的运行时实测同源复用。
+- **三端主题 id 单源**:GUI `themes.js`(新增 `TIERS`/`themesByTier`)、reducer、`kernel-host` 偏好归一(`lastDark`/`lastLight`/`glass` 三键)、TUI `theme-palette.js`(由 `scripts/gen-tui-theme.js` 从 tokens 生成)、i18n 字典全部对齐;新增 `theme-pins.test.js` + `dom-contract.test.js` 冻结 DOM/类名契约。
+- **壳层视觉层(P1)**:新增主题中枢 `theme-hub.js`(同组轮换 / 跨模式切换 / 退役 id 归一);标题栏去硬编码色(4 处 `#8884` → `color-mix`、关闭键 → `--err`、下拉阴影令牌化);composer 聚焦柔光;浮层玻璃态(`glass` 偏好 + `[glass="on"]`,冒烟经 `?smoke=1` 强制关);`.sn-*` 模糊 2px → 6px 并补通用模态壳。
+- **卡片两段式与推理摘要卡(P2)**:卡片头由 `div` 改 `<button type="button">`(a11y 欠账);工具卡显示真实耗时(`event-contract` 的 `tool-result` 新增 `durationMs`);审批卡按决策染色(`data-decision`);新增推理摘要卡(`model:response` → quiet 的 `thought` 描述符,门控:仅 `purpose`/`reasoningTokens` 存在时出卡)。
+- **设置 › 外观 ThemeHub(P2)**:四段分组网格 + 选中卡下方运行时实测色板(5 槽 hex、点击复制、正文对比度)+ 玻璃开关。
+- **收口(P3)**:冒烟截图基线入库 `docs/prototypes/v1.8.0-ergo-restyle/screenshots/`(`sumi-*` / `paper-*` 各 9 张);版本同步为 `1.8.0`;死钩子清扫(`.seg.click`、`.c-src.man`、`.mv-card .demo .t/.cs`、`settings.theme.night|day`、冒烟中设置页静默失败的 Rail 点击)。
+- 全量回归 **1107 单测** + `npm run check` + renderer build + gui-smoke(`GUI_SMOKE_READY`)通过。
+
+---
+
 ## [Unreleased]
 
 > 下一个补丁 / 小版本的变更在此累积;发布时按[版本命名规则](README.md#版本命名规则)定级、移入带版本号的小节。

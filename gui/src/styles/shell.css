@@ -227,8 +227,6 @@
     background: var(--bg-element); color: var(--text-mut);
   }
   .seg.acc { background: var(--accent-soft); color: var(--accent); }
-  .seg.click { cursor: pointer; }
-  .seg.click:hover { color: var(--text); }
 
   /* ── 欢迎首页 ── */
   .home { flex: 1; overflow-y: auto; display: flex; justify-content: center; }
@@ -465,11 +463,6 @@
     }
     .mv-card.on .demo { color: var(--accent); }
     .mv-card .nm { font-size: var(--fs-12); color: var(--text); }
-    .mv-card .demo .t { width: 54px; height: 4px; border-radius: 2px; background: var(--border-strong); position: relative; }
-    .mv-card .demo .t i { position: absolute; inset: 0 auto 0 0; width: 40%; border-radius: 2px; background: var(--accent); }
-    .mv-card .demo .cs { display: flex; gap: 2px; }
-    .mv-card .demo .cs i { width: 4px; height: 9px; border-radius: 1px; background: var(--border-strong); }
-    .mv-card .demo .cs i.on { background: var(--accent); }
 
   /* ── 设置(二级界面:左导航 + 右内容) ── */
   .settings { flex: 1; display: grid; grid-template-columns: 216px 1fr; min-height: 0; }
@@ -546,7 +539,6 @@
   .c-item .ps { margin-left: auto; display: flex; gap: 6px; font-size: var(--fs-11); }
   .c-item .ps .a { color: var(--ok); } .c-item .ps .d { color: var(--err); }
   .c-src { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); font-family: var(--font-ui); flex: none; }
-  .c-src.man { background: var(--bg-element); color: var(--text-mut); }
   .c-view { overflow-y: auto; }
   .c-view .cv-h {
     display: flex; align-items: center; gap: 10px; padding: 14px 22px;

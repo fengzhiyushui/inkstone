@@ -13,7 +13,7 @@ import { ProjectsView, ChangesView, McpView, PluginsView, RecoveryView } from ".
 import Settings from "./components/Settings/Settings.jsx";
 import SensitiveNoticeModal from "./components/v4/SensitiveNoticeModal.jsx";
 
-const VERSION = "1.7.2";
+const VERSION = "1.8.0";
 
 export default function App() {
   const [state, dispatch] = useWorkbench();

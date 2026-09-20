@@ -174,7 +174,6 @@ async function createWindow() {
           await click(".s-nav .sn-item:nth-child(4)"); await shoot("shell-status-display");
           // v1.7.2:敏感文件提醒模态截图(#9.3)。冒烟无 API Key 走不到真实编辑,
           // 由主进程直接 push 一条构造事件,走与内核完全相同的 kernel:event 通道。
-          await click(".rail-fn .fn-item:nth-child(1)");            // 回首页,模态压在其上
           win.webContents.send("kernel:event", {
             type: "gui:sensitive_notice",
             request_id: "smoke_sn_1",
