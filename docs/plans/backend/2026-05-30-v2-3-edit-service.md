@@ -2,7 +2,6 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make V2 edit tools real by wrapping the mature legacy unified diff, change record, and rollback pipeline behind a new `src/edits` service boundary.
 
@@ -14,7 +13,7 @@
 
 ## Scope Boundary
 
-Implement V2-3 from `docs/superpowers/specs/2026-05-30-deepseek-code-v2-clean-runtime-design.md`:
+Implement V2-3 from `docs/specs/architecture/2026-05-30-deepseek-code-v2-clean-runtime-design.md`:
 
 - Create `src/edits/*` as the V2 edit domain boundary.
 - Reuse, do not delete, these proven legacy functions:

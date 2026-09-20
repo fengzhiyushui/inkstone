@@ -2,7 +2,6 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the Permission Engine (trust hierarchy, policy matrix, autonomy gating, shell matching, TTL fingerprints) and Tool Registry (built-in tools with ToolDefinition/ToolCall/ToolResult, execution chain through Permission Engine).
 

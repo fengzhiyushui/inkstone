@@ -49,7 +49,7 @@ docs/
 
 **新文档命名约定**:`YYYY-MM-DD-<topic>.md`(plan)、`YYYY-MM-DD-<topic>-design.md`(spec),与现有文件保持一致。
 
-**给自动化工具的约定**:`brainstorming` / `writing-plans` 等技能产出的 spec/plan,落到 `docs/specs/<area>/` 与 `docs/plans/<area>/`,**不要**再创建 `docs/superpowers/` 这一层。
+**目录约定**:spec 落 `docs/specs/<area>/`,plan 落 `docs/plans/<area>/`,不再增加其它分层。
 
 ---
 

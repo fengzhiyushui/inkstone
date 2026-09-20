@@ -2,7 +2,6 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make branching rewind recover workspace files when rollback succeeds but branch creation, activation, or later rollback fails.
 

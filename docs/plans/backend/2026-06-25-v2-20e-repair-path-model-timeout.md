@@ -2,8 +2,7 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans。Steps 用 `- [ ]`。
-> 承接 V2-20a–d;约定沿用(ESM、`node:test`、默认关闭零回归、`Co-Authored-By`)。
+> 承接 V2-20a–d;约定沿用(ESM、`node:test`、默认关闭零回归）。
 
 **Goal:** 让验证-修复路径(`runRepairLoop` → `runRepairExecutor`)的模型调用也受 `modelTimeoutMs` 约束——堵住"repair 模型调用可永久挂起"这一可靠性缺口。
 
@@ -127,7 +126,6 @@ Run: `npm test` → 全绿;`npm run check` → 退出码 0。
 git add src/core/execution/repair-executor.js src/core/verification/repair-loop.js src/core/runtime/agent-runtime.js tests/unit/core/verification/repair-loop-timeout.test.js
 git commit -m "feat(verification): thread modelTimeoutMs into the repair path
 
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
 
 ---

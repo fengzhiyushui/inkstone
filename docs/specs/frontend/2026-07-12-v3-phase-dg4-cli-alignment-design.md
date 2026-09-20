@@ -1,7 +1,7 @@
 # V3 Phase D-G4 · CLI 对齐(共享事件展示契约 + 多 agent 摘要 + /recovery CLI/TUI 对齐)设计
 
 - 日期:2026-07-12
-- 状态:已评审(brainstorming 两问定范围 + 分段设计 + 外部架构评审收紧,用户待批written spec)
+- 状态:已评审(两问定范围 + 分段设计 + 外部架构评审收紧,用户待批 written spec)
 - 前置:支柱①②已收官;支柱③ GUI D-1–D-4、TUI D-5 已收官。本篇是支柱③前端三端中的**最后一块 CLI 线**,落地后 V3 支柱③收官、V3 路线图完结。
 - 关联:路线图 `docs/specs/architecture/2026-06-24-v3-roadmap-design.md`(D-G4 定义)· `src/apps/cli/render-events.js`(现 CLI 渲染)· `src/apps/tui/event-cards.js`(TUI 渲染)· `gui/src/state/agent-cards.js`(GUI React 渲染)· 补救文档 `docs/specs/backend/2026-07-12-agent-findings-remediation.md`(同批产出)
 
@@ -29,7 +29,7 @@ V3 路线图唯一剩余项是 **D-G4:「CLI 对齐:render-events 吃同一契�
 
 ---
 
-## 2. 决策记录(brainstorming + 外部评审定案)
+## 2. 决策记录(含外部评审定案)
 
 1. **范围** = D-G4 三件事(共享契约 + CLI 多 agent 摘要 + /recovery CLI/TUI 对齐);其余 audit 问题只出补救方案文档。
 2. **「吃同一契约」= 共享事件展示契约,三端共用**(用户选定)。不是「只补 CLI 不抽共享」。

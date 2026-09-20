@@ -2,7 +2,7 @@
 
 > 类型:后端设计 spec(backend)
 > 日期:2026-06-27
-> 状态:已评审,待转实施计划(writing-plans)
+> 状态:已评审,待转实施计划
 > 关联:[Agent 分层记忆系统(原始构想)](2026-06-24-agent-layered-memory-design.md) · [C1+C2 编排](2026-06-27-v3-phase-c1-c2-orchestration-design.md) · [C5 重规划+续跑](2026-06-27-v3-phase-c5-replan-resume-design.md) · [V3 路线图](../architecture/2026-06-24-v3-roadmap-design.md) §7.3
 
 ---
@@ -231,7 +231,7 @@ config.orchestration.experience = {
 
 ---
 
-## 12. 里程碑(供 writing-plans 拆;每 Task 末测试+提交)
+## 12. 里程碑(供拆实施计划;每 Task 末测试+提交)
 ```
 M0  契约 + 状态机小样(review 建议):`ExperienceEntry`(含 `schemaVersion`)+ `retrieved/presented/adopted` 三类 id 状态流类型 + store 写队列接口 + gated `pending` 状态接口 + **`off` 零回归断言骨架**(目录/事件/prompt/permission 输出全不变的测试夹具)。纯类型/接口 + 骨架测试,无逻辑
 M1  experience-store(schema + 原子写 + **写队列/mutex + 唯一 tmp 名** + CRUD/query + 项目级目录 + schemaVersion 不匹配保守起空)+ 单测(含并发写不丢失)

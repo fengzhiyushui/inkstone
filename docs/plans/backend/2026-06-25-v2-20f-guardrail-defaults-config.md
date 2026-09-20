@@ -2,7 +2,6 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans。Steps 用 `- [ ]`。
 > 承接 V2-20a–e(护栏 plumbing 已完整);本切片把护栏**点亮**并交给用户配置。
 
 **Goal:** 让 V2-20 护栏在真实使用中**默认生效**且**用户可配**:工具/模型超时默认 **120s 开启**,其余(token / 调用数预算、tool-call 重试)默认关闭但可配。体现项目配置哲学——**在适配 DeepSeek 前提下,参数尽量交给用户**。
@@ -146,7 +145,6 @@ Expected: PASS（5）。
 git add src/config.js tests/unit/config-limits.test.js
 git commit -m "feat(config): default-on 120s timeouts + user-configurable limits
 
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
 
 ---
@@ -218,7 +216,6 @@ Run: `npm test` → 全绿;`npm run check` → 退出码 0。
 git add src/apps/kernel-options.js gui/kernel-host.js tests/unit/apps/kernel-options.test.js
 git commit -m "feat(apps): forward config limits into CLI and GUI kernels
 
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
 
 ---

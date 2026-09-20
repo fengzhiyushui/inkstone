@@ -168,7 +168,7 @@ send/approve/interrupt/时间线/分支/检查点/回退/主题**全部保留**,
 
 ---
 
-## 10. 里程碑(供 writing-plans 拆;每 Task 末测试+提交)
+## 10. 里程碑(供拆实施计划;每 Task 末测试+提交)
 ```
 D1-M1  reducer 转 ESM(逻辑不改)+ 现有 workbench-state 单测改 import 全绿 + selectors 补测 + **不可变返回防线测试**(改状态 action 返回新引用、不 mutate)
 D1-M2  **版本兼容门**(核 Node/npm/Electron 支持 react19/vite7/semi2.100 + engines 声明)→ Vite 构建接线:gui/package.json 依赖/脚本 + vite.renderer.config.js + main.js dev/prod 加载(smoke 走 prod)+ 构建校验测试(门控)

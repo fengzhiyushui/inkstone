@@ -2,7 +2,6 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the V2 empty context facade with a safe, deterministic, budgeted project context engine that feeds DeepSeek before query, tool-loop, and repair calls.
 
@@ -72,8 +71,8 @@ Do not stage unrelated local files:
 - `.claude/settings.local.json`
 - `.deepseek-code/chat.json`
 - `.tmp-memory-test/`
-- `docs/superpowers/plans/2026-05-30-phase-4-gui.md`
-- `docs/superpowers/plans/2026-05-30-phase-5-polish.md`
+- `docs/plans/roadmap/2026-05-30-phase-4-gui.md`
+- `docs/plans/roadmap/2026-05-30-phase-5-polish.md`
 - `gui/node_modules/`
 - `gui/package-lock.json`
 
@@ -2045,4 +2044,4 @@ git commit -m "chore(v2): include context engine checks"
 
 ## Execution Notes
 
-Use one commit per task. If a test fails after implementation, use `superpowers:systematic-debugging` before changing code. If code review feedback arrives after a task, use `superpowers:receiving-code-review` before applying fixes.
+Use one commit per task. If a test fails after implementation, diagnose the root cause before changing code. If code review feedback arrives after a task, verify it before applying fixes.

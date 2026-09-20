@@ -2,7 +2,7 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** 本计划按 TDD bite-sized 步骤落地;每个 Task 末「跑测试 + 提交」。全程主控内联(无 429/联网依赖,模型调用全 mock)。
+> **执行说明:** 本计划按 TDD bite-sized 步骤落地;每个 Task 末「跑测试 + 提交」。全程主控内联(无 429/联网依赖,模型调用全 mock)。
 >
 > 设计 spec:[2026-06-27-v3-phase-c-router-tiered-design.md](../../specs/backend/2026-06-27-v3-phase-c-router-tiered-design.md)。
 
@@ -21,7 +21,6 @@
 - **模型档总调用 ≤ `maxRepairs + 1`**(`maxRepairs=0 ⇒ ≤1`);**总超时 = `timeoutMs` 跨所有重试**;畸形/超时/空网关/抛错**全收敛同一启发式兜底**(`signals.length>0?orchestrate:single`),回退带短码 `reason`(`router_model_timeout`/`_invalid`/`_empty`/`_error`),**异常全文不入事件**。
 - **事件 eventBus 级**:`orchestration:route_resolved` 仅 modelActive 实际跑模型时 publish,**不改 `event-types.js`**(同现有 `orchestration:routed`)。`features` 已脱敏(无完整消息、列表截断)。
 - **默认零回归**:`enabled:false` 或裸构造 → 现有 644 全绿不改。
-- **署名**:本片所有提交加 `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`(2026-06-27 起新规则,含 src)。
 
 ---
 
@@ -188,7 +187,6 @@ export function featuresForEvent(feat) {
 git add src/core/orchestration/router-scoring.js tests/core/orchestration/router-scoring.test.js
 git commit -m "feat(orchestration): router-scoring pure module (features/score/band, normalized file tokens)
 
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -404,7 +402,6 @@ function extractJson(text) {
 git add src/core/orchestration/task-router.js tests/core/orchestration/task-router.test.js
 git commit -m "feat(orchestration): tiered task-router with model-assisted ambiguous tier
 
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -538,7 +535,6 @@ npm run check
 git add src/config.js src/index.js tests/config-orchestration-router-model.test.js
 git commit -m "feat(orchestration): wire router model tier (config normalize + gateway inject + route_resolved event)
 
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -593,11 +589,9 @@ test("model triage timeout/garbage → heuristic fallback, no crash", async () =
 git add tests/core/orchestration/c-router-e2e.test.js
 git commit -m "test(orchestration): C-Router e2e (model triage / disabled-parity / fallback)
 
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 git add docs/
 git commit -m "docs: ship V3 Phase C-Router tiered routing (overview/CHANGELOG/README/index)
 
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
 
 ---

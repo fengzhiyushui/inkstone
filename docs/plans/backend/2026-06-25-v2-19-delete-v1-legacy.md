@@ -2,7 +2,6 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans。约定沿用(ESM、`node:test`、`Co-Authored-By`)。
 
 **Goal:** 删除与 V2 并存的**死掉的 V1 架构**,在**不影响任何在用功能**的前提下消除双重代码库。
 

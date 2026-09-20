@@ -2,7 +2,7 @@
 
 > 类型:架构总览 / 路线图 spec
 > 日期:2026-06-24
-> 状态:已评审,待转实施计划(writing-plans)
+> 状态:已评审,待转实施计划
 > 关联:[Agent 分层记忆系统](../backend/2026-06-24-agent-layered-memory-design.md)
 > **Pivot 注记(2026-07):** 前端栈由 Semi UI→手写、CodeMirror→Monaco、xterm 方案→node-pty;相位编号以 D-1–D-5 / D-G4 与 CHANGELOG 为准,而非早期 D-0 草案。
 

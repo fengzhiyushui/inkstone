@@ -2,7 +2,6 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add metadata-only context caching, incremental workspace scans, stable context snapshot hydration, and real DeepSeek usage telemetry exposed through the V2 kernel.
 
@@ -62,8 +61,8 @@ Do not stage unrelated local files:
 - `.claude/settings.local.json`
 - `.deepseek-code/chat.json`
 - `.tmp-memory-test/`
-- `docs/superpowers/plans/2026-05-30-phase-4-gui.md`
-- `docs/superpowers/plans/2026-05-30-phase-5-polish.md`
+- `docs/plans/roadmap/2026-05-30-phase-4-gui.md`
+- `docs/plans/roadmap/2026-05-30-phase-5-polish.md`
 - `gui/node_modules/`
 - `gui/package-lock.json`
 
@@ -1435,4 +1434,4 @@ git commit -m "chore(v2): include context cache checks"
 
 ## Execution Notes
 
-Use one commit per task. If any verification fails, use `superpowers:systematic-debugging` before changing code. If review feedback arrives, use `superpowers:receiving-code-review` before applying it.
+Use one commit per task. If any verification fails, diagnose the root cause before changing code. If review feedback arrives, verify it before applying it.

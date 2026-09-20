@@ -2,7 +2,6 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 实现路线图 D-G4 完成 V3 支柱③ —— 抽出三端共用的「共享事件展示契约」`describeEvent`,CLI/TUI/GUI-React 三个渲染器改为消费它;补齐 CLI 当前完全缺失的多 agent(orchestration/experience)摘要;TUI `/recovery` 补 `clear` 与 CLI 对齐。
 
@@ -852,7 +851,7 @@ git commit -m "chore: D-G4 check 接线 + 文档回写(V3 支柱③收官)"
 - §6 Part C /recovery CLI/TUI(help/补全/参数校验/成功/失败/双语)→ Task 5(usage+desc 词条=help/补全;三用例=校验/成功/失败;zh/en=双语)✓
 - §7 UMD fallback 不改 → 无任务触碰 `gui/renderer/` ✓;kernel 零改动 → 无任务碰 `src/core`/`src/index.js`(Task 4 只 add `event-contract.js`,非 core)✓
 - §8 测试策略(新契约测试 + 三端旧测试不动 + 编排新断言 + TUI clear)→ Task 1–5 ✓
-- §9/§10 → 补救文档已单独产出(brainstorming 阶段);Global Constraints 已含 §10 全部硬约束 ✓
+- §9/§10 → 补救文档已单独产出;Global Constraints 已含 §10 全部硬约束 ✓
 - Task 3(TUI 契约消费)对应 §3 三端薄适配 ✓
 
 **2. Placeholder 扫描:** 无 TBD/TODO;每个 code step 均有完整代码。Task 5 Step 2 标注了「须先读 tui-app.js 确认 harness」的实现者注 —— 这是对现有测试形态的合理适配指引,非占位(断言语义已完整给出)。

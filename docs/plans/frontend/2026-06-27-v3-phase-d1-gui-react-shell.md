@@ -2,7 +2,7 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** 按 TDD bite-sized 步骤落地,每 Task 末「跑测试 + 提交」。
+> **执行说明:** 按 TDD bite-sized 步骤落地,每 Task 末「跑测试 + 提交」。
 > **纯逻辑里程碑(M1/M3/M6 的纯函数)无 gui deps,主控内联做**;**依赖门控里程碑(M2 build / M4–M5 组件 / M7 smoke·截图)需 `npm install` gui deps + vite/electron**——环境 429 时**单列交用户本地跑**。
 >
 > 设计 spec:[2026-06-27-v3-phase-d1-gui-react-shell-design.md](../../specs/frontend/2026-06-27-v3-phase-d1-gui-react-shell-design.md)。
@@ -22,7 +22,6 @@
 - **GUI 独立 npm**:React/Semi/Vite 只进 `gui/package.json`,不碰核心 CLI 零依赖。
 - **依赖门控**:build/smoke/截图无 deps 时 `test.skip`;核心 `npm test`(纯逻辑)不依赖 gui deps → 782 基线仍全绿。
 - **休眠回退**:旧 `renderer/*` 保留不删(D-1)。
-- **署名**:所有提交加 `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`。
 
 ---
 

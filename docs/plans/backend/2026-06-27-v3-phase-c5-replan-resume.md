@@ -2,7 +2,6 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 把 orchestrator 的「规划一次→派发一次」一般化为**确定性回合循环**(失败重规划 + 长任务持续派发),并支持**同进程编排级续跑**(回合中主区 worker 命中审批暂停 → 保存编排状态 → `approve` 后从原状态续跑,不重 plan、不重复派发)。
 
@@ -21,7 +20,6 @@
 - **多次暂停-恢复是常态**:每次 `resume` 消费旧 `orchPaused` 条目、可能以新 approvalId 产生新条目。
 - **暂停点只在串行主区 worker**:并行 iso worker 仍 `autonomy:"auto"`(C3 不变);merge 不走审批门。C3 批次并行行为不变。
 - **默认零回归**:`maxRounds=1` 或 `planner` 无 `replan` 或 `replan` 首轮 `done` → 第 1 轮后停 == C1+C2;现有 618 全绿。
-- **签名规则**:含 `src/` 提交**不加** `Co-Authored-By`;纯文档/纯测试**加** `-m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"`。
 - `node:test`;每 task 末跑测试 + 提交。
 
 ## Shared Interfaces(全任务一致)
@@ -778,7 +776,7 @@ Expected: OK
 
 ```bash
 git add README.md README.en.md docs/CHANGELOG.md docs/project-overview.md docs/README.md
-git commit -m "docs: Phase C5 replan + continuous dispatch + same-process orchestration resume" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+git commit -m "docs: Phase C5 replan + continuous dispatch + same-process orchestration resume"
 ```
 
 ---

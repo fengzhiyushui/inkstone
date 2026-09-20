@@ -2,7 +2,6 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 把「单 agent」与「多 agent」合并为一条路 —— `kernel.send()` 经确定性路由器:简单任务走今天的 `agentRuntime.send()`(零回归),复杂任务走 Orchestrator(Planner 拆 → 串行 Worker 执行 → 两级审核 → 汇总),Worker/Reviewer 复用 `agent-runtime` 实例。
 
@@ -20,7 +19,6 @@
 - **默认行为零回归** —— 简单档 = 今天的 `runtime.send()` 原样;`single` 档**不发任何 orchestration 事件**;现有 559 测试全绿。
 - **dispatch-loop 用注入工厂** → 纯 mock 可测、不打真模型。
 - **`node:test`**;每个 task 末尾跑测试 + 提交。
-- **署名规则**:含 `src/` 的提交**不加** `Co-Authored-By`;纯文档 / 纯测试提交**加** `-m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"`。
 
 ## Shared Interfaces(全任务一致)
 
@@ -1337,7 +1335,7 @@ Expected: OK(若新增文件未列入 check,在 `package.json` 的语义/核心�
 
 ```bash
 git add README.md README.en.md docs/CHANGELOG.md docs/project-overview.md docs/README.md
-git commit -m "docs: Phase C1+C2 multi-agent orchestration (unified router + two-level review)" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+git commit -m "docs: Phase C1+C2 multi-agent orchestration (unified router + two-level review)"
 ```
 
 ---

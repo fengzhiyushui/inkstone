@@ -2,7 +2,6 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 把 `src/tui.js` 菜单循环整体重写为 claude code 式行内滚动流 agent 会话 TUI(流式输出/工具与 diff 卡片/审批/slash 命令/与 GUI 共享的 API 列表管理),零运行时依赖、zh/en 双语默认中文。
 

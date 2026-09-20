@@ -2,7 +2,7 @@
 
 > 类型:前端设计 spec(frontend)
 > 日期:2026-07-02
-> 状态:待评审(brainstorming 产出),待 user review → writing-plans
+> 状态:待评审,待 user review → 实施计划
 > 关联:[D-3 全功能+设置页](2026-07-02-v3-phase-d3-gui-full-functional-design.md) · [D-2 GUI 做真](2026-07-01-v3-phase-d2-gui-functional-design.md)
 
 ---
@@ -79,11 +79,11 @@ D-3 后 GUI 全功能可用。D-4 目标:**用户能看到 agent 具体改了哪
 4. **确定性可测**:changes-derive / kernel-host 桥(瘦身/富化/切片/降级)/ 卡片与面板派生修复 / reducer 新 action / clamp 纯逻辑全 node:test;分区/DiffEditor/revealLine 走 build + 门控 smoke。
 5. **优雅降级**:无桥 / list 失败 / describe 失败 / diff 解析失败 / 记录缺字段 → 提示或缺省显示,不崩。
 6. **双语**:新文案入 i18n(zh 默认)。
-7. **署名**:所有提交加 `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`;提交前单独跑验证确认绿。
+7. 提交前单独跑验证确认绿。
 
 ---
 
-## 7. 里程碑(供 writing-plans 拆;每 Task 末测试+提交)
+## 7. 里程碑(供拆实施计划;每 Task 末测试+提交)
 ```
 D4-M1  kernel-host 只读改动桥(listChanges 瘦身+富化+rollback 标记 / describeChange 文件切片)+ IPC/preload + node:test
 D4-M2  渲染层纯逻辑(changes-derive 来源标签+changesVersion + reducer 新 action + agent-cards/panels-derive 字段修复)+ node:test

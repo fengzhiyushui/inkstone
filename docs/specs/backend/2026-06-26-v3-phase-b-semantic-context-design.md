@@ -2,7 +2,7 @@
 
 > 类型:后端设计 spec(backend)
 > 日期:2026-06-26
-> 状态:已评审,待转实施计划(writing-plans)
+> 状态:已评审,待转实施计划
 > 关联:[V3 路线图](../architecture/2026-06-24-v3-roadmap-design.md) §6 · [Agent 分层记忆系统](2026-06-24-agent-layered-memory-design.md)
 
 ---
@@ -253,7 +253,7 @@ native build dependency.
 
 ---
 
-## 16. 里程碑(供 writing-plans 拆分)
+## 16. 里程碑(供拆实施计划)
 
 ```text
 B1  ParserProvider + JS/TS wasm 适配器 → ParseResult(symbols/imports/exports/calls)

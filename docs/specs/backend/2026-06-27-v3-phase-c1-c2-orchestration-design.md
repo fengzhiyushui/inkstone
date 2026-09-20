@@ -2,7 +2,7 @@
 
 > 类型:后端设计 spec(backend)
 > 日期:2026-06-27
-> 状态:已评审,待转实施计划(writing-plans)
+> 状态:已评审,待转实施计划
 > 关联:[V3 路线图](../architecture/2026-06-24-v3-roadmap-design.md) §7 · [Agent 分层记忆系统](2026-06-24-agent-layered-memory-design.md)(C4,本片不做)· [Phase B 语义级上下文](2026-06-26-v3-phase-b-semantic-context-design.md)
 
 ---
@@ -232,7 +232,7 @@ src/config.js           + normalizeOrchestration
 
 ---
 
-## 15. 里程碑(供 writing-plans 拆)
+## 15. 里程碑(供拆实施计划)
 
 ```text
 M1  subtask-schema + task-router(启发式 + RoutingDecision)+ 单测;kernel 仍只走 single(router 旁路验证)

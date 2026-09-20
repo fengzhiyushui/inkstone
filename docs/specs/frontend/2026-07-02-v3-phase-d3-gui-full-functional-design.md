@@ -2,7 +2,7 @@
 
 > 类型:前端设计 spec(frontend)
 > 日期:2026-07-02
-> 状态:待评审(brainstorming 产出),待 user review → writing-plans
+> 状态:待评审,待 user review → 实施计划
 > 关联:[D-2 GUI 做真](2026-07-01-v3-phase-d2-gui-functional-design.md) · [D-1 外壳](2026-06-27-v3-phase-d1-gui-react-shell-design.md)
 
 ---
@@ -97,7 +97,7 @@ kernel-host 加 `activateBranch(id)` → `kernel.session.branches.activate(id)`;
 
 ---
 
-## 6. 里程碑(供 writing-plans 拆;每 Task 末测试+提交)
+## 6. 里程碑(供拆实施计划;每 Task 末测试+提交)
 ```
 D3-M1  kernel-host 配置读写(getSettings 脱敏 / setConfig 复用 config.js / testConnection / **listModels 调 /models,失败抛错** / **API 列表 CRUD + activate,存 gui-api-profiles.json、激活写 config**)+ IPC/preload + 归一纯函数 + node:test
 D3-M2  设置视图(7 组二级菜单 + 表单,读 config/prefs、写 setConfig/setPreferences、连接测试;**API 列表管理:增删改 + 激活;模型下拉由 listModels 填充,不预设默认,获取失败红字报错**)+ i18n + build

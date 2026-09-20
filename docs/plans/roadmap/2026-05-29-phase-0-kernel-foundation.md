@@ -2,7 +2,6 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the minimal kernel foundation — EventBus, SessionLog, KernelAPI, and ConfigProvider with ModelProfile — that all later phases depend on. Zero breaking changes to existing CLI flow.
 

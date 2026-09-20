@@ -2,7 +2,6 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 点亮 `includeMethodHints` —— 开启后把 `obj.method()`(member 调用)在"项目内恰好一个同名可调用符号"时升级为 `confidence:"probable"` 边,并新增 CLI `--semantic-context` / `--include-method-hints`;默认关、关闭时行为逐字节不变。
 
@@ -17,7 +16,6 @@
 - **唯一匹配**:member 属性名在项目里**恰好一个**可调用同名符号才连;多个/零个 → `unresolved`。
 - **nameIndex 只索引可调用 kind**:`{function, method, variable}`,**排除 class**(`variable` 在 extractor 中仅指函数值赋名箭头/函数)。
 - **单解析栈、无新依赖**;`probable`/`resolved`/`unresolved` 三档不变。
-- **提交署名规则**:**含 `src/` 改动的提交不加 `Co-Authored-By`**;纯文档 / 纯测试提交加 `-m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"`。本计划 Task 1–5 触及 `src/` → 不加;Task 6 纯文档 → 加。
 - 测试:`node --test <file>`;全量 `node --test test/**/*.test.js tests/**/*.test.js`;`npm run check`。
 
 ## Shared Shapes(本轮新增/变更,逐字一致)
@@ -656,7 +654,7 @@ Expected: 退出 0
 
 ```bash
 git add README.md README.en.md docs/specs/backend/2026-06-26-v3-phase-b-semantic-context-design.md docs/CHANGELOG.md
-git commit -m "docs: document --semantic-context / --include-method-hints; mark Phase B §6 future-enhancement landed" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+git commit -m "docs: document --semantic-context / --include-method-hints; mark Phase B §6 future-enhancement landed"
 ```
 
 ---

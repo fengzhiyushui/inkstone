@@ -2,7 +2,7 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** 按 TDD bite-sized 步骤落地,每个 Task 末「跑测试 + 提交」。全程主控内联(模型调用全 mock,无 429/联网依赖)。
+> **执行说明:** 按 TDD bite-sized 步骤落地,每个 Task 末「跑测试 + 提交」。全程主控内联(模型调用全 mock,无 429/联网依赖)。
 >
 > 设计 spec:[2026-06-27-v3-phase-c4-experience-memory-design.md](../../specs/backend/2026-06-27-v3-phase-c4-experience-memory-design.md)。
 
@@ -20,7 +20,6 @@
 - **默认零回归**:`crossTaskLearning="off"` → 无检索/巩固/升级/事件/目录,`decide()` 输出 byte-equal,现有 **670 全绿不改**。
 - **写串行化**:store 内置每实例 async 写队列;唯一 tmp 名(F7/review#2)。
 - **强化只认 `adopted = used_experience_ids ∩ presentedIds`**(review#1);`presented\adopted` 不升降。
-- **署名**:所有提交(含 src)加 `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`。
 
 ---
 

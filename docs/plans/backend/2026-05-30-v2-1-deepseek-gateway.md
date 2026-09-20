@@ -2,7 +2,6 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a DeepSeek-native model gateway for V2 that supports Flash/Pro routing, explicit JSON mode, SSE streaming, tool-call payload preservation, FIM completion, cache-aware usage tracking, API error classification, and V2 runtime interruption.
 
@@ -14,7 +13,7 @@
 
 ## Scope Boundary
 
-Implement V2-1 from `docs/superpowers/specs/2026-05-30-deepseek-code-v2-clean-runtime-design.md`:
+Implement V2-1 from `docs/specs/architecture/2026-05-30-deepseek-code-v2-clean-runtime-design.md`:
 
 - Model routing for `reply`, `plan`, `act`, `review`, `repair`, and `fim`.
 - DeepSeek request body construction for chat, streaming chat, JSON mode, tool calls, and FIM.

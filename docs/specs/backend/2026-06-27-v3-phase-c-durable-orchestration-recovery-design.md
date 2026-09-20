@@ -100,7 +100,7 @@ C5 实现了**同进程**编排级续跑:回合中串行主区 worker 命中审�
 
 ---
 
-## 6. 里程碑(供 writing-plans 拆;每 Task 末测试+提交)
+## 6. 里程碑(供拆实施计划;每 Task 末测试+提交)
 ```
 M0  durable recovery contract(review 建议):sidecar schema(`schemaVersion`)+ 字段白名单(无 raw options)+ 版本/指纹(workerFactory/toolSubset/subtaskSchema)+ 孤儿降级=blocked 策略 + budget 续扣语义 + approval 归属校验规则 —— 纯契约/类型 + 校验函数(validate/serialize/deserialize/fingerprint/ownershipOk)+ 单测(往返等价 + 各拒绝路径:坏 schema/指纹不符/归属不符/缺字段)
 M1  orchestration-persistence(save/scan/restore/consume/quarantine + 原子写 + 损坏隔离)+ 单测

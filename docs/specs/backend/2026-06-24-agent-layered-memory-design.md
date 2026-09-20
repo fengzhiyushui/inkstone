@@ -2,7 +2,7 @@
 
 > 类型:后端 / 内核 设计 spec
 > 日期:2026-06-24
-> 状态:已评审,待转实施计划(writing-plans)
+> 状态:已评审,待转实施计划
 > 关联:[V3 路线图](../architecture/2026-06-24-v3-roadmap-design.md)(Phase C)
 
 ---

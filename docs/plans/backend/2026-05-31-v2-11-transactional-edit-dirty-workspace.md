@@ -2,7 +2,6 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make V2 edit apply transactional and make rollback dirty-workspace-safe with explicit force support.
 
@@ -1157,4 +1156,4 @@ git commit -m "chore(v2): include transactional edit checks"
 
 ## Execution Notes
 
-Use one commit per task. If a test fails unexpectedly, use `superpowers:systematic-debugging` before changing code. If review feedback arrives, use `superpowers:receiving-code-review` before applying it.
+Use one commit per task. If a test fails unexpectedly, diagnose the root cause before changing code. If review feedback arrives, verify it before applying it.

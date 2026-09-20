@@ -2,7 +2,6 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 > 纯逻辑(M1 桥 / M2 派生+reducer)node:test 内联先跑;UI(M3/M4)走 `cd gui && npm run build:renderer`;M5 门控 smoke + 全量回归。
 > 提交前**单独验证绿**(勿用 `npm test | grep` 吞退出码后直接提交)。
 >
@@ -21,7 +20,6 @@
 - **来源识别约定**:prompt 前缀 `"GUI edit "` → `manual`,其余 → `agent`(kernel-host `writeFile` 自有约定)。
 - **优雅降级**:无桥 / list 失败 / describe 失败 / diff 解析失败 / 记录缺字段 → 提示或缺省显示(计数为 null 时省略),不崩。
 - **双语**:新文案 zh/en 都入 `gui/src/i18n/strings.js`(zh 默认)。
-- **署名**:所有提交加 trailer `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`。
 - 验证命令:单测 `node --test <file>`;全量 `npm test`(基线 ≥837 全绿);检查 `npm run check`;渲染层 `cd gui && npm run build:renderer`;门控 smoke `cd gui; $env:DEEPSEEK_CODE_GUI_SMOKE="1"; npx electron .`(期望 stdout `GUI_SMOKE_READY`)。
 
 ---
@@ -333,7 +331,6 @@ git add gui/kernel-host.js gui/main.js gui/preload.js tests/unit/gui/kernel-host
 git commit -m @'
 feat(gui): read-only change-tracking bridge (list/describe + hunk stats + rollback marks) (D4-M1)
 
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 '@
 ```
 
@@ -641,7 +638,6 @@ never existed, so diff cards rendered an empty path with +0 -0. Cards now key on
 change_id (clickable in D4-M4). changesTick replaces spec's changesVersion(activity):
 the 50-event activity window makes a derived count non-monotonic.
 
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 '@
 ```
 
@@ -842,7 +838,6 @@ git add gui/src/hooks/useKernel.js gui/src/components/Explorer.jsx gui/src/App.j
 git commit -m @'
 feat(gui): SCM Agent-Changes section + change bridges in useKernel (D4-M3)
 
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 '@
 ```
 
@@ -1038,7 +1033,6 @@ git add gui/src/components/DiffView.jsx gui/src/components/ChangeDiffView.jsx gu
 git commit -m @'
 feat(gui): ChangeDiffView with hunk jump + clickable diff cards (D4-M4)
 
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 '@
 ```
 
@@ -1145,7 +1139,6 @@ git add gui/main.js
 git commit -m @'
 test(gui): smoke covers SCM changes section + change diff (seeded record) (D4-M5)
 
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 '@
 ```
 
@@ -1163,7 +1156,6 @@ git add docs/project-overview.md docs/CHANGELOG.md README.md README.en.md docs/R
 git commit -m @'
 docs: ship V3 Phase D-4 GUI agent change tracking
 
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
 '@
 ```
 

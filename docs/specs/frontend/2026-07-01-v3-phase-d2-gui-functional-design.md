@@ -2,7 +2,7 @@
 
 > 类型:前端设计 spec(frontend)
 > 日期:2026-07-01
-> 状态:待评审(brainstorming 产出),待 user review → writing-plans
+> 状态:待评审,待 user review → 实施计划
 > 关联:[D-1 GUI React 外壳](2026-06-27-v3-phase-d1-gui-react-shell-design.md) · [GUI 优化方案](../../plans/frontend/gui-frontend-optimization-plan.md)
 
 ---
@@ -92,7 +92,7 @@ React 渲染层
 
 ---
 
-## 6. 里程碑(供 writing-plans 拆;每 Task 末测试+提交)
+## 6. 里程碑(供拆实施计划;每 Task 末测试+提交)
 ```
 D2-M1  kernel-host listTree/readFile(路径安全)+ IPC + preload + language 持久化修复 + node:test(tree 组装、readFile 边界/拒斥、normalizeGuiPreferences language)
 D2-M2  Explorer 接真文件树(fs:tree → 折叠树,点选 dispatch file_opened)+ openFiles/activeFile reducer 状态 + 单测(tree 折叠纯函数、reducer)

@@ -5,7 +5,6 @@
 > 状态:**草案,待维护者拍板**(§7 列出全部需拍板项;拍板前不转 plan)
 > 基线:`main @ ccacbd3`(v1.7.1)。CHANGELOG 记 1083+ 单测(本文撰写时未亲测)
 > 关联:[V3 路线图](2026-06-24-v3-roadmap-design.md) · [审计补救台账](../backend/2026-07-12-agent-findings-remediation.md) · [agent-runtime 边界分析](../backend/2026-08-09-v1.6.3-agent-runtime-refactor-design.md) · [v1.4 前端定稿](../frontend/2026-07-28-v1.4.0-frontend-redesign-design.md)
-> 分工:本文及后续 plan 由 Claude 产出,代码由 mimo 实现(维护者 2026-09-17 定)
 
 ---
 
@@ -186,9 +185,9 @@ v1.7.1 推送/tag(F1)
 
 ---
 
-## 8. 拍板后的第一批产出(Claude 负责)
+## 8. 拍板后的第一批产出(设计侧)
 
 1. `docs/specs/frontend/2026-09-XX-v1.8.0-ergo-restyle-design.md` + plan —— 把 tmp 审计稿救进仓库(最紧迫,tmp 随时会丢)
-2. `docs/plans/frontend/2026-09-XX-v1.7.2-gui-defects.md` —— 三条缺陷 + 冒烟截图,写到 mimo 零上下文可做
+2. `docs/plans/frontend/2026-09-XX-v1.7.2-gui-defects.md` —— 三条缺陷 + 冒烟截图,写到执行者零上下文可做
 3. `docs/plans/architecture/2026-09-XX-distribution.md` —— 按 Q1 结论
 4. 本文状态改「已评审」,并把处置结论回写 V3 roadmap 各 D-G 行(标 ✅ / ⏩ 归入 v1.x / ✗ 不做)

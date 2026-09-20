@@ -2,7 +2,6 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在现有 `createContextEngine` 门面之下增加一个 opt-in 的符号级上下文层(符号表 + 依赖图 + 调用图),让检索粒度从"整文件"降到"符号"、相关性从"路径启发"升到"依赖图"。
 

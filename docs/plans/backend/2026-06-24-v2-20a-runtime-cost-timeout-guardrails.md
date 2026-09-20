@@ -6,7 +6,6 @@
 > 提交:`c7fd9e1`(cost-budget)、`0603bd0`(model timeout)、`9bffcc5`(tool timeout)、`b0e6354`(executor-loop budget)、`49f338b`(runtime + kernel limits)。
 > 后续见文末「范围说明与后续」(V2-20b)。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 给一个 turn 加上「最大成本闸」(token / 模型调用数上限)和「模型调用 + 工具调用超时」,使单个 turn 不会无界烧 token,也不会因模型或工具挂起而永久阻塞。
 
@@ -21,7 +20,6 @@
 - 新增 `src/*.js` 必须加入 `package.json` 的 `check` 脚本(`node --check`)。
 - 默认行为不变:所有新参数默认 `null`(护栏关闭)时,现有调用方与测试行为完全不变。
 - 错误码约定:成本超限 `BUDGET_EXCEEDED`、模型超时 `MODEL_TIMEOUT`、工具超时 `TOOL_TIMEOUT`(`error.code`)。
-- 提交信息结尾加:`Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`。
 
 ---
 
@@ -157,7 +155,6 @@ Expected: 退出码 0。
 git add src/core/runtime/cost-budget.js tests/unit/core/runtime/cost-budget.test.js package.json
 git commit -m "feat(runtime): add cost-budget primitive (token/model-call ceiling)
 
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
 
 ---
@@ -317,7 +314,6 @@ Expected: PASS。
 git add src/deepseek/model-gateway.js tests/unit/deepseek/model-gateway-timeout.test.js
 git commit -m "feat(gateway): add model-call timeout (MODEL_TIMEOUT)
 
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
 
 ---
@@ -455,7 +451,6 @@ Expected: PASS。
 git add src/tools/executor.js tests/unit/tools/executor-timeout.test.js
 git commit -m "feat(tools): add tool-call timeout surfacing as error result
 
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
 
 ---
@@ -583,7 +578,6 @@ Expected: PASS。
 git add src/core/execution/executor-loop.js tests/unit/core/execution/executor-loop-budget.test.js
 git commit -m "feat(execution): enforce cost budget in executor loop
 
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
 
 ---
@@ -737,7 +731,6 @@ Expected: 退出码 0。
 git add src/core/runtime/agent-runtime.js src/index.js tests/unit/core/runtime/agent-runtime-budget.test.js
 git commit -m "feat(runtime): wire cost budget into agent runtime and kernel limits
 
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
 
 ---

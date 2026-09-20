@@ -2,7 +2,6 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Move CLI, TUI, and Electron GUI onto the V2 public kernel in `src/index.js` while keeping legacy commands available during migration.
 
@@ -14,7 +13,7 @@
 
 ## Scope Boundary
 
-Implement V2-5 from `docs/superpowers/specs/2026-05-30-deepseek-code-v2-clean-runtime-design.md`:
+Implement V2-5 from `docs/specs/architecture/2026-05-30-deepseek-code-v2-clean-runtime-design.md`:
 
 - CLI `ask`, `edit`, and `test` use the V2 kernel.
 - TUI ask/edit actions use the V2 kernel and V2 session event stream.

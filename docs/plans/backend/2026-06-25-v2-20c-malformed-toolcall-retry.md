@@ -2,8 +2,7 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans。Steps 用 `- [ ]`。
-> 承接 [V2-20a](2026-06-24-v2-20a-runtime-cost-timeout-guardrails.md) / [V2-20b](2026-06-25-v2-20b-guardrail-injection-graceful-stop.md);约定沿用(ESM、`node:test`、默认关闭零回归、`Co-Authored-By`)。
+> 承接 [V2-20a](2026-06-24-v2-20a-runtime-cost-timeout-guardrails.md) / [V2-20b](2026-06-25-v2-20b-guardrail-injection-graceful-stop.md);约定沿用(ESM、`node:test`、默认关闭零回归）。
 
 **Goal:** 当模型吐出**畸形 tool-call**(参数非合法 JSON,`adaptDeepSeekToolCalls` 抛 `invalid tool arguments`)时,执行器不再让整个 turn 直接失败,而是**有界重试**:回灌一条纠正消息并重新请求模型,最多 `maxToolCallRepairs` 次;超出才报错。补完坑 #5「JSON / tool calling 失败重试」。
 
@@ -178,7 +177,6 @@ Expected: PASS(含既有 "executor loop reports malformed tool arguments" 仍绿
 git add src/core/execution/executor-loop.js tests/unit/core/execution/executor-loop-toolrepair.test.js
 git commit -m "feat(execution): bounded retry on malformed tool-call output
 
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
 
 ---
@@ -273,7 +271,6 @@ Expected: 退出码 0。
 git add src/core/runtime/agent-runtime.js src/index.js tests/unit/core/runtime/agent-runtime-toolrepair.test.js
 git commit -m "feat(runtime): thread maxToolCallRepairs through runtime and kernel limits
 
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
 
 ---

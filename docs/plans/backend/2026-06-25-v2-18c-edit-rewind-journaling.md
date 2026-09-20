@@ -2,7 +2,6 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans。约定沿用(ESM、`node:test`、默认零影响、`Co-Authored-By`)。
 
 **Goal:** 把已在 main 的事务日志库(`transaction-journal.js`)接入 edit/rewind,让"启用恢复"时文件改动可在崩溃后回滚;并给 recovery-service + 启动扫描补 open 事务的发现与 abort/commit。
 

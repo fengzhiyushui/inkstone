@@ -2,8 +2,7 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans。Steps 用 `- [ ]`。
-> 承接 V2-20a/b/c;约定沿用(ESM、`node:test`、默认关闭零回归、`Co-Authored-By`)。
+> 承接 V2-20a/b/c;约定沿用(ESM、`node:test`、默认关闭零回归）。
 
 **Goal:** 让审批后续(`approve()` → `resumeExecutorLoop`)与正常工具循环**享有同一套护栏**:成本预算、模型调用超时、畸形 tool-call 重试。当前 `runToolLoopPath` 全部透传,但 `approve()` 的 resume 调用一个都没传,导致审批恢复后的那段执行**裸跑**。
 
@@ -165,7 +164,6 @@ Expected: 退出码 0。
 git add src/core/runtime/agent-runtime.js tests/unit/core/runtime/agent-runtime-resume-guardrails.test.js
 git commit -m "feat(runtime): apply cost/timeout/tool-repair guardrails to approval resume
 
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
 
 ---

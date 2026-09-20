@@ -2,7 +2,6 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 让「无依赖 + 声明文件范围不重叠」的子任务并行执行,每个并行 Worker 在 fs 拷贝隔离工作区里改动,完成后经快照一致性校验 + 每 subtask 原子事务**回放合并**进主工作区;`maxParallelWorkers=1` 或批大小=1 时与 C1+C2 串行逐字节一致。
 
@@ -21,7 +20,6 @@
 - **零残留**:每 Worker `finally` 必删,删除带 **retry + backoff**(抗 Windows EBUSY/EPERM);**启动清扫**带 owner(pid)+ TTL,只删「超 TTL 或当前进程上次 run」,**绝不误删活跃 run**。
 - **默认零回归**:`maxParallelWorkers=1` 或批大小=1 → 走 C1+C2 串行原路;现有 594 全绿。
 - **降级永不崩**:工作区文件数 > `maxCopyFiles` / 拷贝失败 / 工具平面构造失败 → 该批回退串行,记 log。
-- **署名**:含 `src/` 提交**不加** `Co-Authored-By`;纯文档 / 纯测试提交**加** `-m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"`。
 - `node:test`;每 task 末尾跑测试 + 提交。
 
 ## Shared Interfaces(全任务一致)
@@ -1004,7 +1002,7 @@ Expected: OK
 git add src/config.js src/index.js src/core/orchestration/orchestrator.js src/apps/kernel-options.js package.json tests/config-orchestration-parallel.test.js
 git commit -m "feat(orchestration): wire parallel isolation into kernel (config.parallel + startup sweep + iso worker run)"
 git add README.md README.en.md docs/CHANGELOG.md docs/project-overview.md docs/README.md
-git commit -m "docs: Phase C3 parallel worker write-isolation" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+git commit -m "docs: Phase C3 parallel worker write-isolation"
 ```
 
 ---

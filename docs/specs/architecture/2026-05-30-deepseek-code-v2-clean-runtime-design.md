@@ -88,7 +88,7 @@ deepseek-code/
 |   `-- fixtures/
 +-- docs/
 |   +-- architecture/
-|   +-- superpowers/
+|   +-- specs/ · plans/
 |   `-- user-guide/
 +-- scripts/
 +-- package.json

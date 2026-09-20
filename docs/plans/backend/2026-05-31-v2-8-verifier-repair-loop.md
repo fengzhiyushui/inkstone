@@ -2,7 +2,6 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Turn V2 verification from a terminal gate into a bounded DeepSeek repair loop that can verify edits, ask the repair channel for corrective tool calls, execute repairs through ToolExecutor, and verify again.
 
@@ -52,8 +51,8 @@ Do not modify V0/V1 legacy files except through existing test/check script refer
 - `.claude/settings.local.json`
 - `.deepseek-code/chat.json`
 - `.tmp-memory-test/`
-- `docs/superpowers/plans/2026-05-30-phase-4-gui.md`
-- `docs/superpowers/plans/2026-05-30-phase-5-polish.md`
+- `docs/plans/roadmap/2026-05-30-phase-4-gui.md`
+- `docs/plans/roadmap/2026-05-30-phase-5-polish.md`
 - `gui/node_modules/`
 - `gui/package-lock.json`
 

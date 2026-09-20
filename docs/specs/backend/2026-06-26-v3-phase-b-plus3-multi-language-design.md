@@ -142,7 +142,7 @@ context.semantic.importRoots []          -> 默认 [projectRoot];配置追加(§
 
 ---
 
-## 8. 里程碑(供 writing-plans 拆)
+## 8. 里程碑(供拆实施计划)
 
 ```text
 M1  query-extractor runner + provider.compileQuery + JS 语言定义 + js.scm

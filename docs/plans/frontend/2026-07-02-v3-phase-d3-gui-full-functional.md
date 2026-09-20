@@ -2,7 +2,7 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** 按 TDD bite-sized 步骤落地,每 Task 末「跑测试 + 提交」。
+> **执行说明:** 按 TDD bite-sized 步骤落地,每 Task 末「跑测试 + 提交」。
 > **纯逻辑(M1/M3/M4/M6/M9)可内联先跑**;设置表单 / Monaco diff / 真切换(M2/M5/M7/M8/M10)走 build + 门控 smoke。
 > 提交前**单独验证绿**(勿用 `npm test | grep` 吞退出码后直接提交)。
 >
@@ -22,7 +22,6 @@
 - **双语**:新文案入 i18n(zh 默认)。
 - **确定性可测**:归一/CRUD/listModels(mock fetch)/菜单模型/过滤/派生/保存 diff 全 node:test;UI/Monaco/真切换走 build+门控 smoke。
 - **优雅降级**:无桥/读写失败/切换失败 → 提示不崩。
-- **署名**:所有提交加 `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`。
 
 ---
 

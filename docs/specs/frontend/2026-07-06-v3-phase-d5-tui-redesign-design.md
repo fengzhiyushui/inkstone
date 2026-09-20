@@ -1,9 +1,9 @@
 # V3 Phase D-5 · TUI 重设计(行内滚动流 agent 会话 TUI)设计
 
 - 日期:2026-07-06
-- 状态:已评审(brainstorming 四问 + 设计分段确认 + /config 修订,用户已批)
+- 状态:已评审(四问 + 设计分段确认 + /config 修订,用户已批)
 - 前置:D-1–D-4 GUI 线已收官;支柱①②已收官。本篇属支柱③前端三端中的 TUI 线。
-- 关联:`docs/plans/frontend/`(plan 待 writing-plans 产出)· GUI 先例 `2026-07-02-v3-phase-d3-gui-full-functional-design.md`(API 列表管理)· `src/apps/cli/kernel-runner.js`(chat REPL 契约)
+- 关联:`docs/plans/frontend/`(plan 待产出)· GUI 先例 `2026-07-02-v3-phase-d3-gui-full-functional-design.md`(API 列表管理)· `src/apps/cli/kernel-runner.js`(chat REPL 契约)
 
 ## 1. 背景与目标
 
@@ -11,7 +11,7 @@
 
 **非目标**:alt-screen 多窗格、鼠标支持、TUI 复刻 GUI 设置页全部七组(只做 API 列表管理)、多主题系统。低频功能(search/scan/test/rollback)不进 TUI——交给 agent 工具调用或既有 CLI 子命令(`deepseek-code search/scan/test/rollback`,已存在)。
 
-## 2. 决策记录(brainstorming 定案)
+## 2. 决策记录
 
 1. **范围** = agent 会话主体 + 高频 slash 命令;低频功能出 TUI(CLI 子命令兜底)。
 2. **双语 zh/en,默认中文**,`/lang` 切换并持久化到 `.deepseek-code/tui-prefs.json`(原子小文件);字典形态对齐 `gui/src/i18n/strings.js`。
@@ -104,7 +104,7 @@
 - **门控真终端 smoke(可选)**:检测到 gui 的 node-pty 已装才跑「启动 → mock 一轮 → 退出」并断言无 ANSI 残留,未装优雅 skip(对齐 gui 门控 smoke 哲学);核心 `npm test` 不受影响。
 - **回归**:api-profiles 迁移后,gui 侧既有单测更新 import 路径并保持全绿;全量 `npm test` + `npm run check`(check 清单同步增删)。
 
-## 9. 里程碑草案(细化归 writing-plans)
+## 9. 里程碑草案(细化归实施计划)
 
 - **M1 纯基建**:`ansi.js`(含宽度)/`input.js`/`tui-i18n.js`/`tui-state.js` 骨架 + node:test。
 - **M2 事件派生**:`event-cards.js` + reducer 集成(含静默清单、编排/验证压缩行)。

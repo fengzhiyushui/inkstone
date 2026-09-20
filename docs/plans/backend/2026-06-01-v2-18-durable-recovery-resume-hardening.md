@@ -2,7 +2,6 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement process-crash durable recovery for V2 approval/repair pauses, agent-managed edit/rewind transactions, single-writer takeover, and the shared Recovery Center UX.
 
@@ -51,7 +50,7 @@ Goal: roll back interrupted agent-managed edit/rewind transactions and expose re
 
 ### Deferred GUI Redesign
 
-The DeepSeek Code IDE visual redesign based on `DeepSeekCodeIDE.jsx` is intentionally deferred until after the V2 runtime/recovery iteration stabilizes. See `docs/superpowers/plans/2026-06-01-future-gui-deepseek-code-ide-redesign.md`.
+The DeepSeek Code IDE visual redesign based on `DeepSeekCodeIDE.jsx` is intentionally deferred until after the V2 runtime/recovery iteration stabilizes. See `docs/plans/frontend/2026-06-01-future-gui-deepseek-code-ide-redesign.md`.
 
 ## Scope Check
 
@@ -2075,7 +2074,7 @@ git commit -m "test(v2): cover durable recovery fault injection"
 **Files:**
 - Modify: `package.json`
 - Modify: `README.md`
-- Possibly modify: `docs/superpowers/specs/2026-06-01-v2-18-durable-recovery-resume-hardening-design.md` only if implementation changes a public contract from the approved spec.
+- Possibly modify: `docs/specs/backend/2026-06-01-v2-18-durable-recovery-resume-hardening-design.md` only if implementation changes a public contract from the approved spec.
 
 - [ ] **Step 1: Ensure all new files are in `npm.cmd run check`**
 
@@ -2148,7 +2147,7 @@ Expected: PASS or only the pre-existing CRLF warning for `.claude/settings.local
 Run:
 
 ```bash
-git status --short .deepseek-code docs/superpowers/specs/2026-06-01-v2-18-durable-recovery-resume-hardening-design.md docs/superpowers/plans/2026-06-01-v2-18-durable-recovery-resume-hardening.md
+git status --short .deepseek-code docs/specs/backend/2026-06-01-v2-18-durable-recovery-resume-hardening-design.md docs/plans/backend/2026-06-01-v2-18-durable-recovery-resume-hardening.md
 ```
 
 Expected: no new `.deepseek-code/v2` pollution from tests; spec and plan remain as intended.
@@ -2156,7 +2155,7 @@ Expected: no new `.deepseek-code/v2` pollution from tests; spec and plan remain 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add package.json README.md docs/superpowers/plans/2026-06-01-v2-18-durable-recovery-resume-hardening.md
+git add package.json README.md docs/plans/backend/2026-06-01-v2-18-durable-recovery-resume-hardening.md
 git commit -m "docs(v2): add durable recovery implementation plan"
 ```
 

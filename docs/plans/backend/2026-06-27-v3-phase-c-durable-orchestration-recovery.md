@@ -2,7 +2,6 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 让编排回合(orchestration round)在崩溃/重启后能从暂停点续跑 —— 重启后精确重水化被暂停的 worker turn(Option B「完整 worker turn 重水化」),审批落到其原在途工具调用,而非重派整个 subtask。
 
@@ -27,7 +26,6 @@
   > **注(实现细节,防误判):** 当前编排聚合 `state.budget` 只被 `.exceeded()` 读、其 `recordModelResult` 尚未被编排层调用(worker/planner 各持自己的 agent-runtime 预算),故真实 `已花` 现为 0。本片只负责**忠实序列化 + 续扣重建**(spentTokens/spentCalls 从 `budget.snapshot()` 取、恢复时 reseed);续扣**数学**由 M0/M2 单测用显式 `recordModelResult` 打点验证。M8 e2e 只断言 sidecar 携带 quota+spent **字段**,不依赖非零 spend。将来若把聚合记账接上,续扣自动生效。
 - **CST-9 幂等清理。** 完成/取消 → 删编排 sidecar(consume 墓碑)+ worker sidecar 由 agent-runtime `approve` 置 consumed;启动扫描 consumed/孤儿沿用既有隔离机制。
 - **CST-10 node:test。** 全部测试用 `node:test` + `node:assert/strict`,确定性优先(mock gateway/store/worker,不打真实网络)。运行:`npm test`(= `node --test test/**/*.test.js tests/**/*.test.js`);语法闸:`npm run check`(**新增源码文件必须登记进 `package.json` 的 `check` 脚本**)。
-- **CST-11 提交签名。** 每个 Task 末尾 `git commit`,message 结尾加一行:`Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`。
 
 ### 写序 / 崩溃窗口 —— spec §5.6 的落地澄清(实施前请 reviewer 确认)
 
@@ -251,7 +249,7 @@ Expected: 退出码 0(新文件语法通过)。
 
 ```bash
 git add src/core/orchestration/orchestration-recovery-contract.js tests/core/orchestration/orchestration-recovery-contract.test.js package.json
-git commit -m "$(printf 'feat(recovery): orchestration durable contract — fingerprints + ownership (M0.1)\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>')"
+git commit -m "$(printf 'feat(recovery): orchestration durable contract — fingerprints + ownership (M0.1)')"
 ```
 
 ### Task M0.2: serialize / deserialize / validate / budget 续扣计算
@@ -493,7 +491,7 @@ Expected: PASS(8 tests)。
 
 ```bash
 git add src/core/orchestration/orchestration-recovery-contract.js tests/core/orchestration/orchestration-recovery-contract.test.js
-git commit -m "$(printf 'feat(recovery): orchestration state serialize/deserialize/validate + budget continuation (M0.2)\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>')"
+git commit -m "$(printf 'feat(recovery): orchestration state serialize/deserialize/validate + budget continuation (M0.2)')"
 ```
 
 ---
@@ -734,7 +732,7 @@ Expected: 退出码 0。
 
 ```bash
 git add src/core/recovery/orchestration-persistence.js tests/unit/core/recovery/orchestration-persistence.test.js package.json
-git commit -m "$(printf 'feat(recovery): orchestration-paused sidecar persistence (atomic write + quarantine) (M1)\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>')"
+git commit -m "$(printf 'feat(recovery): orchestration-paused sidecar persistence (atomic write + quarantine) (M1)')"
 ```
 
 ---
@@ -806,7 +804,7 @@ Expected: PASS(全部,含原 5 + 新 3)。
 
 ```bash
 git add src/core/runtime/cost-budget.js tests/unit/core/runtime/cost-budget.test.js
-git commit -m "$(printf 'feat(runtime): cost-budget initial spend seeds for durable resume continuation (M2.1)\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>')"
+git commit -m "$(printf 'feat(runtime): cost-budget initial spend seeds for durable resume continuation (M2.1)')"
 ```
 
 ### Task M2.2: orchestrator serializeState / deserializeState
@@ -936,7 +934,7 @@ Expected: PASS(新测试 + 既有编排测试不回归)。
 
 ```bash
 git add src/core/orchestration/orchestrator.js tests/core/orchestration/orchestrator-serialize.test.js
-git commit -m "$(printf 'feat(orchestration): serializeState/deserializeState with budget-continuation rebuild (M2.2)\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>')"
+git commit -m "$(printf 'feat(orchestration): serializeState/deserializeState with budget-continuation rebuild (M2.2)')"
 ```
 
 ---
@@ -1074,7 +1072,7 @@ Expected: PASS(C5 内存续跑 + 单 agent durable 未回归)。
 
 ```bash
 git add src/index.js tests/core/orchestration/shared-paused-store.test.js
-git commit -m "$(printf 'feat(orchestration): shared pausedTurnStore when recovery enabled (M3)\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>')"
+git commit -m "$(printf 'feat(orchestration): shared pausedTurnStore when recovery enabled (M3)')"
 ```
 
 ---
@@ -1314,7 +1312,7 @@ Expected: PASS(6 新 + 既有不回归)。
 
 ```bash
 git add src/core/orchestration/orchestrator.js tests/core/orchestration/orchestrator-resume-durable.test.js
-git commit -m "$(printf 'feat(orchestration): resumeDurable — gate + rebuild worker + rehydrate approve + continue (M4)\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>')"
+git commit -m "$(printf 'feat(orchestration): resumeDurable — gate + rebuild worker + rehydrate approve + continue (M4)')"
 ```
 
 ---
@@ -1429,7 +1427,7 @@ Expected: PASS(marker 2 条 + dispatch 既有不回归)。
 
 ```bash
 git add src/core/orchestration/dispatch-loop.js src/core/orchestration/orchestrator.js tests/core/orchestration/orchestration-pause-persist.test.js
-git commit -m "$(printf 'feat(orchestration): inject __orchestration ownership marker into worker send options (M5.1)\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>')"
+git commit -m "$(printf 'feat(orchestration): inject __orchestration ownership marker into worker send options (M5.1)')"
 ```
 
 ### Task M5.2: driveFrom / resume 暂停点双写编排 sidecar
@@ -1550,7 +1548,7 @@ Expected: PASS(新 3 条 + C5 同进程续跑不回归)。
 
 ```bash
 git add src/core/orchestration/orchestrator.js tests/core/orchestration/orchestration-pause-persist.test.js
-git commit -m "$(printf 'feat(orchestration): durable sidecar double-write on pause + consume-on-resume (M5.2)\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>')"
+git commit -m "$(printf 'feat(orchestration): durable sidecar double-write on pause + consume-on-resume (M5.2)')"
 ```
 
 ---
@@ -1783,7 +1781,7 @@ Expected: PASS(新 5 条 + 既有 recovery-service 单测不回归)。
 
 ```bash
 git add src/core/recovery/recovery-service.js tests/unit/core/recovery/recovery-service-orchestration.test.js
-git commit -m "$(printf 'feat(recovery): scan orchestration-paused + orphan-blocked policy + orch resume/cancel routing (M6)\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>')"
+git commit -m "$(printf 'feat(recovery): scan orchestration-paused + orphan-blocked policy + orch resume/cancel routing (M6)')"
 ```
 
 ---
@@ -1955,7 +1953,7 @@ Expected: PASS(路由 / 单 agent durable / C5 / 共享 store 全不回归)。
 
 ```bash
 git add src/index.js tests/core/orchestration/durable-orchestration-wiring.test.js
-git commit -m "$(printf 'feat(orchestration): wire durable orchestration recovery (persistence + resume routing + durable approve) (M7)\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>')"
+git commit -m "$(printf 'feat(orchestration): wire durable orchestration recovery (persistence + resume routing + durable approve) (M7)')"
 ```
 
 ---
@@ -2053,7 +2051,7 @@ Expected: PASS(2 tests)。若「cross-instance」失败,用 systematic-debugging
 
 ```bash
 git add tests/core/orchestration/c-durable-e2e.test.js
-git commit -m "$(printf 'test(orchestration): cross-instance durable orchestration recovery e2e + off parity (M8.1)\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>')"
+git commit -m "$(printf 'test(orchestration): cross-instance durable orchestration recovery e2e + off parity (M8.1)')"
 ```
 
 ### Task M8.2: 全量回归 + 语法闸
@@ -2126,7 +2124,7 @@ Expected: 全绿(文档改动不应影响测试;此为收口双保险)。
 
 ```bash
 git add docs/
-git commit -m "$(printf 'docs: ship V3 Phase C-Durable cross-process orchestration recovery (overview 14.5/6 + CHANGELOG + README zh/en + index)\n\nCo-Authored-By: Claude Fable 5 <noreply@anthropic.com>')"
+git commit -m "$(printf 'docs: ship V3 Phase C-Durable cross-process orchestration recovery (overview 14.5/6 + CHANGELOG + README zh/en + index)')"
 ```
 
 ---

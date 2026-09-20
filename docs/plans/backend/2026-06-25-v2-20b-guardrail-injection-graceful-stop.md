@@ -5,8 +5,7 @@
 > **状态:✅ 已完成(2026-06-25)** — 3 个任务落地,测试 531 全绿、`npm run check` 通过。
 > 提交:`aa90498`(优雅停止·loop)、`927b5b9`(优雅停止·runtime)、`055f426`(modelTimeoutMs 注入)。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans / subagent-driven-development。Steps 用 `- [ ]`。
-> 承接 [V2-20a](2026-06-24-v2-20a-runtime-cost-timeout-guardrails.md);约定(ESM、`node:test`、check 脚本、默认关闭零回归、`Co-Authored-By`)沿用 V2-20a 的 Global Constraints,不再重复。
+> 承接 [V2-20a](2026-06-24-v2-20a-runtime-cost-timeout-guardrails.md);约定(ESM、`node:test`、check 脚本、默认关闭零回归）沿用 V2-20a 的 Global Constraints,不再重复。
 
 **Goal:** (A) 把 `modelTimeoutMs` 从 kernel 注入每次模型调用(executor-loop 与 reply 快路径);(B) 成本超限从抛 `BUDGET_EXCEEDED` 改为让一个 turn **干净停止**(`status:"stopped"` + 说明),而非异常冒泡到 CLI。
 
@@ -99,7 +98,6 @@ Expected: PASS(无回归)。
 git add src/core/execution/executor-loop.js tests/unit/core/execution/executor-loop-budget.test.js
 git commit -m "feat(execution): budget overrun returns status:stopped (no throw)
 
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
 
 ---
@@ -188,7 +186,6 @@ Expected: PASS(无回归)。
 git add src/core/runtime/agent-runtime.js tests/unit/core/runtime/agent-runtime-budget.test.js
 git commit -m "feat(runtime): surface budget stop as clean turn end (status:stopped)
 
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
 
 ---
@@ -350,7 +347,6 @@ Expected: 退出码 0。
 git add src/core/execution/executor-loop.js src/deepseek/model-gateway.js src/core/runtime/agent-runtime.js src/index.js tests/unit/core/execution/executor-loop-timeout.test.js
 git commit -m "feat(runtime): inject modelTimeoutMs into model calls (loop + reply + kernel)
 
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
 
 ---

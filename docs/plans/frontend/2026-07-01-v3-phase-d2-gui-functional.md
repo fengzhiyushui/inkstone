@@ -2,7 +2,7 @@
 
 > 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
 
-> **For agentic workers:** 按 TDD bite-sized 步骤落地,每 Task 末「跑测试 + 提交」。
+> **执行说明:** 按 TDD bite-sized 步骤落地,每 Task 末「跑测试 + 提交」。
 > **纯逻辑(M1 部分/M2/M4/M5)无 GUI 集成依赖,主控内联做**;**Monaco(M3)/node-pty·xterm(M6)需装依赖 + node-pty 原生重建**,门控(本机/联网)。
 >
 > 设计 spec:[2026-07-01-v3-phase-d2-gui-functional-design.md](../../specs/frontend/2026-07-01-v3-phase-d2-gui-functional-design.md)。
@@ -20,7 +20,6 @@
 - **确定性可测**:`buildTree` / `deriveAgentCards` / `normalizeGuiPreferences` / reducer 新状态 / `pty-host`(注入 mock spawn)全 node:test;Monaco/xterm/真 pty 走 build + 门控 smoke。
 - **依赖门控 + 降级**:新依赖只进 `gui/package.json`;`node-pty` 需 `@electron/rebuild`;无 deps/未重建 → 终端优雅降级(提示不崩)。build/smoke 无 deps → `test.skip`,核心 799 全绿不受影响。
 - **离线**:Monaco worker 本地化(不走 CDN)。
-- **署名**:所有提交(含 gui src)加 `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`。
 
 ---
 

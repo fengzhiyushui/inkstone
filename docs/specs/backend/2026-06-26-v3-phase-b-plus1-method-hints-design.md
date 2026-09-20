@@ -2,7 +2,7 @@
 
 > 类型:后端设计 spec(backend)
 > 日期:2026-06-26
-> 状态:已评审,待转实施计划(writing-plans)
+> 状态:已评审,待转实施计划
 > 关联:[Phase B 语义级上下文引擎设计](2026-06-26-v3-phase-b-semantic-context-design.md) §6 · [Phase B 实施计划](../../plans/backend/2026-06-26-v3-phase-b-semantic-context.md)
 
 ---

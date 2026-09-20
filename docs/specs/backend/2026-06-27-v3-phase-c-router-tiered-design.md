@@ -2,7 +2,7 @@
 
 > 类型:后端设计 spec(backend)
 > 日期:2026-06-27
-> 状态:已评审,待转实施计划(writing-plans)
+> 状态:已评审,待转实施计划
 > 关联:[C1+C2 多智能体编排](2026-06-27-v3-phase-c1-c2-orchestration-design.md) · [V3 路线图](../architecture/2026-06-24-v3-roadmap-design.md) §7.3
 
 ---
@@ -201,7 +201,7 @@ config.orchestration.router = {
 
 ---
 
-## 11. 里程碑(供 writing-plans 拆)
+## 11. 里程碑(供拆实施计划)
 
 ```text
 M1  router-scoring.js(normalizeFileToken + extractFeatures + computeScore + classifyBand + 强/弱集)+ 纯单测
