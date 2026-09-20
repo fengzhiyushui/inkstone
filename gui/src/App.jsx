@@ -3,7 +3,8 @@ import { useWorkbench } from "./hooks/useWorkbench.js";
 import { useKernel } from "./hooks/useKernel.js";
 import { makeT } from "./i18n/strings.js";
 import { trafficTone, formatLatency } from "./state/workbench-state.js";
-import { themeLabel, GUI_THEMES } from "./state/themes.js";
+import { themeLabel, isLightTheme } from "./state/themes.js";
+import { nextInGroup, otherModeTheme } from "./state/theme-hub.js";
 import TitleBar from "./components/TitleBar.jsx";
 import Rail from "./components/v4/Rail.jsx";
 import HomeView from "./components/v4/HomeView.jsx";
@@ -22,6 +23,11 @@ export default function App() {
 
   useEffect(() => { document.documentElement.setAttribute("theme", state.theme); }, [state.theme]);
   useEffect(() => { document.documentElement.lang = state.language; }, [state.language]);
+  // v1.8 γ:玻璃态只给浮层。冒烟构建经 ?smoke=1 强制关闭,保证截图确定性。
+  useEffect(() => {
+    const smoke = new URLSearchParams(window.location.search).get("smoke") === "1";
+    document.documentElement.setAttribute("glass", state.glass && !smoke ? "on" : "off");
+  }, [state.glass]);
   useEffect(() => { kernel.refreshChanges(); }, [state.changesTick, kernel]);
   useEffect(() => { kernel.loadSessions().catch(() => {}); }, [state.currentProject, kernel]);
 
@@ -83,17 +89,16 @@ export default function App() {
   }), [dispatch, kernel]);
 
   const cycleTheme = useCallback(() => {
-    const ids = GUI_THEMES.map((x) => x.id);
-    const next = ids[(ids.indexOf(state.theme) + 1) % ids.length];
+    const next = nextInGroup(state.theme);
     dispatch({ type: "theme_changed", theme: next });
-    kernel.setPreferences({ theme: next });
+    kernel.setPreferences({ theme: next, ...(isLightTheme(next) ? { lastLight: next } : { lastDark: next }) });
   }, [state.theme, dispatch, kernel]);
 
   const toggleTheme = useCallback(() => {
-    const next = state.theme === "sumi" ? "latte" : "sumi";
+    const next = otherModeTheme(state);
     dispatch({ type: "theme_changed", theme: next });
-    kernel.setPreferences({ theme: next });
-  }, [state.theme, dispatch, kernel]);
+    kernel.setPreferences({ theme: next, ...(isLightTheme(next) ? { lastLight: next } : { lastDark: next }) });
+  }, [state, dispatch, kernel]);
 
   const toggleLang = useCallback(() => {
     const next = state.language === "zh" ? "en" : "zh";

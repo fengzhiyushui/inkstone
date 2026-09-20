@@ -102,7 +102,9 @@ async function createWindow() {
   if (devUrl) {
     win.loadURL(devUrl);
   } else if (fs.existsSync(builtIndex)) {
-    win.loadFile(builtIndex);
+    // 冒烟:带上 ?smoke=1 让渲染层强制关玻璃态,截图/断言确定性。
+    if (process.env.DEEPSEEK_CODE_GUI_SMOKE === "1") win.loadFile(builtIndex, { query: { smoke: "1" } });
+    else win.loadFile(builtIndex);
   } else {
     const msg = "未找到 renderer-dist 构建产物。请先运行 npm run build:renderer 进行构建。";
     console.error(msg);

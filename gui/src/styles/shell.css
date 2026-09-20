@@ -690,7 +690,7 @@
   position: fixed; inset: 0; z-index: 60;
   display: flex; align-items: center; justify-content: center;
   background: color-mix(in srgb, var(--bg-base) 72%, transparent);
-  backdrop-filter: blur(2px);
+  backdrop-filter: blur(6px);
 }
 .sn-card {
   width: min(560px, calc(100vw - 48px));
@@ -719,5 +719,62 @@
   border: 1px solid var(--border-strong); background: var(--bg-element); color: var(--text);
 }
 .sn-refuse { border-color: var(--err); color: var(--err); font-weight: 600; }
+
+/* ── v1.8 γ · P1 ──
+   壳层视觉层:全部走 tokens / color-mix,零硬编码色,10 主题通吃。
+   玻璃态只在 [glass="on"] 下生效(冒烟经 ?smoke=1 强制 off)。 */
+
+/* 侧栏:品牌标描边 + 辉光;功能区选中态带描边;会话时间戳常显淡色 */
+.rail-brand .lg { border: 1px solid var(--border-strong); box-shadow: 0 0 0 3px var(--accent-glow); }
+.fn-item.on { background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); }
+.r-item .xx { opacity: .7; }
+/* 搜索框:图标与输入同行(输入框类名与尺寸不变) */
+.rail-search { display: flex; align-items: center; gap: 6px; }
+.rail-search > svg { color: var(--text-faint); flex: none; }
+
+/* 新建菜单:玻璃底 + 令牌化投影(覆盖 :73 的 rgba(0,0,0,.32)) */
+.new-menu {
+  background: var(--bg-glass);
+  box-shadow: 0 10px 32px color-mix(in srgb, var(--bg-inset) 60%, transparent);
+}
+[glass="on"] .new-menu { backdrop-filter: blur(12px); }
+
+/* composer:静息投影令牌化(覆盖 :365 的 rgba(0,0,0,.08));聚焦时柔光铺开 */
+.cz-in { box-shadow: 0 4px 24px color-mix(in srgb, var(--bg-inset) 30%, transparent); }
+.cz-in:focus-within { box-shadow: 0 20px 50px -10px var(--accent-glow); }
+/* 玻璃态只给会话输入框(ChatView 根为 section.view;首页 .home 保持不透明) */
+[glass="on"] .view .cz-in { background: var(--bg-glass); backdrop-filter: blur(10px); }
+
+/* 滚动条滑块:半透明,明暗两端都可见(覆盖 :650,不夺 :654 的 hover 态) */
+::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text-faint) 55%, transparent); }
+
+/* 性能/无障碍:要求降低透明度时一律去掉模糊 */
+@media (prefers-reduced-transparency: reduce) {
+  [glass="on"] .new-menu, [glass="on"] .view .cz-in, .sn-backdrop, .modal-backdrop { backdrop-filter: none !important; }
+}
+
+/* 通用模态壳(复制 .sn-backdrop/.sn-card 布局,去掉 --err 描边),供后续复用 */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--bg-base) 72%, transparent);
+  backdrop-filter: blur(6px);
+}
+.modal-card {
+  position: relative;
+  width: min(560px, calc(100vw - 48px));
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  padding: 18px 20px;
+  box-shadow: 0 16px 48px color-mix(in srgb, var(--bg-inset) 55%, transparent);
+}
+.modal-close {
+  position: absolute; top: 10px; right: 10px;
+  display: grid; place-items: center; width: 26px; height: 26px;
+  border-radius: var(--r-6); color: var(--text-mut);
+  background: none; border: 1px solid transparent; cursor: pointer;
+}
+.modal-close:hover { background: var(--bg-element); color: var(--text); }
 .sn-refuse:hover { background: color-mix(in srgb, var(--err) 12%, transparent); }
 .sn-allow:hover { background: var(--bg-element); }

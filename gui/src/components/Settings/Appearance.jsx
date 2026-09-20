@@ -1,12 +1,12 @@
 import React from "react";
 import { Check } from "lucide-react";
-import { GUI_THEMES } from "../../state/themes.js";
+import { GUI_THEMES, isLightTheme } from "../../state/themes.js";
 
 // 设置 › 外观:10 套主题网格(卡片自带 theme 属性,预览用的是该主题的真实 token 色)。
 export default function Appearance({ t, state, kernel, dispatch }) {
   const setTheme = (id) => {
     dispatch({ type: "theme_changed", theme: id });
-    kernel.setPreferences({ theme: id });
+    kernel.setPreferences({ theme: id, ...(isLightTheme(id) ? { lastLight: id } : { lastDark: id }) });
   };
   return (
     <div className="f-group">

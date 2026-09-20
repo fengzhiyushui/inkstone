@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
   Home, FolderKanban, GitCompare, Network, Puzzle, Plus, ChevronDown, ChevronRight,
-  FolderPlus, MessageSquare, Diamond, Settings, PanelLeftClose, PanelLeftOpen, LifeBuoy
+  FolderPlus, MessageSquare, Diamond, Settings, PanelLeftClose, PanelLeftOpen, LifeBuoy, Search
 } from "lucide-react";
 import { filterProjectTree, groupSessionsByDate, sessionStamp } from "../../state/session-groups.js";
 
@@ -103,6 +103,7 @@ export default function Rail({
       </div>
 
       <div className="rail-search">
+        <Search size={12} aria-hidden="true" />
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("rail.searchPlaceholder")} />
       </div>
 
