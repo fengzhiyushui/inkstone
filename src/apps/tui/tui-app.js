@@ -521,9 +521,11 @@ export function createTuiApp({
       apply({ type: "lang", lang: prefs.lang });
       t = makeT(prefs.lang);
     }
-    if (prefs.theme && tuiThemeList().some((x) => x.id === prefs.theme)) {
-      setTuiTheme(prefs.theme);
-      apply({ type: "theme_set", theme: prefs.theme });
+    const TUI_LEGACY = { dawn: "lotus", mocha: "sumi", moon: "slate", forest: "ash", clay: "vesper", rose: "sumi" };
+    const wanted = TUI_LEGACY[prefs.theme] || prefs.theme;
+    if (wanted && tuiThemeList().some((x) => x.id === wanted)) {
+      setTuiTheme(wanted);
+      apply({ type: "theme_set", theme: wanted });
     }
     if (SHELLS.includes(prefs.shell)) apply({ type: "shell_set", shell: prefs.shell });
     if (!kernel) {

@@ -315,6 +315,9 @@ test("gui preferences normalize invalid values to safe defaults", () => {
   }), {
     schema: 1,
     theme: "sumi",
+    lastDark: "sumi",
+    lastLight: "latte",
+    glass: true,
     language: "zh",
     railMode: "chat",
     contextCollapsed: false,
@@ -336,6 +339,9 @@ test("gui preferences load missing corrupt and save sanitized values", async () 
   assert.deepEqual(await loadGuiPreferences(root), {
     schema: 1,
     theme: "latte",
+    lastDark: "sumi",
+    lastLight: "latte",
+    glass: true,
     language: "zh",
     railMode: "branches",
     contextCollapsed: true,

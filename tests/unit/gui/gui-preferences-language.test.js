@@ -24,3 +24,10 @@ test("normalizeGuiPreferences persists railCollapsed (default false)", () => {
   assert.equal(normalizeGuiPreferences({ railCollapsed: true }).railCollapsed, true);
   assert.equal(normalizeGuiPreferences({ railCollapsed: "yes" }).railCollapsed, false);
 });
+
+test("normalizeGuiPreferences resets cross-group and non-boolean theme memory to defaults", () => {
+  const p = normalizeGuiPreferences({ lastDark: "snow", lastLight: "sumi", glass: "yes" });
+  assert.equal(p.lastDark, "sumi");
+  assert.equal(p.lastLight, "latte");
+  assert.equal(p.glass, true);
+});

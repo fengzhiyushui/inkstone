@@ -96,13 +96,13 @@ test("message activity and presentation actions update workbench state", () => {
   current = state.applyWorkbenchAction(current, { type: "rail_mode_changed", mode: "branches" });
   current = state.applyWorkbenchAction(current, { type: "context_collapsed_changed", collapsed: true });
   current = state.applyWorkbenchAction(current, { type: "inspector_mode_changed", mode: "checkpoints" });
-  current = state.applyWorkbenchAction(current, { type: "theme_changed", theme: "mocha" });
+  current = state.applyWorkbenchAction(current, { type: "theme_changed", theme: "slate" });
 
   assert.equal(current.emptyStateVisible, false);
   assert.equal(current.railMode, "branches");
   assert.equal(current.contextCollapsed, true);
   assert.equal(current.inspectorMode, "checkpoints");
-  assert.equal(current.theme, "mocha");
+  assert.equal(current.theme, "slate");
   assert.equal(state.statusSummary(current).runtime, "idle");
   assert.equal(state.statusSummary(current).branch, "br_main");
 });
@@ -143,7 +143,7 @@ test("invalid presentation choices fall back to safe defaults", () => {
   assert.equal(current.inspectorMode, "activity");
   assert.equal(current.theme, "sumi");
   assert.equal(state.themeLabel("sumi"), "墨");
-  assert.equal(state.themeLabel("rose"), "黛");
+  assert.equal(state.themeLabel("lotus"), "荷");
   assert.equal(state.themeLabel("nonsense"), "墨");
 });
 
@@ -164,6 +164,16 @@ test("preferences_loaded hydrates only safe presentation fields", () => {
   assert.equal(current.contextCollapsed, true);
   assert.equal(current.railCollapsed, true);
   assert.deepEqual(current.messages, []);
+});
+
+test("preferences_loaded hydrates lastDark / lastLight / glass", () => {
+  const current = state.applyWorkbenchAction(state.createInitialState(), {
+    type: "preferences_loaded",
+    preferences: { lastDark: "ash", lastLight: "sand", glass: false }
+  });
+  assert.equal(current.lastDark, "ash");
+  assert.equal(current.lastLight, "sand");
+  assert.equal(current.glass, false);
 });
 
 test("rail_collapsed_changed toggles the sidebar and persists via preferences round-trip", () => {

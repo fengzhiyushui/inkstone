@@ -89,6 +89,9 @@ function maskConfig(cfg) {
 const GUI_PREFERENCE_DEFAULTS = Object.freeze({
   schema: 1,
   theme: "sumi",
+  lastDark: "sumi",
+  lastLight: "latte",
+  glass: true,
   language: "zh",
   railMode: "chat",
   contextCollapsed: false,
@@ -145,14 +148,19 @@ function guiPreferencePath(projectRoot) {
   return path.join(projectRoot, ".deepseek-code", "gui-preferences.json");
 }
 
-const GUI_THEMES = new Set(["paper", "dawn", "latte", "sumi", "mocha", "moon", "nord", "forest", "clay", "rose"]); // v1.4.0 token 主题
-const LEGACY_GUI_THEME = { day: "latte", night: "sumi" }; // 旧 day/night → token 主题
+const GUI_THEMES = new Set(["sumi", "slate", "vesper", "nord", "ash", "snow", "sand", "lotus", "latte", "paper"]); // v1.8.0 token 主题
+const GUI_DARK = new Set(["sumi", "slate", "vesper", "nord", "ash"]);
+const GUI_LIGHT = new Set(["snow", "sand", "lotus", "latte", "paper"]);
+const LEGACY_GUI_THEME = { day: "latte", night: "sumi", dawn: "lotus", mocha: "sumi", moon: "slate", forest: "ash", clay: "vesper", rose: "sumi" }; // 旧 id → token 主题
 
 function normalizeGuiPreferences(value = {}) {
   const input = value && typeof value === "object" ? value : {};
   return {
     schema: 1,
     theme: GUI_THEMES.has(input.theme) ? input.theme : LEGACY_GUI_THEME[input.theme] || "sumi",
+    lastDark: GUI_DARK.has(input.lastDark) ? input.lastDark : "sumi",
+    lastLight: GUI_LIGHT.has(input.lastLight) ? input.lastLight : "latte",
+    glass: typeof input.glass === "boolean" ? input.glass : true,
     language: input.language === "en" ? "en" : "zh",
     railMode: GUI_RAIL_MODES.has(input.railMode) ? input.railMode : "chat",
     contextCollapsed: typeof input.contextCollapsed === "boolean" ? input.contextCollapsed : false,

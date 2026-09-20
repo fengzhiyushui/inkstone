@@ -17,6 +17,6 @@ test("themes: dark and unknown themes are not light", () => {
 
 test("themes: themeLabel returns display name with sumi fallback", () => {
   assert.equal(themeLabel("paper"), "宣");
-  assert.equal(themeLabel("rose"), "黛");
+  assert.equal(themeLabel("vesper"), "烬");
   assert.equal(themeLabel("missing"), "墨");
 });

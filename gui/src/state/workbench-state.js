@@ -7,8 +7,10 @@ var RAIL_MODES = ["chat", "context", "branches", "timeline", "settings"];
 var VIEWS = ["home", "chat", "projects", "changes", "mcp", "plugins", "settings"]; // v1.4.0 七视图
 var RAIL_VIEWS = ["explorer", "search", "scm", "run", "ext", "agent", "settings"];
 var INSPECTOR_MODES = ["activity", "approval", "rewind", "details", "checkpoints", "branch"];
-var THEMES = ["paper", "dawn", "latte", "sumi", "mocha", "moon", "nord", "forest", "clay", "rose"]; // v1.4.0 token 主题(10)
-var LEGACY_THEME_MAP = { night: "sumi", day: "latte" }; // 旧 day/night → token 主题
+var THEMES = ["sumi", "slate", "vesper", "nord", "ash", "snow", "sand", "lotus", "latte", "paper"]; // v1.8.0 token 主题(10)
+var LEGACY_THEME_MAP = { night: "sumi", day: "latte", dawn: "lotus", mocha: "sumi", moon: "slate", forest: "ash", clay: "vesper", rose: "sumi" }; // 旧 id → token 主题
+var LIGHT_IDS = ["snow", "sand", "lotus", "latte", "paper"];
+function isLightId(id) { return LIGHT_IDS.indexOf(id) >= 0; }
 var LANGUAGES = ["zh", "en"];
 
 function normalizeTheme(value, fallback) {
@@ -40,6 +42,9 @@ export function createInitialState() {
     railCollapsed: false,
     inspectorMode: "activity",
     theme: "sumi",
+    lastDark: "sumi",
+    lastLight: "latte",
+    glass: true,
     language: "zh",
     statusDisplay: normalizeStatusDisplay(null),
     view: "home", // v1.4.0 七视图路由
@@ -190,8 +195,13 @@ export function applyWorkbenchAction(state, action) {
   }
   if (action.type === "preferences_loaded") {
     var prefs = action.preferences || {};
+    var lastDark = normalizeTheme(prefs.lastDark, current.lastDark);
+    var lastLight = normalizeTheme(prefs.lastLight, current.lastLight);
     return copy(current, {
       theme: normalizeTheme(prefs.theme, current.theme),
+      lastDark: isLightId(lastDark) ? current.lastDark : lastDark,
+      lastLight: isLightId(lastLight) ? lastLight : current.lastLight,
+      glass: typeof prefs.glass === "boolean" ? prefs.glass : current.glass,
       language: normalize(prefs.language, LANGUAGES, current.language),
       railMode: normalize(prefs.railMode, RAIL_MODES, current.railMode),
       statusDisplay: normalizeStatusDisplay(prefs.statusDisplay, current.statusDisplay),
@@ -206,7 +216,11 @@ export function applyWorkbenchAction(state, action) {
     return copy(current, { inspectorMode: normalize(action.mode || action.tab, INSPECTOR_MODES, "activity") });
   }
   if (action.type === "theme_changed") {
-    return copy(current, { theme: normalizeTheme(action.theme, "sumi") });
+    var next = normalizeTheme(action.theme, "sumi");
+    return copy(current, isLightId(next) ? { theme: next, lastLight: next } : { theme: next, lastDark: next });
+  }
+  if (action.type === "glass_changed") {
+    return copy(current, { glass: Boolean(action.glass) });
   }
   if (action.type === "status_display_changed") {
     return copy(current, { statusDisplay: normalizeStatusDisplay(action.display, current.statusDisplay) });
@@ -389,7 +403,7 @@ export function trafficLabel(tone, state) {
   return "Ready";
 }
 
-const THEME_LABELS = { paper: "宣", dawn: "曦", latte: "瓷", sumi: "墨", mocha: "檀", moon: "霄", nord: "峡", forest: "苔", clay: "陶", rose: "黛" };
+const THEME_LABELS = { sumi: "墨", slate: "玄", vesper: "烬", nord: "峡", ash: "灰", snow: "霜", sand: "沙", lotus: "荷", latte: "瓷", paper: "宣" };
 
 export function themeLabel(theme) {
   return THEME_LABELS[theme] || "墨";

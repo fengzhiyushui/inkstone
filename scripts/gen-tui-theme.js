@@ -9,9 +9,9 @@ const tokensPath = join(root, "gui", "src", "styles", "tokens.css");
 const outPath = join(root, "src", "apps", "tui", "theme-palette.js");
 
 // 主题 id → 中文名(与 tokens.css 注释一致)
-const NAMES = {
-  paper: "宣", dawn: "曦", latte: "瓷", sumi: "墨", mocha: "檀",
-  moon: "霄", nord: "峡", forest: "苔", clay: "陶", rose: "黛",
+export const NAMES = {
+  sumi: "墨", slate: "玄", vesper: "烬", nord: "峡", ash: "灰",
+  snow: "霜", sand: "沙", lotus: "荷", latte: "瓷", paper: "宣",
 };
 
 // 需要暴露给 TUI 的槽位(tokens.css 变量名 → palette 键)

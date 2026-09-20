@@ -1,12 +1,13 @@
 import React from "react";
 import { DiffEditor } from "@monaco-editor/react";
 import { X } from "lucide-react";
+import { isLightTheme } from "../state/themes.js";
 
 // Side-by-side original ↔ modified view for a GUI edit (before/after save).
 // v1.4.6 还原:关闭按钮改 lucide X(零字形),Monaco 主题按 10 主题的明暗分组映射。
-const LIGHT = new Set(["paper", "dawn", "latte"]);
+// v1.8.0:明暗判定统一走 themes.js 的 isLightTheme,不再本地维护 LIGHT 集合。
 export function monacoThemeFor(theme) {
-  return LIGHT.has(theme) ? "vs" : "vs-dark";
+  return isLightTheme(theme) ? "vs" : "vs-dark";
 }
 
 export default function DiffView({ theme, language, original, modified, onClose, t, title, actions }) {
