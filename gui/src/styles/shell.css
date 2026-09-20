@@ -776,5 +776,32 @@
   background: none; border: 1px solid transparent; cursor: pointer;
 }
 .modal-close:hover { background: var(--bg-element); color: var(--text); }
+
+/* ── v1.8 γ · P2 ── */
+
+/* 卡片两段式:头是可聚焦按钮(等宽字阶),体用 code 底 */
+.ev-h {
+  font-family: var(--font-mono); font-size: var(--fs-12);
+  display: flex; gap: 8px; align-items: center; width: 100%; text-align: left;
+}
+.ev-b { background: var(--code-bg); border-top: 1px solid var(--border); }
+/* diff 增删行底色走 tokens(不硬编码 #10b981/#ef4444 —— 那在明主题上过不了 3:1) */
+.df .ln.add { background: var(--ok-bg); }
+.df .ln.del { background: var(--err-bg); }
+
+/* 审批卡按决策染色:默认 warn → approve 绿 / deny 红 */
+.ev.ap { border-color: var(--warn); background: var(--warn-bg); }
+.ev.ap[data-decision="approve"] { background: var(--ok-bg); border-color: var(--ok); }
+.ev.ap[data-decision="deny"] { background: var(--err-bg); border-color: var(--err); }
+
+/* 首页:问候渐变改 accent→info(比 --ok 稳);快捷卡悬停辉光走 --accent-glow(覆盖 :665-668) */
+.home .hello .hello-txt { background: linear-gradient(92deg, var(--accent) 10%, var(--info) 90%); }
+.q-card:hover { box-shadow: 0 8px 22px var(--accent-glow); }
+
+/* 主题细节(选中卡下方):运行时实测色板 */
+.th-detail {
+  margin-top: 10px; padding: 9px 11px;
+  border: 1px solid var(--border); border-radius: var(--r-8); background: var(--bg-panel);
+}
 .sn-refuse:hover { background: color-mix(in srgb, var(--err) 12%, transparent); }
 .sn-allow:hover { background: var(--bg-element); }

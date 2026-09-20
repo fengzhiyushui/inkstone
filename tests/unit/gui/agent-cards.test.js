@@ -95,3 +95,22 @@ test("v1.4.6:编排完成产出编排卡(轮次/完成/失败)", () => {
   assert.equal(orch.completed, 2);
   assert.equal(orch.failed, 0);
 });
+
+test("v1.8.0:工具卡回填真实耗时", () => {
+  const cards = deriveAgentCards([
+    { type: "tool:call", id: "t1", tool: "grep" },
+    { type: "tool:result", id: "t1", status: "ok", result: { status: "ok", durationMs: 38 } }
+  ]);
+  assert.equal(cards[0].durationMs, 38);
+});
+
+test("v1.8.0:推理摘要卡受门控(有 purpose/reasoningTokens 才出)", () => {
+  const withThought = deriveAgentCards([
+    { type: "model:response", purpose: "plan", model: "deepseek-v4-pro",
+      usage: { completion_tokens: 120, completion_tokens_details: { reasoning_tokens: 80 } } }
+  ]);
+  assert.equal(withThought.length, 1);
+  assert.equal(withThought[0].kind, "thought");
+  assert.equal(withThought[0].reasoningTokens, 80);
+  assert.equal(deriveAgentCards([{ type: "model:response" }]).length, 0);
+});

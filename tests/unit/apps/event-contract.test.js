@@ -102,3 +102,19 @@ test("file:diff_preview carries changeId(null) and normalized files for gui card
   assert.equal(d.fields.changeId, null);
   assert.equal(d.fields.files[0].path, "src/x.js");
 });
+
+test("tool:result carries real durationMs (null when absent)", () => {
+  assert.equal(describeEvent({ type: "tool:result", id: "c1", result: { status: "ok", durationMs: 38 } }).fields.durationMs, 38);
+  assert.equal(describeEvent({ type: "tool:result", id: "c1", result: { status: "ok" } }).fields.durationMs, null);
+});
+
+test("model:response maps to a quiet thought descriptor with usage", () => {
+  const d = describeEvent({
+    type: "model:response", purpose: "plan", model: "deepseek-v4-pro",
+    usage: { completion_tokens: 120, completion_tokens_details: { reasoning_tokens: 80 } }
+  });
+  assert.equal(d.kind, "thought");
+  assert.equal(d.quiet, true);
+  assert.equal(d.fields.reasoningTokens, 80);
+  assert.equal(d.fields.purpose, "plan");
+});

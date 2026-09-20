@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import {
   ChevronDown, ChevronRight, Wrench, FileDiff, TriangleAlert, ListChecks,
-  Workflow, Check, CircleCheck, CircleX, Zap, GitCompare, Settings, Diamond
+  Workflow, Check, CircleCheck, CircleX, Zap, GitCompare, Settings, Diamond, Sparkles
 } from "lucide-react";
 import { deriveAgentCards } from "../../state/agent-cards.js";
 import Composer from "./Composer.jsx";
@@ -14,10 +14,10 @@ function Collapsible({ defaultClosed = false, head, children, className = "" }) 
   const collapsible = Boolean(children);
   return (
     <div className={`ev ${closed ? "closed" : ""} ${className}`}>
-      <div className="ev-h" onClick={() => collapsible && setClosed(!closed)}>
+      <button type="button" className="ev-h" aria-expanded={!closed} onClick={() => collapsible && setClosed(!closed)}>
         {collapsible && <span className="car">{closed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}</span>}
         {head}
-      </div>
+      </button>
       {children}
     </div>
   );
@@ -62,6 +62,7 @@ function ToolCard({ card, t }) {
         <span className="mini">{card.tool}</span>
         {card.argHint && <span className="arg">{card.argHint}</span>}
         <span className="r">
+          {card.durationMs != null && <span className="mini">{t("ev.tool.duration").replace("{n}", card.durationMs)}</span>}
           <span className={`mini ${tone}`}>
             {card.status === "ok" ? <CircleCheck size={11} /> : card.status === "error" ? <CircleX size={11} /> : <span className="spin" style={{ width: 9, height: 9, borderWidth: 1.5 }} />}
             {card.status === "running" ? t("ev.running") : card.status === "ok" ? t("ev.toolOk") : t("ev.error")}
@@ -114,7 +115,7 @@ function DiffCard({ card, t, onOpen }) {
 
 function ApprovalCard({ card, t, onApprove }) {
   return (
-    <div className="ev ap">
+    <div className="ev ap" data-decision={card.decision || undefined}>
       <div className="ev-h">
         <TriangleAlert size={13} />
         <span className="ttl">{t("ev.approval")}</span>
@@ -172,6 +173,22 @@ function TestCard({ card, t }) {
   );
 }
 
+// v1.8.0 推理摘要卡:默认收起;正文由网关隐藏,只展示用途与用量。
+function ThoughtCard({ card, t }) {
+  const meta = [card.purpose, card.reasoningTokens != null ? `${card.reasoningTokens} tokens` : null].filter(Boolean).join(" · ");
+  return (
+    <Collapsible defaultClosed head={
+      <>
+        <Sparkles size={13} />
+        <span className="ttl">{t("ev.thought")}</span>
+        {meta && <span>· {meta}</span>}
+      </>
+    }>
+      <div className="ev-b"><span className="mini">{t("ev.thought.hidden")}</span></div>
+    </Collapsible>
+  );
+}
+
 export default function ChatView({ t, state, actions, kernel, statusLine, setView }) {
   const [draft, setDraft] = useState("");
   const cards = useMemo(() => deriveAgentCards(state.activity), [state.activity]);
@@ -186,6 +203,7 @@ export default function ChatView({ t, state, actions, kernel, statusLine, setVie
       case "approval": return <ApprovalCard key={i} card={card} t={t} onApprove={actions.approve} />;
       case "orchestration": return <OrchCard key={i} card={card} t={t} />;
       case "test": return <TestCard key={i} card={card} t={t} />;
+      case "thought": return <ThoughtCard key={i} card={card} t={t} />;
       default: return null;
     }
   };

@@ -55,7 +55,15 @@ export function deriveAgentCards(activity) {
       cards.push(card);
     } else if (type === "tool:result") {
       const card = toolIndex.get(e.id);
-      if (card) card.status = f.status === "error" ? "error" : "ok";
+      if (card) {
+        card.status = f.status === "error" ? "error" : "ok";
+        card.durationMs = f.durationMs; // v1.8.0 真实耗时(内核 executor 已带)
+      }
+    } else if (type === "model:response") {
+      // v1.8.0 推理摘要卡 —— 门控:只有带 purpose 或真实 reasoning 用量才出卡。
+      if (f.reasoningTokens > 0 || f.purpose) {
+        cards.push({ kind: "thought", purpose: f.purpose, model: f.model, reasoningTokens: f.reasoningTokens, completionTokens: f.completionTokens });
+      }
     } else if (type === "file:diff_applied" || type === "file:diff_preview") {
       const files = (f.files || []).filter((x) => x && x.path);
       const paths = files.map((x) => x.path);

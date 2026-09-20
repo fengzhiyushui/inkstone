@@ -3,17 +3,9 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
-
-export function relLum(hex) {
-  const v = hex.replace("#", "");
-  const c = [0, 2, 4].map((i) => parseInt(v.slice(i, i + 2), 16) / 255)
-    .map((x) => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
-  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
-}
-export function contrastRatio(a, b) {
-  const [hi, lo] = [relLum(a), relLum(b)].sort((p, q) => q - p);
-  return (hi + 0.05) / (lo + 0.05);
-}
+// 亮度/对比度实现单一来源:与 GUI ThemeHub 的运行时实测共用(避免把本脚本拉进 Vite 构建)。
+import { relLum, contrastRatio } from "../gui/src/state/contrast.js";
+export { relLum, contrastRatio };
 // 11 对:[名, 前景槽, 背景槽, min, max]
 export const GATE = [
   ["text/bg-base", "text", "bg-base", 7, 19.5],

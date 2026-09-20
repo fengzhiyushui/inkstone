@@ -56,6 +56,17 @@ export function describeEvent(event) {
   const type = event.type;
   const src = type;
 
+  // v1.8.0 推理摘要卡:model:response 仍为 quiet(两端静默语义不变),但给出可展示的用量描述符。
+  if (type === "model:response") {
+    return d("thought", src, "info", true, {
+      purpose: str(event.purpose),
+      model: str(event.model),
+      channel: str(event.channel),
+      toolCallCount: num(event.tool_call_count),
+      completionTokens: num(event.usage?.completion_tokens),
+      reasoningTokens: num(event.usage?.completion_tokens_details?.reasoning_tokens)
+    });
+  }
   if (NOISY.has(type)) return d("other", src, "info", true, {});
   if (type === "context:semantic_degraded") return d("context-degraded", src, "warn", false, { reason: str(event.reason) });
   if (type.startsWith("context:")) return d("context", src, "info", true, {});
@@ -67,7 +78,7 @@ export function describeEvent(event) {
   if (type === "tool:call") return d("tool-call", src, "info", false, { name: toolName(event), argHint: argHint(event) });
   if (type === "tool:result") {
     const status = str(event.result?.status) || str(event.status);
-    return d("tool-result", src, status === "ok" ? "success" : "warn", false, { status });
+    return d("tool-result", src, status === "ok" ? "success" : "warn", false, { status, durationMs: num(event.result?.durationMs) });
   }
   if (type === "permission:decision") return d("permission", src, "info", false, { decision: str(event.permission?.decision) || str(event.decision) });
   if (type === "approval:requested") return d("approval", src, "warn", false, { id: str(event.approval?.id), summary: str(event.approval?.summary) });
