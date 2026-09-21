@@ -3,7 +3,7 @@ import { useWorkbench } from "./hooks/useWorkbench.js";
 import { useKernel } from "./hooks/useKernel.js";
 import { makeT } from "./i18n/strings.js";
 import { trafficTone, formatLatency } from "./state/workbench-state.js";
-import { themeLabel, isLightTheme } from "./state/themes.js";
+import { themeLabel, isLightTheme, isDarkTheme } from "./state/themes.js";
 import { nextInGroup, otherModeTheme } from "./state/theme-hub.js";
 import TitleBar from "./components/TitleBar.jsx";
 import AppFrame from "./components/v4/AppFrame.jsx";
@@ -22,7 +22,10 @@ export default function App() {
   const t = makeT(state.language);
   const view = state.view;
 
-  useEffect(() => { document.documentElement.setAttribute("theme", state.theme); }, [state.theme]);
+  useEffect(() => {
+    document.documentElement.setAttribute("theme", state.theme);
+    document.documentElement.toggleAttribute("data-dark", isDarkTheme(state.theme));
+  }, [state.theme]);
   useEffect(() => { document.documentElement.lang = state.language; }, [state.language]);
   // v1.8 γ:玻璃态只给浮层。冒烟构建经 ?smoke=1 强制关闭,保证截图确定性。
   useEffect(() => {

@@ -1,10 +1,9 @@
-/* Inkstone v1.8.0 设计系统 — 单一 token 源,10 主题四段带(暗 3 · 柔暗 2 · 柔明 2 · 明 3)
-   块顺序 = 设置›外观 UI 顺序 = TUI /theme 轮换顺序(从深到浅连续过渡)。
-   对比度闸门 11 对 × 10 = 110 项由 scripts/check-theme-contrast.mjs 常驻单测守护(v1.4 §3.2 + 描边 ≥1.5)。
-   保留(色值不动):sumi Kanagawa Wave · nord Nord · paper Flexoki Light · latte Catppuccin Latte。
-   新增:slate Tokyo Night Storm · vesper Vesper(底提亮至 L≥25)· ash Zenburn · snow Nord Snow Storm ·
-        sand Gruvbox Light Soft · lotus Kanagawa Lotus。每处偏离官方值见块内注释。
-   退役 6 套(dawn/mocha/moon/forest/clay/rose)→ 迁移表见 workbench-state.js LEGACY_THEME_MAP。 */
+/* Inkstone v1.8.1 设计系统 — 结构槽 C 变体:明/暗两档中性蓝灰阶
+   (参照值取自设计参照 design-platform.css 第 53–71 / 157–177 / 254–274 / 299–341 行;
+    只搬设计事实数值,零引用外部代码)。
+   10 主题 id 保留,各自只定义 8 个强调/语义槽;结构槽同 group 逐字节相同。
+   闸门 54 项(structure 2 group×7 + accent 10×4)由 check-theme-contrast.mjs 常驻单测守护。
+   块顺序 = 设置›外观 UI 顺序 = TUI /theme 轮换顺序。 */
 :root {
   --font-ui: -apple-system, "Segoe UI", system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-mono: "Cascadia Code", "SF Mono", Consolas, ui-monospace, monospace;
@@ -13,104 +12,114 @@
   --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px;
 }
 
-/* 4 · 墨 sumi — Kanagawa Wave(rebelot/kanagawa.nvim,取意浮世绘墨色,低饱和最护眼,默认) */
+/* ── 暗组结构槽(sumi slate vesper nord ash)—— C 变体 ──
+   bg-base #151517 · bg-panel #1b1b1c · bg-element #2c2c2e · bg-inset #1b1b1c
+   text #f9fafb · text-mut #cfd3d6 · text-faint #adb2b8
+   border #353638 · border-strong #616266 · code-bg #1b1b1c */
+
+/* 4 · 墨 sumi — 默认深色;品牌蓝 accent */
 [theme="sumi"] {
-  --bg-base: #1f1f28; --bg-panel: #2a2a37; --bg-element: #363646; --bg-inset: #16161d;
-  --text: #dcd7ba; --text-mut: #a8a28c; --text-faint: #727169;
-  --border: #2a2a37; --border-strong: #44445a;
-  --accent: #7e9cd8; --accent-hover: #93aee3; --accent-soft: #2c3348; --accent-text: #1f1f28;
-  --ok: #98bb6c; --warn: #e6c384; --err: #e46876; --info: #7fb4ca;
-  --code-bg: #1a1a22;
+  --bg-base: #151517; --bg-panel: #1b1b1c; --bg-element: #2c2c2e; --bg-inset: #1b1b1c;
+  --text: #f9fafb; --text-mut: #cfd3d6; --text-faint: #adb2b8;
+  --border: #353638; --border-strong: #616266;
+  --accent: #4176e6; --accent-hover: #5686fe; --accent-soft: #2c2c2e; --accent-text: #0a0c10;
+  --ok: #22c55e; --warn: #f59e0b; --err: #ef4444; --info: #7fb4ca;
+  --code-bg: #1b1b1c;
 }
 
-/* 2 · 玄 slate — Tokyo Night Storm(folke/tokyonight.nvim;text-faint 取 dark5 而非 comment,见注) */
+/* 2 · 玄 slate — Tokyo Night Storm accent(配色);结构槽走暗组 C 变体 */
 [theme="slate"] {
-  --bg-base: #24283b; --bg-panel: #1f2335; --bg-element: #292e42; --bg-inset: #1b1e2d;
-  --text: #c0caf5; --text-mut: #a9b1d6; --text-faint: #737aa2;
-  --border: #3b4261; --border-strong: #414868;
+  --bg-base: #151517; --bg-panel: #1b1b1c; --bg-element: #2c2c2e; --bg-inset: #1b1b1c;
+  --text: #f9fafb; --text-mut: #cfd3d6; --text-faint: #adb2b8;
+  --border: #353638; --border-strong: #616266;
   --accent: #7aa2f7; --accent-hover: #8eb0f8; --accent-soft: #2e3c64; --accent-text: #1d202f;
   --ok: #9ece6a; --warn: #e0af68; --err: #db4b4b; --info: #0db9d7;
-  --code-bg: #1b1e2d;
+  --code-bg: #1b1b1c;
 }
 
-/* 3 · 烬 vesper — Vesper(raunofreiberg/vesper;底 #101010→#1c1a17 提亮至 L26 以拉开 sumi;warn 改橙避免与 accent 同色) */
+/* 3 · 烬 vesper — Vesper accent;结构槽走暗组 C 变体 */
 [theme="vesper"] {
-  --bg-base: #1c1a17; --bg-panel: #221f1c; --bg-element: #282420; --bg-inset: #161412;
-  --text: #ffffff; --text-mut: #a0a0a0; --text-faint: #707070;
-  --border: #343434; --border-strong: #505050;
+  --bg-base: #151517; --bg-panel: #1b1b1c; --bg-element: #2c2c2e; --bg-inset: #1b1b1c;
+  --text: #f9fafb; --text-mut: #cfd3d6; --text-faint: #adb2b8;
+  --border: #353638; --border-strong: #616266;
   --accent: #ffc799; --accent-hover: #ffcfa8; --accent-soft: #3e342b; --accent-text: #000000;
   --ok: #99ffe4; --warn: #ff7300; --err: #ff8080; --info: #99ccff;
-  --code-bg: #161412;
+  --code-bg: #1b1b1c;
 }
 
-/* 7 · 峡 nord — Nord(nordtheme/nord,北极极简,冷色低刺激的长青标准) */
+/* 7 · 峡 nord — Nord accent;结构槽走暗组 C 变体 */
 [theme="nord"] {
-  --bg-base: #2e3440; --bg-panel: #3b4252; --bg-element: #434c5e; --bg-inset: #272b35;
-  --text: #eceff4; --text-mut: #c3cbd8; --text-faint: #8b93a3;
-  --border: #3b4252; --border-strong: #4c566a;
+  --bg-base: #151517; --bg-panel: #1b1b1c; --bg-element: #2c2c2e; --bg-inset: #1b1b1c;
+  --text: #f9fafb; --text-mut: #cfd3d6; --text-faint: #adb2b8;
+  --border: #353638; --border-strong: #616266;
   --accent: #88c0d0; --accent-hover: #9ad0df; --accent-soft: #354251; --accent-text: #2e3440;
   --ok: #a3be8c; --warn: #ebcb8b; --err: #bf616a; --info: #81a1c1;
-  --code-bg: #2b303b;
+  --code-bg: #1b1b1c;
 }
 
-/* 5 · 灰 ash — Zenburn(jnurmine/Zenburn;柔暗档,唯一偏离 bg-element 取 CursorLine 档) */
+/* 5 · 灰 ash — Zenburn accent;结构槽走暗组 C 变体 */
 [theme="ash"] {
-  --bg-base: #3f3f3f; --bg-panel: #383838; --bg-element: #434443; --bg-inset: #333333;
-  --text: #dcdccc; --text-mut: #9fafaf; --text-faint: #989890;
-  --border: #5f5f5f; --border-strong: #6f6f6f;
+  --bg-base: #151517; --bg-panel: #1b1b1c; --bg-element: #2c2c2e; --bg-inset: #1b1b1c;
+  --text: #f9fafb; --text-mut: #cfd3d6; --text-faint: #adb2b8;
+  --border: #353638; --border-strong: #616266;
   --accent: #8cd0d3; --accent-hover: #93e0e3; --accent-soft: #366060; --accent-text: #2b2b2b;
   --ok: #7f9f7f; --warn: #dfaf8f; --err: #cc9393; --info: #94bff3;
-  --code-bg: #303030;
+  --code-bg: #1b1b1c;
 }
 
-/* 6 · 霜 snow — Nord Snow Storm(nordtheme/nord;浅底上 Frost/Aurora 语义色全部须压深) */
+/* ── 明组结构槽(snow sand lotus latte paper)—— C 变体 ──
+   bg-base #ffffff · bg-panel #f9fafb · bg-element #ffffff · bg-inset #f9fafb
+   text #0f1115 · text-mut #61666b · text-faint #81858c
+   border #e1e5ee · border-strong #cfd3d6 · code-bg #f9fafb */
+
+/* 6 · 霜 snow — Nord Snow accent;结构槽走明组 C 变体 */
 [theme="snow"] {
-  --bg-base: #e5e9f0; --bg-panel: #eceff4; --bg-element: #d8dee9; --bg-inset: #d0d7e4;
-  --text: #2e3440; --text-mut: #4c566a; --text-faint: #616e88;
-  --border: #d0d7e4; --border-strong: #aebad1;
+  --bg-base: #ffffff; --bg-panel: #f9fafb; --bg-element: #ffffff; --bg-inset: #f9fafb;
+  --text: #0f1115; --text-mut: #61666b; --text-faint: #81858c;
+  --border: #e1e5ee; --border-strong: #cfd3d6;
   --accent: #4c6c93; --accent-hover: #425d7f; --accent-soft: #c2d0e0; --accent-text: #eceff4;
   --ok: #6a8a4e; --warn: #a6781d; --err: #bf616a; --info: #3f8aa0;
-  --code-bg: #d0d7e4;
+  --code-bg: #f9fafb;
 }
 
-/* 7 · 沙 sand — Gruvbox Light Soft(morhetz/gruvbox bg0_s;暖沙,与 snow 的冷雾成对) */
+/* 7 · 沙 sand — Gruvbox accent;结构槽走明组 C 变体 */
 [theme="sand"] {
-  --bg-base: #f2e5bc; --bg-panel: #ebdbb2; --bg-element: #fbf1c7; --bg-inset: #e0d0aa;
-  --text: #3c3836; --text-mut: #665c54; --text-faint: #7c6f64;
-  --border: #d5c4a1; --border-strong: #bdae93;
+  --bg-base: #ffffff; --bg-panel: #f9fafb; --bg-element: #ffffff; --bg-inset: #f9fafb;
+  --text: #0f1115; --text-mut: #61666b; --text-faint: #81858c;
+  --border: #e1e5ee; --border-strong: #cfd3d6;
   --accent: #bb4506; --accent-hover: #af3a03; --accent-soft: #eacfa3; --accent-text: #fbf1c7;
   --ok: #79740e; --warn: #ad7013; --err: #9d0006; --info: #076678;
-  --code-bg: #e0d0aa;
+  --code-bg: #f9fafb;
 }
 
-/* 8 · 荷 lotus — Kanagawa Lotus(rebelot/kanagawa.nvim;底提亮一档使整条 white 阶梯下移,正文取 lotusInk2) */
+/* 8 · 荷 lotus — Kanagawa Lotus accent;结构槽走明组 C 变体 */
 [theme="lotus"] {
-  --bg-base: #f6f2d0; --bg-panel: #f2ecbc; --bg-element: #e5ddb0; --bg-inset: #dcd5ac;
-  --text: #43436c; --text-mut: #545464; --text-faint: #8a8980;
-  --border: #d5cea3; --border-strong: #a09cac;
+  --bg-base: #ffffff; --bg-panel: #f9fafb; --bg-element: #ffffff; --bg-inset: #f9fafb;
+  --text: #0f1115; --text-mut: #61666b; --text-faint: #81858c;
+  --border: #e1e5ee; --border-strong: #cfd3d6;
   --accent: #4d699b; --accent-hover: #435b87; --accent-soft: #c7d7e0; --accent-text: #f6f2d0;
   --ok: #6f894e; --warn: #cc6d00; --err: #e82424; --info: #5a7785;
-  --code-bg: #dcd5ac;
+  --code-bg: #f9fafb;
 }
 
-/* 3 · 瓷 latte — Catppuccin Latte(catppuccin/palette,粉彩中性底,眩光低) */
+/* 3 · 瓷 latte — Catppuccin Latte accent;结构槽走明组 C 变体 */
 [theme="latte"] {
-  --bg-base: #eff1f5; --bg-panel: #ffffff; --bg-element: #e6e9ef; --bg-inset: #dce0e8;
-  --text: #4c4f69; --text-mut: #5c5f77; --text-faint: #7c7f93;
-  --border: #dce0e8; --border-strong: #bcc0cc;
+  --bg-base: #ffffff; --bg-panel: #f9fafb; --bg-element: #ffffff; --bg-inset: #f9fafb;
+  --text: #0f1115; --text-mut: #61666b; --text-faint: #81858c;
+  --border: #e1e5ee; --border-strong: #cfd3d6;
   --accent: #8839ef; --accent-hover: #7a2fd6; --accent-soft: #eee2fd; --accent-text: #ffffff;
   --ok: #3a8f27; --warn: #ba7409; --err: #d20f39; --info: #1a8299;
-  --code-bg: #e6e9ef;
+  --code-bg: #f9fafb;
 }
 
-/* 1 · 宣 paper — Flexoki Light(kepano/flexoki,为"墨落纸上"的阅读舒适度而设计) */
+/* 1 · 宣 paper — 默认浅色;品牌蓝 accent */
 [theme="paper"] {
-  --bg-base: #fffcf0; --bg-panel: #f7f5ea; --bg-element: #e6e4d9; --bg-inset: #f2f0e5;
-  --text: #1c1b1a; --text-mut: #6f6e69; --text-faint: #878580;
-  --border: #e6e4d9; --border-strong: #cecdc3;
-  --accent: #205ea6; --accent-hover: #1a4e8c; --accent-soft: #dfe6f0; --accent-text: #fffcf0;
-  --ok: #66800b; --warn: #ad8301; --err: #af3029; --info: #24837b;
-  --code-bg: #f2f0e5;
+  --bg-base: #ffffff; --bg-panel: #f9fafb; --bg-element: #ffffff; --bg-inset: #f9fafb;
+  --text: #0f1115; --text-mut: #61666b; --text-faint: #81858c;
+  --border: #e1e5ee; --border-strong: #cfd3d6;
+  --accent: #3465d4; --accent-hover: #4176e6; --accent-soft: #edf3fe; --accent-text: #ffffff;
+  --ok: #16a34a; --warn: #f59e0b; --err: #ef4444; --info: #24837b;
+  --code-bg: #f9fafb;
 }
 
 /* ── 基础 ── */
@@ -119,13 +128,4 @@ body {
   background: var(--bg-base); color: var(--text);
   font-family: var(--font-ui); font-size: var(--fs-13);
   -webkit-font-smoothing: antialiased;
-  transition: background-color .25s ease, color .25s ease;
 }
-button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
-input, textarea { font: inherit; }
-::placeholder { color: var(--text-faint); }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: var(--r-4); }
-
-
-/* 说明:本文件只保留 token 与基础层。设计稿原型的组件样式(.app/.side/.chat/.card/.btn…)
-   已随 v1.4.6 还原迁入 shell.css,避免 tokens/theme/shell 三层同名类互相覆盖。 */

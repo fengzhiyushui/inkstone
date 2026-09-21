@@ -7,12 +7,16 @@
 @import "./tokens.css";
 
 :root {
-  /* 布局尺寸(AppFrame 原生标题栏区);--ease 供壳层过渡统一 */
+  /* 布局尺寸(AppFrame 原生标题栏区);动效三档 + 一条 easing;字阶/圆角/行高补齐 */
   --titlebar:40px;
   --ease: cubic-bezier(.4,0,.2,1);
+  --dur-fast:.1s; --dur:.2s; --dur-slow:.3s;
+  --r-6:6px; --r-8:8px; --r-12:12px; --r-20:20px; --r-22:22px; --r-pill:999px;
+  --lh-17:17px; --lh-20:20px; --lh-22:22px; --lh-24:24px;
+  --fs-17:17px;
 }
 
-/* Legacy 变量别名 → 新 tokens(逐元素解析,一份块服务全部 10 主题) */
+/* Legacy 变量别名 + v1.8.1 派生量(全部派生自 18 槽;不进 tokens.css,护 TUI 生成器正则) */
 [theme] {
   --bg-editor:var(--bg-base); --bg-title:var(--bg-base);
   --bg-side:var(--bg-panel); --bg-active-list:var(--accent-soft);
@@ -20,7 +24,15 @@
   --border-2:var(--border-strong); --sash:var(--border);
   --text-bright:var(--text);
   --green:var(--ok); --red:var(--err);
-  /* v1.8 γ 派生变量:玻璃/柔光/语义底色。放这里(不进 tokens.css)——否则会破坏 TUI 生成器正则。 */
+  /* DSH 阶梯派生(明档 alpha) */
+  --hover:color-mix(in srgb, var(--text) 8%, transparent);
+  --border-l1:color-mix(in srgb, var(--text) 4%, transparent);
+  --border-l2:color-mix(in srgb, var(--text) 10%, transparent);
+  --border-l3:color-mix(in srgb, var(--text) 12%, transparent);
+  --shadow-1:0 2px 4px rgba(0,0,0,.05);
+  --shadow-2:0 4px 12px rgba(0,0,0,.02), 0 2px 8px rgba(0,0,0,.04);
+  --bubble:color-mix(in srgb, var(--accent) 10%, var(--bg-base));
+  /* v1.8 γ 派生变量 */
   --accent-glow:color-mix(in srgb, var(--accent) 22%, transparent);
   --bg-glass:color-mix(in srgb, var(--bg-panel) 82%, transparent);
   --ok-bg:color-mix(in srgb, var(--ok) 12%, transparent);
@@ -28,6 +40,14 @@
   --err-bg:color-mix(in srgb, var(--err) 12%, transparent);
   --info-bg:color-mix(in srgb, var(--info) 12%, transparent);
   --bg-raised:color-mix(in srgb, var(--bg-element), var(--text) 6%);
+}
+
+/* 暗档覆盖:border-l* 加深、bubble 用元素底 */
+[theme][data-dark] {
+  --border-l1:color-mix(in srgb, var(--text) 6%, transparent);
+  --border-l2:color-mix(in srgb, var(--text) 12%, transparent);
+  --border-l3:color-mix(in srgb, var(--text) 16%, transparent);
+  --bubble:var(--bg-element);
 }
 
 *{box-sizing:border-box; margin:0; padding:0;}

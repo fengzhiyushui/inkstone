@@ -9,11 +9,11 @@ test("contrastRatio reproduces v1.4 recorded values", () => {
   assert.equal(contrastRatio("#1c1b1a", "#fffcf0").toFixed(2), "16.73"); // paper
 });
 
-test("all 10 themes pass all 11 gate pairs (110/110)", () => {
+test("structure 2 groups × 7 + accent 10 × 4 = 54 rows all pass", () => {
   const css = readFileSync(new URL("../../../gui/src/styles/tokens.css", import.meta.url), "utf8");
   const r = checkThemes(css);
   const failed = r.rows.filter((x) => !x.pass);
-  assert.equal(r.rows.length, 110, "应为 10 主题 × 11 对");
+  assert.equal(r.rows.length, 54, "结构 2×7 + 强调 10×4");
   assert.deepEqual(failed, [], failed.map((x) => `${x.theme} ${x.pair}=${x.value}`).join("\n"));
 });
 

@@ -24,3 +24,7 @@ export function themeLabel(theme) {
 export function isLightTheme(theme) {
   return GUI_THEMES.find((x) => x.id === theme)?.group === "light";
 }
+
+export function isDarkTheme(theme) {
+  return !isLightTheme(theme);
+}

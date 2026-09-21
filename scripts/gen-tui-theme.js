@@ -1,5 +1,6 @@
 // scripts/gen-tui-theme.js — 从 gui/src/styles/tokens.css 生成 TUI 的 xterm-256 调色板。
 // 用法:node scripts/gen-tui-theme.js(输出写入 src/apps/tui/theme-palette.js,生成物入库,主包运行时零依赖)。
+// v1.8.1:tokens 已是 C 变体结构槽 + 各主题 accent;契约不变(仍读 12 槽 #rrggbb)。
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
