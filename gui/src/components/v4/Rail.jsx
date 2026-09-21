@@ -190,7 +190,7 @@ export default function Rail({
           onClick={onToggleCollapse}>
           {collapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
         </button>
-        <button type="button" className={`iconbtn ${css.iconbtn} ${view === "settings" ? "on" : ""}`}
+        <button type="button" className={`iconbtn ${css.iconbtn} ${state.settingsOpen ? "on" : ""}`}
           title={t("rail.settings")} onClick={() => setView("settings")}><Settings size={15} /></button>
       </div>
     </aside>

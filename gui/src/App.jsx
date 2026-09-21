@@ -1,34 +1,33 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useWorkbench } from "./hooks/useWorkbench.js";
 import { useKernel } from "./hooks/useKernel.js";
 import { makeT } from "./i18n/strings.js";
 import { trafficTone, formatLatency } from "./state/workbench-state.js";
 import { themeLabel, isLightTheme, isDarkTheme } from "./state/themes.js";
 import { nextInGroup, otherModeTheme } from "./state/theme-hub.js";
-import TitleBar from "./components/TitleBar.jsx";
 import AppFrame from "./components/v4/AppFrame.jsx";
 import Rail from "./components/v4/Rail.jsx";
 import HomeView from "./components/v4/HomeView.jsx";
 import ChatView from "./components/v4/ChatView.jsx";
 import { ProjectsView, McpView, PluginsView } from "./components/v4/SecondaryViews.jsx";
 import Dock from "./components/v4/Dock.jsx";
-import Settings from "./components/Settings/Settings.jsx";
+import SettingsPanels from "./components/Settings/Settings.jsx";
 import SensitiveNoticeModal from "./components/v4/SensitiveNoticeModal.jsx";
 
-const VERSION = "1.8.0";
+const VERSION = "1.8.1";
 
 export default function App() {
   const [state, dispatch] = useWorkbench();
   const kernel = useKernel(dispatch);
   const t = makeT(state.language);
   const view = state.view;
+  const settingsOpen = Boolean(state.settingsOpen);
 
   useEffect(() => {
     document.documentElement.setAttribute("theme", state.theme);
     document.documentElement.toggleAttribute("data-dark", isDarkTheme(state.theme));
   }, [state.theme]);
   useEffect(() => { document.documentElement.lang = state.language; }, [state.language]);
-  // v1.8 γ:玻璃态只给浮层。冒烟构建经 ?smoke=1 强制关闭,保证截图确定性。
   useEffect(() => {
     const smoke = new URLSearchParams(window.location.search).get("smoke") === "1";
     document.documentElement.setAttribute("glass", state.glass && !smoke ? "on" : "off");
@@ -36,7 +35,6 @@ export default function App() {
   useEffect(() => { kernel.refreshChanges(); }, [state.changesTick, kernel]);
   useEffect(() => { kernel.loadSessions().catch(() => {}); }, [state.currentProject, kernel]);
 
-  // D-G7 Recovery Center 数据(视图打开时拉取)
   const [recovery, setRecovery] = useState({ items: [], report: null, busy: null });
   const refreshRecovery = useCallback(async () => {
     try {
@@ -50,18 +48,11 @@ export default function App() {
     }
   }, [kernel]);
   useEffect(() => {
-    if ((view === "recovery" || (state.rightbarOpen && state.dockTab === "recovery"))) refreshRecovery().catch(() => {});
-  }, [view, state.rightbarOpen, state.dockTab, state.currentProject, refreshRecovery]);
+    if (state.rightbarOpen && state.dockTab === "recovery") refreshRecovery().catch(() => {});
+  }, [state.rightbarOpen, state.dockTab, state.currentProject, refreshRecovery]);
 
-  // 设置页全窗打开时记住来源视图,关闭后回到原处。
-  const returnRef = useRef("home");
-  const setView = useCallback((v) => {
-    if (v === "settings" && state.view !== "settings") returnRef.current = state.view;
-    dispatch({ type: "view_changed", view: v });
-  }, [dispatch, state.view]);
-  const closeSettings = useCallback(() => {
-    setView(returnRef.current && returnRef.current !== "settings" ? returnRef.current : "home");
-  }, [setView]);
+  const openSettings = useCallback(() => dispatch({ type: "settings_toggled", open: true }), [dispatch]);
+  const closeSettings = useCallback(() => dispatch({ type: "settings_toggled", open: false }), [dispatch]);
 
   const onSwitchProject = useCallback((root) => {
     if (!root) return;
@@ -70,10 +61,9 @@ export default function App() {
         dispatch({ type: "project_switched", root });
         return kernel.loadSessions().catch(() => {});
       })
-      .catch(() => { /* 目录不存在等:错误已进 errors,视图保持 */ });
+      .catch(() => { /* keep view */ });
   }, [kernel, dispatch]);
 
-  // 「打开文件夹…」:选目录 → 登记 → 切换。取消则什么都不做。
   const onOpenFolder = useCallback(async () => {
     const root = await kernel.pickProjectFolder();
     if (!root) return;
@@ -84,8 +74,8 @@ export default function App() {
   const onNewSession = useCallback((root) => {
     if (root && root !== state.currentProject) onSwitchProject(root);
     else dispatch({ type: "project_switched", root: root || state.currentProject });
-    setView("chat");
-  }, [state.currentProject, onSwitchProject, dispatch, setView]);
+    dispatch({ type: "view_changed", view: "chat" });
+  }, [state.currentProject, onSwitchProject, dispatch]);
 
   const actions = useMemo(() => ({
     send: (text) => { dispatch({ type: "message_added", message: { role: "user", text } }); kernel.send(text); },
@@ -117,7 +107,6 @@ export default function App() {
     kernel.setPreferences({ railCollapsed: next });
   }, [state.railCollapsed, dispatch, kernel]);
 
-  // B0 临时 → B3 正式:Ctrl/⌘+J 切换右栏轨道
   const toggleRightbar = useCallback(() => {
     dispatch({ type: "rightbar_toggled", viewport: window.innerWidth });
   }, [dispatch]);
@@ -127,27 +116,20 @@ export default function App() {
     if (!state.rightbarOpen) dispatch({ type: "rightbar_toggled", viewport: window.innerWidth });
   }, [dispatch, state.rightbarOpen]);
 
-  // 全局快捷键:Ctrl/⌘+N 新建会话、Ctrl/⌘+B 收放侧栏、Ctrl/⌘+J 右栏(B0 临时)。
   useEffect(() => {
     const onKey = (e) => {
       if (!(e.ctrlKey || e.metaKey)) return;
       const k = e.key.toLowerCase();
-      if (k === "n") {
-        e.preventDefault();
-        onNewSession(state.currentProject);
-      } else if (k === "b") {
-        e.preventDefault();
-        toggleRail();
-      } else if (k === "j") {
-        e.preventDefault();
-        toggleRightbar();
-      }
+      if (k === "n") { e.preventDefault(); onNewSession(state.currentProject); }
+      else if (k === "b") { e.preventDefault(); toggleRail(); }
+      else if (k === "j") { e.preventDefault(); toggleRightbar(); }
+      else if (k === ",") { e.preventDefault(); openSettings(); }
+      else if (k === "l" && e.shiftKey) { e.preventDefault(); toggleTheme(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onNewSession, toggleRail, toggleRightbar, state.currentProject]);
+  }, [onNewSession, toggleRail, toggleRightbar, openSettings, toggleTheme, state.currentProject]);
 
-  // 对话框状态行:一份数据两处复用(首页胶囊 + 会话胶囊)。
   const statusLine = useMemo(() => ({
     display: state.statusDisplay,
     usage: state.usage,
@@ -174,47 +156,37 @@ export default function App() {
     }
   }), [state, dispatch, kernel, cycleTheme, toggleLang]);
 
-  const menuActions = {
-    "view.home": () => setView("home"),
-    "view.settings": () => setView("settings"),
-    "view.theme": toggleTheme,
-    "view.lang": toggleLang,
-    "help.about": () => setView("settings")
-  };
-
-  // B0–B3:设置仍是全窗(无 Rail / 无右栏);B4 改模态
-  const isFullWindowSettings = view === "settings";
-  const showRail = !isFullWindowSettings;
-
   return (
     <div className="ide">
       <AppFrame
-        className={`shell${state.railCollapsed ? " rail-off" : ""}${isFullWindowSettings ? " shell-settings" : ""}`}
-        titlebar={(
-          <TitleBar t={t} language={state.language} theme={state.theme} title="Inkstone"
-            railView={view} onToggleTheme={toggleTheme} onToggleLang={toggleLang} menuActions={menuActions} />
-        )}
-        hideSidebar={isFullWindowSettings}
+        className={`shell${state.railCollapsed ? " rail-off" : ""}`}
+        hideSidebar={false}
         railCollapsed={state.railCollapsed}
         sidebarWidth={state.sidebarWidth}
-        rightbarOpen={!isFullWindowSettings && Boolean(state.rightbarOpen)}
+        rightbarOpen={Boolean(state.rightbarOpen)}
         rightbarWidth={state.rightbarWidth || 0}
         dispatch={dispatch}
         kernel={kernel}
-        sidebar={showRail ? (
-          <Rail t={t} state={state} version={VERSION} setView={setView}
+        sidebar={(
+          <Rail t={t} state={state} version={VERSION} setView={(v) => {
+            if (v === "settings") { openSettings(); return; }
+            dispatch({ type: "view_changed", view: v });
+          }}
             collapsed={state.railCollapsed} onToggleCollapse={toggleRail}
             onSwitchProject={onSwitchProject} onNewSession={onNewSession} onOpenFolder={onOpenFolder}
             onOpenDock={openDock} />
-        ) : null}
+        )}
         main={(
           <main className="pane">
             {view === "home" && (
-              <HomeView t={t} state={state} actions={actions} setView={setView}
+              <HomeView t={t} state={state} actions={actions}
+                setView={(v) => { if (v === "settings") openSettings(); else dispatch({ type: "view_changed", view: v }); }}
                 onSwitchProject={onSwitchProject} statusLine={statusLine} />
             )}
             {view === "chat" && (
-              <ChatView t={t} state={state} actions={actions} kernel={kernel} setView={setView} statusLine={statusLine}
+              <ChatView t={t} state={state} actions={actions} kernel={kernel}
+                setView={(v) => { if (v === "settings") openSettings(); else dispatch({ type: "view_changed", view: v }); }}
+                statusLine={statusLine}
                 onChatTab={(tab) => dispatch({ type: "chat_tab_changed", tab })}
                 onToggleRightbar={toggleRightbar} />
             )}
@@ -225,10 +197,9 @@ export default function App() {
             )}
             {view === "mcp" && <McpView t={t} />}
             {view === "plugins" && <PluginsView t={t} />}
-            {view === "settings" && <Settings t={t} state={state} kernel={kernel} dispatch={dispatch} version={VERSION} onClose={closeSettings} />}
           </main>
         )}
-        rightbar={!isFullWindowSettings && state.rightbarOpen ? (
+        rightbar={state.rightbarOpen ? (
           <Dock
             t={t}
             state={state}
@@ -244,8 +215,8 @@ export default function App() {
           />
         ) : null}
       />
-      {/* #9.3:红色风险提醒。全窗模态,压在所有视图之上 —— 它不是审批,
-          不进检查器的审批分区。 */}
+      <SettingsPanels t={t} state={state} kernel={kernel} dispatch={dispatch} version={VERSION}
+        open={settingsOpen} onClose={closeSettings} />
       <SensitiveNoticeModal
         notice={state.sensitiveNotice}
         t={t}

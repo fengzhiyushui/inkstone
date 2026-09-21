@@ -1,0 +1,85 @@
+/* SettingsModal.module.css */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: color-mix(in srgb, var(--bg-base) 72%, transparent);
+  backdrop-filter: blur(6px);
+  display: grid;
+  place-items: center;
+}
+:global([glass="off"]) .backdrop { backdrop-filter: none; }
+
+.card {
+  width: min(880px, 100vw - 48px);
+  height: min(640px, 100vh - 48px);
+  border-radius: 12px;
+  background: var(--bg-base);
+  box-shadow: var(--shadow-2);
+  border: .5px solid var(--border-l3);
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  grid-template-rows: 1fr;
+  overflow: hidden;
+  position: relative;
+}
+
+.nav {
+  width: 200px;
+  padding: 12px;
+  background: var(--bg-panel);
+  overflow: auto;
+  border-right: .5px solid var(--border-l2);
+}
+.navHead {
+  padding: 4px 10px 10px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.item {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  border: none;
+  background: transparent;
+  color: var(--text-mut);
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+.item:hover { background: var(--hover); color: var(--text); }
+.item.on { background: var(--hover); color: var(--text); }
+
+.body {
+  padding: 20px 24px;
+  overflow: auto;
+  min-width: 0;
+  position: relative;
+}
+.close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-mut);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  z-index: 2;
+}
+.close:hover { background: var(--hover); color: var(--text); }
+
+.title { font-size: 17px; font-weight: 500; margin-bottom: 4px; padding-right: 36px; }
+.sd { color: var(--text-mut); font-size: 12px; margin-bottom: 16px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop { backdrop-filter: none; }
+}

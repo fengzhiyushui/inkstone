@@ -403,3 +403,14 @@ test("chat_tab_changed toggles chat/trajectory; invalid ignored", () => {
   s = state.applyWorkbenchAction(s, { type: "chat_tab_changed", tab: "chat" });
   assert.equal(s.chatTab, "chat");
 });
+
+test("settings_toggled opens and closes the settings modal", () => {
+  let s = state.createInitialState();
+  assert.equal(s.settingsOpen, false);
+  s = state.applyWorkbenchAction(s, { type: "settings_toggled", open: true });
+  assert.equal(s.settingsOpen, true);
+  s = state.applyWorkbenchAction(s, { type: "settings_toggled", open: false });
+  assert.equal(s.settingsOpen, false);
+  s = state.applyWorkbenchAction(s, { type: "settings_toggled" });
+  assert.equal(s.settingsOpen, true);
+});

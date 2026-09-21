@@ -3,13 +3,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 const read = (p) => readFileSync(new URL(`../../../${p}`, import.meta.url), "utf8");
 
-test("frozen DOM/CSS contracts survive (v1.8.1 B0 冻结清单)", () => {
+test("frozen DOM/CSS contracts survive (v1.8.1 B4 冻结清单)", () => {
   const app = read("gui/src/App.jsx"), rail = read("gui/src/components/v4/Rail.jsx");
   const metrics = read("gui/src/components/v4/MetricsLine.jsx"), sn = read("gui/src/components/v4/SensitiveNoticeModal.jsx");
   const themeCss = read("gui/src/styles/theme.css"), main = read("gui/main.js");
   const appFrame = read("gui/src/components/v4/AppFrame.jsx");
   assert.match(app, /setAttribute\("theme", state\.theme\)/);
-  assert.match(app, /className=\{`shell\$\{state\.railCollapsed \? " rail-off" : ""\}\$\{(?:view === "settings"|isFullWindowSettings) \? " shell-settings" : ""\}`\}/);
+  assert.match(app, /className=\{`shell\$\{state\.railCollapsed \? " rail-off" : ""\}`\}/);
   for (const cls of ["rail-fn", "rail-scroll", "rail-foot", "rail-new"]) assert.match(rail, new RegExp(`className=\\{?[\`"']${cls}`), cls);
   assert.match(metrics, /"cz-meta"/);
   assert.match(metrics, /data-mv=/);
@@ -18,9 +18,21 @@ test("frozen DOM/CSS contracts survive (v1.8.1 B0 冻结清单)", () => {
   assert.match(sn, /sn-refuse" autoFocus/);
   assert.match(themeCss, /--titlebar:40px/);
   assert.match(appFrame, /data-windows-titlebar/);
-  for (const sel of [".ide", 'header[role="banner"]', ".shell", ".rail", ".pane", ".rail-fn", ".cz-input", ".titlebar .actions .lang"])
-    assert.ok(main.includes(`querySelector(${JSON.stringify(sel)})`) || main.includes(`querySelector('${sel}')`), `smoke 门选择器 ${sel}`);
-  assert.ok(!/telemetry|statusbar/.test(app), "不得出现遥测条/独立状态栏");
-  assert.ok(!/ChangesView|RecoveryView/.test(app), "B3 后 App 不再直接挂 ChangesView/RecoveryView");
-  assert.match(app, /rightbar=\{!/);
+  assert.match(appFrame, /data-rightbar-col/);
+  for (const sel of [
+    ".ide", "[data-windows-titlebar]", ".rail", ".pane",
+    ".rail-fn", ".cz-input", "[data-rightbar-col]", ".rail-foot"
+  ]) {
+    assert.ok(main.includes(`querySelector(${JSON.stringify(sel)})`) || main.includes(`querySelector('${sel}')`),
+      `smoke 门选择器 ${sel}`);
+  }
+  assert.ok(!/TitleBar|shell-settings|view === "settings"|view === "changes"|view === "recovery"|ChangesView|RecoveryView/.test(app),
+    "B4 后 App 不得出现 TitleBar / shell-settings / 旧路由");
+  assert.ok(!existsSync(new URL("../../../gui/src/components/TitleBar.jsx", import.meta.url)));
+  assert.ok(!existsSync(new URL("../../../gui/src/styles/shell.css", import.meta.url)));
+  assert.ok(!existsSync(new URL("../../../gui/src/components/Settings/ThemeHub.jsx", import.meta.url)));
 });
+
+function existsSync(url) {
+  try { readFileSync(url); return true; } catch { return false; }
+}

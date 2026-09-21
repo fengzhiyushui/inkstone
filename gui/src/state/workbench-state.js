@@ -59,6 +59,7 @@ export function createInitialState() {
     dockTab: "files",
     chatTab: "chat",
     dockFiles: { expanded: {} },
+    settingsOpen: false,
     inspectorMode: "activity",
     theme: "sumi",
     lastDark: "sumi",
@@ -242,6 +243,9 @@ export function applyWorkbenchAction(state, action) {
     if (expanded[dirPath]) delete expanded[dirPath];
     else expanded[dirPath] = true;
     return copy(current, { dockFiles: Object.assign({}, dockFiles, { expanded: expanded }) });
+  }
+  if (action.type === "settings_toggled") {
+    return copy(current, { settingsOpen: action.open === undefined ? !current.settingsOpen : Boolean(action.open) });
   }
   if (action.type === "preferences_loaded") {
     var prefs = action.preferences || {};

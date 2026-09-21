@@ -1,15 +1,15 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  SlidersHorizontal, Palette, Gauge, KeyRound, Cpu, ShieldCheck, Workflow, Layers, Sparkles, Info,
-  ChevronLeft, X
+  SlidersHorizontal, Palette, Gauge, KeyRound, Cpu, ShieldCheck, Workflow, Layers, Sparkles, Info
 } from "lucide-react";
 import { SETTINGS_GROUPS, getByPath, applyFieldEdit, sanitizeConfigPatch } from "../../state/settings-schema.js";
 import ModelAccess from "./ModelAccess.jsx";
 import Appearance from "./Appearance.jsx";
 import StatusDisplayPanel from "./StatusDisplayPanel.jsx";
 import { Row, Switch } from "./Form.jsx";
+import SettingsModal from "./SettingsModal.jsx";
+import css from "./SettingsModal.module.css";
 
-// v1.4 设置页(设计稿 v4 视图 3):左导航 + 右内容,表单语言统一为 .f-group / .f-row / .f-in / .sw。
 const ICONS = { SlidersHorizontal, Palette, Gauge, KeyRound, Cpu, ShieldCheck, Workflow, Layers, Sparkles, Info };
 
 function Field({ t, field, value, onChange }) {
@@ -93,7 +93,7 @@ function About({ t, settings, version }) {
   );
 }
 
-export default function Settings({ t, state, kernel, dispatch, version, onClose }) {
+export default function SettingsPanels({ t, state, kernel, dispatch, version, open, onClose }) {
   const [active, setActive] = useState("general");
   const [settings, setSettings] = useState(null);
   const [draft, setDraft] = useState({});
@@ -111,7 +111,7 @@ export default function Settings({ t, state, kernel, dispatch, version, onClose 
     } catch (e) { setError(e.message); }
   }, [kernel, t]);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => { if (open) reload(); }, [open, reload]);
 
   const group = SETTINGS_GROUPS.find((g) => g.id === active) || SETTINGS_GROUPS[0];
   const dirty = Boolean(settings) && JSON.stringify(draft) !== JSON.stringify(settings.config || {});
@@ -127,51 +127,32 @@ export default function Settings({ t, state, kernel, dispatch, version, onClose 
   };
 
   return (
-    <section className="view on">
-      <header className="pane-head">
-        <button type="button" className="btn ghost settings-back" onClick={onClose}>
-          <ChevronLeft size={14} /> {t("settings.back")}
-        </button>
-        <div className="spacer" />
-        <button type="button" className="iconbtn" title={t("settings.close")} aria-label={t("settings.close")} onClick={onClose}>
-          <X size={15} />
-        </button>
-      </header>
-      <div className="settings">
-        <aside className="s-nav" aria-label={t("rail.settings")}>
-          <div className="sn-h">{t("rail.settings")}</div>
-          {SETTINGS_GROUPS.map((g) => {
-            const Icon = ICONS[g.icon] || SlidersHorizontal;
-            return (
-              <button type="button" key={g.id} className={`sn-item ${active === g.id ? "on" : ""}`}
-                aria-current={active === g.id} onClick={() => setActive(g.id)}>
-                <Icon size={14} /> {t(g.labelKey)}
-              </button>
-            );
-          })}
-        </aside>
+    <SettingsModal t={t} open={open} onClose={onClose} active={active}
+      nav={SETTINGS_GROUPS.map((g) => {
+        const Icon = ICONS[g.icon] || SlidersHorizontal;
+        return (
+          <button type="button" key={g.id} className={`item ${css.item} ${active === g.id ? "on" : ""}`}
+            aria-current={active === g.id} onClick={() => setActive(g.id)}>
+            <Icon size={14} /> {t(g.labelKey)}
+          </button>
+        );
+      })}>
+      <h2 className={css.title}>{t(group.labelKey)}</h2>
+      <p className={css.sd}>{t(`${group.labelKey}.sd`)}</p>
+      {error && <div className="f-group"><span className="mini err">{error}</span></div>}
 
-        <div className="s-body"><div className="s-in">
-          <div className="s-sec on">
-            <h2>{t(group.labelKey)}</h2>
-            <p className="sd">{t(`${group.labelKey}.sd`)}</p>
-            {error && <div className="f-group"><span className="mini err">{error}</span></div>}
-
-            {group.kind === "prefs" && <General t={t} state={state} kernel={kernel} dispatch={dispatch} />}
-            {group.kind === "appearance" && <Appearance t={t} state={state} kernel={kernel} dispatch={dispatch} />}
-            {group.kind === "statusDisplay" && <StatusDisplayPanel t={t} state={state} kernel={kernel} dispatch={dispatch} />}
-            {group.kind === "model" && (
-              <ModelAccess t={t} kernel={kernel}
-                profiles={settings?.apiProfiles || []} activeProfileId={settings?.activeProfileId || null}
-                onChanged={reload} />
-            )}
-            {group.kind === "config" && (
-              <ConfigGroup t={t} group={group} draft={draft} setDraft={setDraft} onSave={saveConfig} dirty={dirty} saving={saving} />
-            )}
-            {group.kind === "about" && <About t={t} settings={settings} version={version} />}
-          </div>
-        </div></div>
-      </div>
-    </section>
+      {group.kind === "prefs" && <General t={t} state={state} kernel={kernel} dispatch={dispatch} />}
+      {group.kind === "appearance" && <Appearance t={t} state={state} kernel={kernel} dispatch={dispatch} />}
+      {group.kind === "statusDisplay" && <StatusDisplayPanel t={t} state={state} kernel={kernel} dispatch={dispatch} />}
+      {group.kind === "model" && (
+        <ModelAccess t={t} kernel={kernel}
+          profiles={settings?.apiProfiles || []} activeProfileId={settings?.activeProfileId || null}
+          onChanged={reload} />
+      )}
+      {group.kind === "config" && (
+        <ConfigGroup t={t} group={group} draft={draft} setDraft={setDraft} onSave={saveConfig} dirty={dirty} saving={saving} />
+      )}
+      {group.kind === "about" && <About t={t} settings={settings} version={version} />}
+    </SettingsModal>
   );
 }

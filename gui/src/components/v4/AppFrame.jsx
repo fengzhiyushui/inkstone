@@ -62,7 +62,7 @@ export default function AppFrame({
       {titlebar ? <div className={css.chrome}>{titlebar}</div> : null}
       <div className={`${css.sidebar} rail`}>{sidebar}</div>
       <div className={`${css.center} pane`}>{main}</div>
-      <div className={css.rightbar} data-rightbar-col={cols.rightbar > 0 ? "" : undefined}>{rightbar}</div>
+      <div className={css.rightbar} data-rightbar-col="">{rightbar}</div>
       {!hideSidebar && cols.sidebar > 0 && (
         <DragHandle
           className={css.handle}

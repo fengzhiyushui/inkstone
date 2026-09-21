@@ -14,7 +14,6 @@ let ipcRegistered = false;
 // IPC 白名单(唯一权威清单):registerIpcHandlers 里任何未登记 channel 的 handle
 // 注册会在启动即抛错,防止新增通道漏登记;渲染层仅能调用 preload 暴露的子集。
 const IPC_CHANNELS = [
-  "window:minimize", "window:maximize", "window:close",
   "fs:tree", "fs:read", "fs:write",
   "settings:get", "config:set", "api:list", "api:save", "api:delete", "api:activate",
   "models:list", "conn:test", "session:branch-activate", "changes:list", "changes:describe",
@@ -133,18 +132,18 @@ async function createWindow() {
     win.webContents.once("did-finish-load", async () => {
       try {
         // React mounts asynchronously — poll for the shell + key a11y-labelled nodes.
-        // B0 预期选择器(AppFrame 三列壳层;TitleBar 仍在至 B4)
+        // B4 smoke 门 8 选择器(AppFrame 壳层;TitleBar 已删)
         const ready = await win.webContents.executeJavaScript(`
           new Promise((resolve) => {
             const ok = () => Boolean(
               document.querySelector(".ide") &&
-              document.querySelector('header[role="banner"]') &&
-              document.querySelector(".shell") &&
+              document.querySelector("[data-windows-titlebar]") &&
               document.querySelector(".rail") &&
               document.querySelector(".pane") &&
               document.querySelector(".rail-fn") &&
               document.querySelector(".cz-input") &&
-              document.querySelector('.titlebar .actions .lang')
+              document.querySelector("[data-rightbar-col]") &&
+              document.querySelector(".rail-foot")
             );
             let n = 0;
             const iv = setInterval(() => {
@@ -183,15 +182,13 @@ async function createWindow() {
             await new Promise((r) => setTimeout(r, 350));
           };
 
-          await shoot("shell-desktop");                                   // 首页
-          await click(".rail-new"); await shoot("shell-chat");            // 会话
-          await click(".rail-fn .fn-item:nth-child(3)"); await shoot("shell-changes");
+          await shoot("shell-desktop");
+          await click(".rail-new"); await shoot("shell-chat");
           await click(".rail-fn .fn-item:nth-child(2)"); await shoot("shell-projects");
+          await click(".rail-fn .fn-item:nth-child(3)"); await shoot("shell-changes");
           await click(".rail-foot .iconbtn:last-child"); await shoot("shell-settings");
-          await click(".s-nav .sn-item:nth-child(3)"); await shoot("shell-appearance");
-          await click(".s-nav .sn-item:nth-child(4)"); await shoot("shell-status-display");
-          // v1.7.2:敏感文件提醒模态截图(#9.3)。冒烟无 API Key 走不到真实编辑,
-          // 由主进程直接 push 一条构造事件,走与内核完全相同的 kernel:event 通道。
+          await click(".settings-nav .item:nth-child(3)"); await shoot("shell-appearance");
+          await click(".settings-nav .item:nth-child(4)"); await shoot("shell-status-display");
           win.webContents.send("kernel:event", {
             type: "gui:sensitive_notice",
             request_id: "smoke_sn_1",
@@ -203,8 +200,9 @@ async function createWindow() {
           });
           await new Promise((r) => setTimeout(r, 350));
           await shoot("shell-sensitive-notice");
-          await click(".sn-refuse");                                 // 关掉再截后续
-          await click(".settings-back");                                  // 回首页再截窄屏
+          await click(".sn-refuse");
+          await win.webContents.executeJavaScript(`(() => { document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true})); window.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true})); return true; })()`);
+          await new Promise((r) => setTimeout(r, 200));
           win.setSize(800, 720);
           await new Promise((r) => setTimeout(r, 500));
           await shoot("shell-narrow");
@@ -233,14 +231,6 @@ function registerIpcHandlers() {
     }
     ipcMain.handle(channel, handler);
   };
-
-  // Custom title-bar window controls (native frame is hidden via titleBarStyle).
-  handle("window:minimize", (e) => { BrowserWindow.fromWebContents(e.sender)?.minimize(); });
-  handle("window:maximize", (e) => {
-    const w = BrowserWindow.fromWebContents(e.sender);
-    if (w) { w.isMaximized() ? w.unmaximize() : w.maximize(); }
-  });
-  handle("window:close", (e) => { BrowserWindow.fromWebContents(e.sender)?.close(); });
 
   // File bridge (read-only project files for the tree + editor).
   handle("fs:tree", async () => {

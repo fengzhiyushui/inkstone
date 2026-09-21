@@ -9,6 +9,19 @@
 
 ---
 
+## v1.8.1 — 2026-09-20 · 壳层重构(三列 dock + 设置模态 + 中性阶梯)
+
+> 小版本:换壳层布局与视觉语言,信息架构保留;内核零改动(八目录 diff 为空)。计划见 [`plans/frontend/2026-09-20-v1.8.1-dsh-shell-plan.md`](plans/frontend/2026-09-20-v1.8.1-dsh-shell-plan.md),设计见 [`specs/frontend/2026-09-20-v1.8.1-dsh-shell-design.md`](specs/frontend/2026-09-20-v1.8.1-dsh-shell-design.md)。**合入 main、打 tag 由维护者完成。**
+
+- **B0 壳层骨架**:三列可拖拽 grid(`columns.js` 纯函数 + `AppFrame`/`DragHandle`)+ 40px 原生 `titleBarOverlay` + 首帧防闪(`?boot=` + `--boot-bg`)+ 零 DSH 引用守卫(`no-dsh-imports.test.js`);偏好新增 `sidebarWidth`/`rightbarWidth`/`rightbarOpen`/`dockTab`。
+- **B1 token 重铺(C 变体)**:结构槽明/暗两档中性阶梯(明 `#ffffff` / 暗 `#151517` 等 10 槽);10 主题 id 保留,只贡献 accent/语义色;对比度闸门改为 structure 2×7 + accent 10×4 = **54 项**;`theme.css` 增加派生量(`--hover`/`--border-l*`/`--shadow-*`/`--bubble`)与 `data-dark` 覆盖。
+- **B2 侧栏 + 会话页**:Rail/Chat/Composer CSS Modules 数值对齐;会话头 `SessionHeader`(tab 对话|轨迹,轨迹空态占位);滚动条 `scrollbar.css` 双路径;`.cz-meta` 决策①不动。**上下文圆环未做**(计划允许跳过;`STATUS_FORMS` 仍为 5)。
+- **B3 右栏 dock**:`Dock` + 文件树/改动/恢复三面板(`treeFromPaths` + `tree_dir_toggled`);侧栏「改动/恢复」改为开右栏;`Ctrl/⌘+J` 正式化;主区 `view===changes|recovery` 路由删除。
+- **B4 设置模态 + 收口**:设置从全窗改模态(`settingsOpen` + `settings_toggled`,`Ctrl/⌘+,`);删除自绘 `TitleBar.jsx` 与 `shell.css`(样式迁入 `theme.css`);`ThemeHub.jsx` 并入 `Appearance`;`window:*` IPC 删除;dom-contract/smoke 门重做(AppFrame 8 选择器);版本四处 → `1.8.1`。
+- 全量回归通过;`settings.back` 等 TitleBar 专用文案键保留字典(双语 parity),运行时不再引用。
+
+---
+
 ## v1.8.0 — 2026-09-20 · 工学换肤(Electron 壳层 v1.8 γ)
 
 > 小版本:**换视觉语言,不换信息架构**。内核零改动(`src/core src/deepseek src/tools src/edits src/sessions src/context src/security src/workspace` 八目录 diff 为空)。计划见 [`plans/frontend/2026-09-17-v1.8.0-ergo-restyle-plan.md`](plans/frontend/2026-09-17-v1.8.0-ergo-restyle-plan.md),设计见 [`specs/frontend/2026-09-17-v1.8.0-ergo-restyle-design.md`](specs/frontend/2026-09-17-v1.8.0-ergo-restyle-design.md)。
