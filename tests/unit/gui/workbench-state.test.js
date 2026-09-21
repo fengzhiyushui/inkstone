@@ -392,3 +392,14 @@ test("preferences_loaded hydrates column prefs; invalid values fall back", () =>
   assert.equal(bad.rightbarOpen, false);
   assert.equal(bad.dockTab, "files");
 });
+
+test("chat_tab_changed toggles chat/trajectory; invalid ignored", () => {
+  let s = state.createInitialState();
+  assert.equal(s.chatTab, "chat");
+  s = state.applyWorkbenchAction(s, { type: "chat_tab_changed", tab: "trajectory" });
+  assert.equal(s.chatTab, "trajectory");
+  s = state.applyWorkbenchAction(s, { type: "chat_tab_changed", tab: "nope" });
+  assert.equal(s.chatTab, "trajectory");
+  s = state.applyWorkbenchAction(s, { type: "chat_tab_changed", tab: "chat" });
+  assert.equal(s.chatTab, "chat");
+});

@@ -1,0 +1,228 @@
+/* Rail.module.css — DSH 数值(Inkstone 语义类名保留给 smoke) */
+.root {
+  padding: 6px 12px;
+  font-size: 14px;
+  background: var(--bg-panel);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.brand {
+  height: 60px;
+  padding: 8px 0 8px 4px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.brandCollapsed {
+  height: 36px;
+  margin-bottom: 12px;
+  justify-content: center;
+}
+.brand .lg {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  flex: none;
+  background: var(--accent);
+  color: var(--accent-text);
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 700;
+}
+.brand .nm { font-weight: 600; font-size: 14px; }
+.brand .vv { color: var(--text-faint); font-size: 12px; margin-left: auto; }
+
+.newwrap { position: relative; display: flex; gap: 2px; margin-bottom: 8px; }
+.newBtn {
+  flex: 1;
+  height: 38px;
+  padding: 8px 16px;
+  gap: 6px;
+  display: flex;
+  align-items: center;
+  border-radius: 12px;
+  font-size: 14px;
+  background: var(--bg-element);
+  color: var(--text);
+  border: none;
+  cursor: pointer;
+  box-shadow: var(--shadow-1);
+}
+.newBtn:hover { background: var(--hover); }
+.newBtn .kbd { margin-left: auto; font-size: 10px; opacity: .72; font-family: var(--font-mono); }
+.newMore {
+  width: 30px;
+  flex: none;
+  border-radius: 0 12px 12px 0;
+  background: var(--bg-element);
+  color: var(--text-mut);
+  border: none;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.newMore:hover { background: var(--hover); color: var(--text); }
+
+.search {
+  height: 36px;
+  border-radius: 8px;
+  background: var(--hover);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  margin-bottom: 8px;
+}
+.search input {
+  flex: 1;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+  min-width: 0;
+}
+.search svg { color: var(--text-faint); flex: none; }
+
+.fn { padding: 2px 0 8px; flex: none; }
+.fnItem {
+  height: 36px;
+  padding: 0 8px;
+  gap: 6px;
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-mut);
+  font-size: 14px;
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+}
+.fnItem:hover, .fnItem.on { background: var(--hover); color: var(--text); }
+.fnItem .ic { display: grid; place-items: center; flex: none; }
+.fnItem .tt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.fnItem .badge {
+  font-size: 11px;
+  color: var(--text-faint);
+  background: var(--bg-element);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+.div { height: 1px; background: var(--border-l2); margin: 2px 0; flex: none; }
+
+.scroll { flex: 1; overflow-y: auto; min-height: 0; padding-bottom: 8px; }
+
+.row {
+  min-height: 48px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.row:hover, .row.cur { background: var(--hover); }
+.row .meta { font-size: 12px; line-height: 17px; color: var(--text-faint); }
+
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0 4px;
+  flex: none;
+  border-top: .5px solid var(--border-l2);
+}
+.foot .iconbtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-mut);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.foot .iconbtn:hover, .foot .iconbtn.on { background: var(--hover); color: var(--text); }
+
+/* 折叠轨 56px */
+.collapsed .newwrap,
+.collapsed .search,
+.collapsed .scroll,
+.collapsed .div { display: none; }
+.collapsed .brand { height: 36px; margin-bottom: 12px; justify-content: center; padding: 0; }
+.collapsed .brand .nm,
+.collapsed .brand .vv { display: none; }
+.collapsed .fn { padding: 0; }
+.collapsed .fnItem { justify-content: center; padding: 0; width: 36px; height: 36px; margin: 0 auto 4px; border-radius: 12px; }
+.collapsed .fnItem .tt,
+.collapsed .fnItem .badge { display: none; }
+.collapsed .foot { justify-content: center; padding: 10px 0; }
+.collapsed .foot .who { display: none; }
+
+.fading > * { opacity: 0; transition: opacity 150ms var(--ease); }
+
+@media (prefers-reduced-motion: reduce) {
+  .fading > * { transition: none; }
+}
+
+/* new-menu 弹层 */
+.newMenu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 5px);
+  left: 0;
+  right: 0;
+  background: var(--bg-panel);
+  border: .5px solid var(--border-l3);
+  border-radius: 12px;
+  padding: 5px;
+  box-shadow: var(--shadow-2);
+}
+.newMenu .hd {
+  padding: 6px 9px 5px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+.newMenu .it {
+  display: flex;
+  gap: 9px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  cursor: pointer;
+  align-items: flex-start;
+  width: 100%;
+  border: none;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  font-size: 13px;
+}
+.newMenu .it:hover { background: var(--hover); }
+.newMenu .it .sub { color: var(--text-faint); font-size: 12px; }
+
+.secHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px 4px;
+  color: var(--text-faint);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}

@@ -10,7 +10,7 @@ test("frozen DOM/CSS contracts survive (v1.8.1 B0 冻结清单)", () => {
   const appFrame = read("gui/src/components/v4/AppFrame.jsx");
   assert.match(app, /setAttribute\("theme", state\.theme\)/);
   assert.match(app, /className=\{`shell\$\{state\.railCollapsed \? " rail-off" : ""\}\$\{(?:view === "settings"|isFullWindowSettings) \? " shell-settings" : ""\}`\}/);
-  for (const cls of ["rail-fn", "rail-scroll", "rail-foot", "rail-new"]) assert.match(rail, new RegExp(`className="${cls}`), cls);
+  for (const cls of ["rail-fn", "rail-scroll", "rail-foot", "rail-new"]) assert.match(rail, new RegExp(`className=\\{?[\`"']${cls}`), cls);
   assert.match(metrics, /"cz-meta"/);
   assert.match(metrics, /data-mv=/);
   assert.match(sn, /className="sn-backdrop" role="dialog" aria-modal="true"/);

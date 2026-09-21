@@ -57,6 +57,7 @@ export function createInitialState() {
     rightbarWidth: 0,
     rightbarOpen: false,
     dockTab: "files",
+    chatTab: "chat",
     inspectorMode: "activity",
     theme: "sumi",
     lastDark: "sumi",
@@ -228,6 +229,9 @@ export function applyWorkbenchAction(state, action) {
   }
   if (action.type === "dock_tab_changed") {
     return copy(current, { dockTab: normalize(action.tab, DOCK_TABS, current.dockTab) });
+  }
+  if (action.type === "chat_tab_changed") {
+    return copy(current, { chatTab: normalize(action.tab, ["chat", "trajectory"], current.chatTab) });
   }
   if (action.type === "preferences_loaded") {
     var prefs = action.preferences || {};

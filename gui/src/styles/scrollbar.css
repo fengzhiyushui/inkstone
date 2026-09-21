@@ -1,0 +1,25 @@
+/* v1.8.1 滚动条 — 双路径:标准 scrollbar-width + webkit 扩展 */
+body {
+  --sb-thumb: color-mix(in srgb, var(--text) 18%, transparent);
+  --sb-thumb-hover: color-mix(in srgb, var(--text) 28%, transparent);
+  --sb-w: 8px;
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--sb-thumb) transparent;
+  }
+}
+
+@supports selector(::-webkit-scrollbar) {
+  ::-webkit-scrollbar { width: var(--sb-w); height: var(--sb-w); }
+  ::-webkit-scrollbar-thumb {
+    background: var(--sb-thumb);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--sb-thumb-hover); }
+  ::-webkit-scrollbar-track { background: transparent; }
+}

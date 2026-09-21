@@ -102,6 +102,13 @@ body{
 .changediff-error{display:flex; gap:8px; align-items:center; padding:12px 16px; color:var(--red); font-size:12px;}
 .changediff-error .ghost{background:none; border:none; color:var(--text-mut); cursor:pointer;}
 
+/* 超椭圆圆角(支持时启用);圆形元素在下方规则补 corner-shape:round */
+@supports (corner-shape: superellipse(1.5)) {
+  :root { --corner: superellipse(1.5); }
+  *, *::before, *::after { corner-shape: var(--corner); }
+  .avatar, .spin, .cz-send, .iconbtn, [class*="send"] { corner-shape: round; }
+}
+
 /* 共享按钮 + 状态色(ChatView / Settings / SecondaryViews) */
 .btn{background:var(--bg-input); color:var(--text); border:1px solid var(--border-2); border-radius:5px; padding:4px 12px; font-size:12px; cursor:pointer;}
 .btn:hover:not(:disabled){background:var(--bg-hover);}

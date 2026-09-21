@@ -207,7 +207,9 @@ export default function App() {
                 onSwitchProject={onSwitchProject} statusLine={statusLine} />
             )}
             {view === "chat" && (
-              <ChatView t={t} state={state} actions={actions} kernel={kernel} setView={setView} statusLine={statusLine} />
+              <ChatView t={t} state={state} actions={actions} kernel={kernel} setView={setView} statusLine={statusLine}
+                onChatTab={(tab) => dispatch({ type: "chat_tab_changed", tab })}
+                onToggleRightbar={toggleRightbar} />
             )}
             {view === "projects" && (
               <ProjectsView t={t} state={state} onSwitchProject={onSwitchProject} onOpenFolder={onOpenFolder}

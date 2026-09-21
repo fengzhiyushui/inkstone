@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./lib/monaco-setup.js";
 import "./styles/theme.css";
 import "./styles/shell.css";
+import "./styles/scrollbar.css";
 import App from "./App.jsx";
 
 createRoot(document.getElementById("root")).render(
