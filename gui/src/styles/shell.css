@@ -2,12 +2,10 @@
      图标一律由 lucide-react 渲染为 <svg>,界面不出现表情符号或几何字形。 */
   body { overflow: hidden; }
 
-  /* .ide 是 titlebar + 1fr 两行栅格;壳层填满第二行即可(不能写 100vh,否则底部被裁) */
-  .shell { display: grid; grid-template-columns: 272px 1fr; grid-template-rows: 1fr; height: 100%; min-height: 0;
-    transition: grid-template-columns .24s cubic-bezier(.4,0,.2,1); }
-  /* 侧栏收起(偏好 railCollapsed):272px → 52px 图标轨,主区随之让位 */
-  .shell.rail-off { grid-template-columns: 52px 1fr; }
-  .shell.shell-settings { grid-template-columns: 1fr; }
+  /* B0:布局所有权移交 AppFrame.module.css;.shell 保留为语义钩子(smoke/dom-contract) */
+  .shell { height: 100%; min-height: 0; overflow: hidden; }
+  .shell.rail-off { /* 侧栏收轨由 AppFrame computeColumns 处理 */ }
+  .shell.shell-settings { /* 设置仍为全窗,无侧栏列 */ }
 
   /* 图标槽:lucide 的 svg 统一不参与压缩、随文字基线对齐 */
   .rail svg, .pane svg, .settings svg { flex: none; }

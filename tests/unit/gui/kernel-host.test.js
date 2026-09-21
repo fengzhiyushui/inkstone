@@ -322,7 +322,11 @@ test("gui preferences normalize invalid values to safe defaults", () => {
     railMode: "chat",
     contextCollapsed: false,
     railCollapsed: false,
-    statusDisplay: null
+    statusDisplay: null,
+    sidebarWidth: 280,
+    rightbarWidth: 0,
+    rightbarOpen: false,
+    dockTab: "files"
   });
 });
 
@@ -346,7 +350,11 @@ test("gui preferences load missing corrupt and save sanitized values", async () 
     railMode: "branches",
     contextCollapsed: true,
     railCollapsed: true,
-    statusDisplay: null
+    statusDisplay: null,
+    sidebarWidth: 280,
+    rightbarWidth: 0,
+    rightbarOpen: false,
+    dockTab: "files"
   });
 
   const raw = await readFile(path.join(root, ".deepseek-code", "gui-preferences.json"), "utf8");

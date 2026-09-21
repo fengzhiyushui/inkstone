@@ -7,8 +7,9 @@
 @import "./tokens.css";
 
 :root {
-  /* 布局尺寸(仅 .ide 栅格用到 --titlebar;其余 legacy 布局变量已清理) */
-  --titlebar:30px;
+  /* 布局尺寸(AppFrame 原生标题栏区);--ease 供壳层过渡统一 */
+  --titlebar:40px;
+  --ease: cubic-bezier(.4,0,.2,1);
 }
 
 /* Legacy 变量别名 → 新 tokens(逐元素解析,一份块服务全部 10 主题) */
@@ -36,7 +37,8 @@ body{
   font-family:var(--font-ui); font-size:13px;
   overflow:hidden; -webkit-font-smoothing:antialiased;
 }
-.ide{height:100vh; display:grid; grid-template-rows:var(--titlebar) 1fr;}
+/* B0:AppFrame 自带 40px 标题栏区与三列栅格;.ide 只做全窗容器 */
+.ide{height:100vh; display:grid; grid-template-rows:100%; overflow:hidden;}
 
 /* Title bar(自绘标题栏:拖拽区 + no-drag 按钮) */
 .titlebar{display:flex; align-items:center; background:var(--bg-title); font-size:12px; color:var(--text); -webkit-app-region:drag;}
@@ -50,8 +52,10 @@ body{
 .titlebar .actions .ib{width:30px; height:24px; display:grid; place-items:center; color:var(--text); background:none; border:none; border-radius:4px; cursor:pointer;}
 .titlebar .actions .ib:hover{background:color-mix(in srgb, var(--text) 12%, transparent);}
 .titlebar .actions .lang{width:auto; padding:0 8px; font-weight:600; font-size:11px;}
-.titlebar .winctl{display:flex;}
-.titlebar .winctl button{width:46px; height:30px; display:grid; place-items:center; background:none; border:none; color:var(--text); cursor:pointer; font-size:12px;}
+/* B0:窗控交给原生 overlay;自绘 winctl 隐藏(B4 删除) */
+.titlebar .winctl{display:none;}
+.titlebar{height:40px;}
+.titlebar .winctl button{width:46px; height:40px; display:grid; place-items:center; background:none; border:none; color:var(--text); cursor:pointer; font-size:12px;}
 .titlebar .winctl button:hover{background:color-mix(in srgb, var(--text) 12%, transparent);}
 .titlebar .winctl .close:hover{background:var(--err); color:var(--accent-text);}
 

@@ -6,6 +6,7 @@ import { trafficTone, formatLatency } from "./state/workbench-state.js";
 import { themeLabel, isLightTheme } from "./state/themes.js";
 import { nextInGroup, otherModeTheme } from "./state/theme-hub.js";
 import TitleBar from "./components/TitleBar.jsx";
+import AppFrame from "./components/v4/AppFrame.jsx";
 import Rail from "./components/v4/Rail.jsx";
 import HomeView from "./components/v4/HomeView.jsx";
 import ChatView from "./components/v4/ChatView.jsx";
@@ -112,7 +113,12 @@ export default function App() {
     kernel.setPreferences({ railCollapsed: next });
   }, [state.railCollapsed, dispatch, kernel]);
 
-  // 全局快捷键:Ctrl/⌘+N 新建会话(侧栏按钮的 kbd 提示由此兑现)、Ctrl/⌘+B 收放侧栏。
+  // B0 临时:Ctrl/⌘+J 切换右栏轨道(B3 正式化为 dock 开关)
+  const toggleRightbar = useCallback(() => {
+    dispatch({ type: "rightbar_toggled", viewport: window.innerWidth });
+  }, [dispatch]);
+
+  // 全局快捷键:Ctrl/⌘+N 新建会话、Ctrl/⌘+B 收放侧栏、Ctrl/⌘+J 右栏(B0 临时)。
   useEffect(() => {
     const onKey = (e) => {
       if (!(e.ctrlKey || e.metaKey)) return;
@@ -123,11 +129,14 @@ export default function App() {
       } else if (k === "b") {
         e.preventDefault();
         toggleRail();
+      } else if (k === "j") {
+        e.preventDefault();
+        toggleRightbar();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onNewSession, toggleRail, state.currentProject]);
+  }, [onNewSession, toggleRail, toggleRightbar, state.currentProject]);
 
   // 对话框状态行:一份数据两处复用(首页胶囊 + 会话胶囊)。
   const statusLine = useMemo(() => ({
@@ -164,61 +173,78 @@ export default function App() {
     "help.about": () => setView("settings")
   };
 
+  // B0–B3:设置仍是全窗(无 Rail / 无右栏);B4 改模态
+  const isFullWindowSettings = view === "settings";
+  const showRail = !isFullWindowSettings;
+
   return (
     <div className="ide">
-      <TitleBar t={t} language={state.language} theme={state.theme} title="Inkstone"
-        railView={view} onToggleTheme={toggleTheme} onToggleLang={toggleLang} menuActions={menuActions} />
-      <div className={`shell${state.railCollapsed ? " rail-off" : ""}${view === "settings" ? " shell-settings" : ""}`}>
-        {view !== "settings" && (
+      <AppFrame
+        className={`shell${state.railCollapsed ? " rail-off" : ""}${isFullWindowSettings ? " shell-settings" : ""}`}
+        titlebar={(
+          <TitleBar t={t} language={state.language} theme={state.theme} title="Inkstone"
+            railView={view} onToggleTheme={toggleTheme} onToggleLang={toggleLang} menuActions={menuActions} />
+        )}
+        hideSidebar={isFullWindowSettings}
+        railCollapsed={state.railCollapsed}
+        sidebarWidth={state.sidebarWidth}
+        rightbarOpen={!isFullWindowSettings && Boolean(state.rightbarOpen)}
+        rightbarWidth={state.rightbarWidth || 0}
+        dispatch={dispatch}
+        kernel={kernel}
+        sidebar={showRail ? (
           <Rail t={t} state={state} version={VERSION} setView={setView}
             collapsed={state.railCollapsed} onToggleCollapse={toggleRail}
             onSwitchProject={onSwitchProject} onNewSession={onNewSession} onOpenFolder={onOpenFolder} />
+        ) : null}
+        main={(
+          <main className="pane">
+            {view === "home" && (
+              <HomeView t={t} state={state} actions={actions} setView={setView}
+                onSwitchProject={onSwitchProject} statusLine={statusLine} />
+            )}
+            {view === "chat" && (
+              <ChatView t={t} state={state} actions={actions} kernel={kernel} setView={setView} statusLine={statusLine} />
+            )}
+            {view === "projects" && (
+              <ProjectsView t={t} state={state} onSwitchProject={onSwitchProject} onOpenFolder={onOpenFolder}
+                onRemoveProject={(root) => kernel.removeProject(root)}
+                onReveal={(root) => kernel.revealProject(root)} />
+            )}
+            {view === "changes" && (
+              <ChangesView t={t} state={state} theme={state.theme}
+                onOpenChange={(id, path) => kernel.openChangeDiff(id, path)}
+                onDismissDiff={() => kernel.dismissChangeDiff()}
+                onReveal={(p, line) => kernel.revealInEditor(p, line)} />
+            )}
+            {view === "mcp" && <McpView t={t} />}
+            {view === "plugins" && <PluginsView t={t} />}
+            {view === "recovery" && (
+              <RecoveryView
+                t={t}
+                items={recovery.items}
+                report={recovery.report}
+                busy={recovery.busy}
+                onRefresh={() => refreshRecovery()}
+                onResume={async (id) => {
+                  setRecovery((p) => ({ ...p, busy: id }));
+                  try { await kernel.recoveryResume(id); } finally { setRecovery((p) => ({ ...p, busy: null })); await refreshRecovery(); }
+                }}
+                onCancel={async (id) => {
+                  setRecovery((p) => ({ ...p, busy: id }));
+                  try { await kernel.recoveryCancel(id); } finally { setRecovery((p) => ({ ...p, busy: null })); await refreshRecovery(); }
+                }}
+                onClear={async (id) => {
+                  setRecovery((p) => ({ ...p, busy: id }));
+                  try { await kernel.recoveryClear(id); } finally { setRecovery((p) => ({ ...p, busy: null })); await refreshRecovery(); }
+                }}
+              />
+            )}
+            {view === "settings" && <Settings t={t} state={state} kernel={kernel} dispatch={dispatch} version={VERSION} onClose={closeSettings} />}
+          </main>
         )}
-        <main className="pane">
-          {view === "home" && (
-            <HomeView t={t} state={state} actions={actions} setView={setView}
-              onSwitchProject={onSwitchProject} statusLine={statusLine} />
-          )}
-          {view === "chat" && (
-            <ChatView t={t} state={state} actions={actions} kernel={kernel} setView={setView} statusLine={statusLine} />
-          )}
-          {view === "projects" && (
-            <ProjectsView t={t} state={state} onSwitchProject={onSwitchProject} onOpenFolder={onOpenFolder}
-              onRemoveProject={(root) => kernel.removeProject(root)}
-              onReveal={(root) => kernel.revealProject(root)} />
-          )}
-          {view === "changes" && (
-            <ChangesView t={t} state={state} theme={state.theme}
-              onOpenChange={(id, path) => kernel.openChangeDiff(id, path)}
-              onDismissDiff={() => kernel.dismissChangeDiff()}
-              onReveal={(p, line) => kernel.revealInEditor(p, line)} />
-          )}
-          {view === "mcp" && <McpView t={t} />}
-          {view === "plugins" && <PluginsView t={t} />}
-          {view === "recovery" && (
-            <RecoveryView
-              t={t}
-              items={recovery.items}
-              report={recovery.report}
-              busy={recovery.busy}
-              onRefresh={() => refreshRecovery()}
-              onResume={async (id) => {
-                setRecovery((p) => ({ ...p, busy: id }));
-                try { await kernel.recoveryResume(id); } finally { setRecovery((p) => ({ ...p, busy: null })); await refreshRecovery(); }
-              }}
-              onCancel={async (id) => {
-                setRecovery((p) => ({ ...p, busy: id }));
-                try { await kernel.recoveryCancel(id); } finally { setRecovery((p) => ({ ...p, busy: null })); await refreshRecovery(); }
-              }}
-              onClear={async (id) => {
-                setRecovery((p) => ({ ...p, busy: id }));
-                try { await kernel.recoveryClear(id); } finally { setRecovery((p) => ({ ...p, busy: null })); await refreshRecovery(); }
-              }}
-            />
-          )}
-          {view === "settings" && <Settings t={t} state={state} kernel={kernel} dispatch={dispatch} version={VERSION} onClose={closeSettings} />}
-        </main>
-      </div>
+        rightbar={null /* B3 填 Dock */}
+      />
       {/* #9.3:红色风险提醒。全窗模态,压在所有视图之上 —— 它不是审批,
           不进检查器的审批分区。 */}
       <SensitiveNoticeModal

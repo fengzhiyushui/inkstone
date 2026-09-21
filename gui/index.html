@@ -1,9 +1,19 @@
 <!doctype html>
-<html lang="zh-CN" theme="sumi">
+<html lang="zh-CN" theme="sumi" data-boot-theme>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Inkstone</title>
+    <style>html,body{background:var(--boot-bg,#151517)}</style>
+    <script>
+      // 首帧防闪:在 module 与 CSS 之前写 --boot-bg(主进程经 ?boot= 传入)
+      (function () {
+        var boot = new URLSearchParams(location.search).get("boot");
+        var bg = boot === "light" ? "#ffffff" : "#151517";
+        document.documentElement.style.setProperty("--boot-bg", bg);
+        if (boot) document.documentElement.setAttribute("data-boot-theme", boot);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

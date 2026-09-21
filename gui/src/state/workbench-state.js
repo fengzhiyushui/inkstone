@@ -2,6 +2,7 @@
 // the legacy UMD gui/renderer/workbench-state.js, now consumed by React useReducer).
 
 import { normalizeStatusDisplay } from "./status-display.js";
+import { SIDEBAR_MIN, SIDEBAR_MAX, SIDEBAR_DEFAULT, RIGHTBAR_MIN } from "./columns.js";
 
 var RAIL_MODES = ["chat", "context", "branches", "timeline", "settings"];
 var VIEWS = ["home", "chat", "projects", "changes", "mcp", "plugins", "settings"]; // v1.4.0 七视图
@@ -12,6 +13,18 @@ var LEGACY_THEME_MAP = { night: "sumi", day: "latte", dawn: "lotus", mocha: "sum
 var LIGHT_IDS = ["snow", "sand", "lotus", "latte", "paper"];
 function isLightId(id) { return LIGHT_IDS.indexOf(id) >= 0; }
 var LANGUAGES = ["zh", "en"];
+var DOCK_TABS = ["files", "changes", "recovery"];
+
+function normalizeSidebarWidth(value, fallback) {
+  if (!Number.isFinite(Number(value))) return fallback;
+  var n = Math.round(Number(value));
+  return n >= SIDEBAR_MIN && n <= SIDEBAR_MAX ? n : fallback;
+}
+function normalizeRightbarWidth(value) {
+  if (!Number.isFinite(Number(value))) return 0;
+  var n = Math.round(Number(value));
+  return n === 0 || n >= RIGHTBAR_MIN ? n : 0;
+}
 
 function normalizeTheme(value, fallback) {
   if (THEMES.indexOf(value) >= 0) return value;
@@ -40,6 +53,10 @@ export function createInitialState() {
     railView: "explorer",
     contextCollapsed: false,
     railCollapsed: false,
+    sidebarWidth: SIDEBAR_DEFAULT,
+    rightbarWidth: 0,
+    rightbarOpen: false,
+    dockTab: "files",
     inspectorMode: "activity",
     theme: "sumi",
     lastDark: "sumi",
@@ -193,6 +210,25 @@ export function applyWorkbenchAction(state, action) {
   if (action.type === "rail_collapsed_changed") {
     return copy(current, { railCollapsed: Boolean(action.collapsed) });
   }
+  if (action.type === "sidebar_resized") {
+    return copy(current, { sidebarWidth: normalizeSidebarWidth(action.width, current.sidebarWidth) });
+  }
+  if (action.type === "rightbar_resized") {
+    return copy(current, { rightbarWidth: normalizeRightbarWidth(action.width) });
+  }
+  if (action.type === "rightbar_toggled") {
+    var willOpen = !current.rightbarOpen;
+    var rbWidth = current.rightbarWidth;
+    if (willOpen && !(rbWidth >= RIGHTBAR_MIN)) {
+      var vp = Number(action.viewport);
+      rbWidth = Math.round((Number.isFinite(vp) && vp > 0 ? vp : 1280) * 0.45);
+      if (rbWidth < RIGHTBAR_MIN) rbWidth = RIGHTBAR_MIN;
+    }
+    return copy(current, { rightbarOpen: willOpen, rightbarWidth: rbWidth });
+  }
+  if (action.type === "dock_tab_changed") {
+    return copy(current, { dockTab: normalize(action.tab, DOCK_TABS, current.dockTab) });
+  }
   if (action.type === "preferences_loaded") {
     var prefs = action.preferences || {};
     var lastDark = normalizeTheme(prefs.lastDark, current.lastDark);
@@ -206,7 +242,11 @@ export function applyWorkbenchAction(state, action) {
       railMode: normalize(prefs.railMode, RAIL_MODES, current.railMode),
       statusDisplay: normalizeStatusDisplay(prefs.statusDisplay, current.statusDisplay),
       contextCollapsed: typeof prefs.contextCollapsed === "boolean" ? prefs.contextCollapsed : current.contextCollapsed,
-      railCollapsed: typeof prefs.railCollapsed === "boolean" ? prefs.railCollapsed : current.railCollapsed
+      railCollapsed: typeof prefs.railCollapsed === "boolean" ? prefs.railCollapsed : current.railCollapsed,
+      sidebarWidth: normalizeSidebarWidth(prefs.sidebarWidth, current.sidebarWidth || SIDEBAR_DEFAULT),
+      rightbarWidth: normalizeRightbarWidth(prefs.rightbarWidth),
+      rightbarOpen: typeof prefs.rightbarOpen === "boolean" ? prefs.rightbarOpen : current.rightbarOpen,
+      dockTab: normalize(prefs.dockTab, DOCK_TABS, current.dockTab || "files")
     });
   }
   if (action.type === "inspector_closed") {

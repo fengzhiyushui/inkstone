@@ -61,7 +61,8 @@ export default function TitleBar({ t, language, theme, title, railView, onToggle
           {dark ? <Moon size={14} /> : <Sun size={14} />}
         </button>
       </div>
-      <div className="winctl">
+      {/* B0:原生 titleBarOverlay 接管窗控;自绘三钮隐藏不删(B4 删整个文件) */}
+      <div className="winctl" hidden style={{ display: "none" }}>
         <button type="button" aria-label="minimize" onClick={() => window.deepseek?.minimize?.()}><Minus size={13} /></button>
         <button type="button" aria-label="maximize" onClick={() => window.deepseek?.maximizeToggle?.()}><Square size={11} /></button>
         <button type="button" className="close" aria-label="close" onClick={() => window.deepseek?.closeWindow?.()}><X size={13} /></button>

@@ -45,8 +45,9 @@ if (process.env.DEEPSEEK_CODE_GUI_SMOKE === "1") {
 
 async function createWindow() {
   const smoke = process.env.DEEPSEEK_CODE_GUI_SMOKE === "1";
+  const projectRoot = resolveProjectRoot(process.argv, path.resolve(__dirname, ".."));
   const seededChangePath = path.join(
-    resolveProjectRoot(process.argv, path.resolve(__dirname, "..")),
+    projectRoot,
     ".deepseek-code", "changes", "20990101000000-smoke0.json"
   );
   if (smoke) {
@@ -64,25 +65,10 @@ async function createWindow() {
       }, null, 2), "utf8");
     } catch (seedErr) { console.log("SMOKE_SEED_SKIPPED:" + seedErr.message); }
   }
-  const win = new BrowserWindow({
-    width: smoke ? 1440 : 900,
-    height: smoke ? 900 : 700,
-    minWidth: 400,
-    minHeight: 400,
-    autoHideMenuBar: true,
-    titleBarStyle: "hidden",
-    backgroundColor: "#1e1e1e",
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: true
-    },
-    title: "Inkstone"
-  });
 
+  let win = null;
   host = createKernelHost({
-    projectRoot: resolveProjectRoot(process.argv, path.resolve(__dirname, "..")),
+    projectRoot,
     pushEvent: (event) => {
       if (win && !win.isDestroyed()) win.webContents.send("kernel:event", event);
     }
@@ -94,17 +80,48 @@ async function createWindow() {
     console.error("Kernel init failed:", error.message);
   }
 
+  // 首帧防闪:先读偏好明暗,再带 titleBarOverlay / backgroundColor / boot 查询串建窗
+  let bootTheme = "dark";
+  try {
+    const prefs = await host.getPreferences();
+    const lightIds = new Set(["snow", "sand", "lotus", "latte", "paper"]);
+    bootTheme = lightIds.has(prefs.theme) ? "light" : "dark";
+  } catch { /* 默认暗 */ }
+  const isLightBoot = bootTheme === "light";
+  const overlay = isLightBoot
+    ? { height: 40, color: "#f9fafb", symbolColor: "#0f1115" }
+    : { height: 40, color: "#1b1b1c", symbolColor: "#f9fafb" };
+
+  win = new BrowserWindow({
+    width: smoke ? 1440 : 1280,
+    height: smoke ? 900 : 840,
+    minWidth: 880,
+    minHeight: 600,
+    autoHideMenuBar: true,
+    titleBarStyle: "hidden",
+    titleBarOverlay: overlay,
+    backgroundColor: isLightBoot ? "#ffffff" : "#151517",
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true
+    },
+    title: "Inkstone"
+  });
+
   registerIpcHandlers();
   // Load order: dev server (DEEPSEEK_CODE_GUI_DEV_URL) → built React renderer (renderer-dist).
   // Neither available → show error dialog and exit (no legacy fallback).
   const devUrl = process.env.DEEPSEEK_CODE_GUI_DEV_URL;
   const builtIndex = path.join(__dirname, "renderer-dist", "index.html");
+  const bootQuery = { boot: bootTheme };
   if (devUrl) {
-    win.loadURL(devUrl);
+    win.loadURL(devUrl + (devUrl.includes("?") ? "&" : "?") + "boot=" + bootTheme);
   } else if (fs.existsSync(builtIndex)) {
     // 冒烟:带上 ?smoke=1 让渲染层强制关玻璃态,截图/断言确定性。
-    if (process.env.DEEPSEEK_CODE_GUI_SMOKE === "1") win.loadFile(builtIndex, { query: { smoke: "1" } });
-    else win.loadFile(builtIndex);
+    if (smoke) win.loadFile(builtIndex, { query: { ...bootQuery, smoke: "1" } });
+    else win.loadFile(builtIndex, { query: bootQuery });
   } else {
     const msg = "未找到 renderer-dist 构建产物。请先运行 npm run build:renderer 进行构建。";
     console.error(msg);
@@ -116,6 +133,7 @@ async function createWindow() {
     win.webContents.once("did-finish-load", async () => {
       try {
         // React mounts asynchronously — poll for the shell + key a11y-labelled nodes.
+        // B0 预期选择器(AppFrame 三列壳层;TitleBar 仍在至 B4)
         const ready = await win.webContents.executeJavaScript(`
           new Promise((resolve) => {
             const ok = () => Boolean(

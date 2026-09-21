@@ -15,6 +15,10 @@ test("createInitialState defines workbench defaults", () => {
   assert.equal(initial.railMode, "chat");
   assert.equal(initial.contextCollapsed, false);
   assert.equal(initial.railCollapsed, false);
+  assert.equal(initial.sidebarWidth, 280);
+  assert.equal(initial.rightbarWidth, 0);
+  assert.equal(initial.rightbarOpen, false);
+  assert.equal(initial.dockTab, "files");
   assert.equal(initial.inspectorMode, "activity");
   assert.equal(initial.theme, "sumi");
   assert.equal(initial.emptyStateVisible, true);
@@ -345,4 +349,46 @@ test("agent:final with empty content does not append a blank bubble", () => {
   const s0 = state.createInitialState();
   const s = state.applyWorkbenchAction(s0, { type: "event_received", event: { type: "agent:final", content: "" } });
   assert.equal(s.messages.length, 0);
+});
+
+// B0:壳层四 action
+test("sidebar/rightbar/dock actions update workbench state", () => {
+  let s = state.createInitialState();
+  s = state.applyWorkbenchAction(s, { type: "sidebar_resized", width: 320 });
+  assert.equal(s.sidebarWidth, 320);
+  s = state.applyWorkbenchAction(s, { type: "sidebar_resized", width: 99 });
+  assert.equal(s.sidebarWidth, 320); // 非法宽度忽略
+
+  s = state.applyWorkbenchAction(s, { type: "rightbar_toggled", viewport: 1280 });
+  assert.equal(s.rightbarOpen, true);
+  assert.ok(s.rightbarWidth >= 300, "首次打开应给出默认宽度");
+  s = state.applyWorkbenchAction(s, { type: "rightbar_toggled", viewport: 1280 });
+  assert.equal(s.rightbarOpen, false);
+
+  s = state.applyWorkbenchAction(s, { type: "rightbar_resized", width: 360 });
+  assert.equal(s.rightbarWidth, 360);
+  s = state.applyWorkbenchAction(s, { type: "dock_tab_changed", tab: "changes" });
+  assert.equal(s.dockTab, "changes");
+  s = state.applyWorkbenchAction(s, { type: "dock_tab_changed", tab: "nope" });
+  assert.equal(s.dockTab, "changes"); // 白名单外忽略
+});
+
+test("preferences_loaded hydrates column prefs; invalid values fall back", () => {
+  const good = state.applyWorkbenchAction(state.createInitialState(), {
+    type: "preferences_loaded",
+    preferences: { sidebarWidth: 360, rightbarWidth: 400, rightbarOpen: true, dockTab: "recovery" }
+  });
+  assert.equal(good.sidebarWidth, 360);
+  assert.equal(good.rightbarWidth, 400);
+  assert.equal(good.rightbarOpen, true);
+  assert.equal(good.dockTab, "recovery");
+
+  const bad = state.applyWorkbenchAction(state.createInitialState(), {
+    type: "preferences_loaded",
+    preferences: { sidebarWidth: 10, rightbarWidth: 12, rightbarOpen: "yes", dockTab: "zzz" }
+  });
+  assert.equal(bad.sidebarWidth, 280);
+  assert.equal(bad.rightbarWidth, 0);
+  assert.equal(bad.rightbarOpen, false);
+  assert.equal(bad.dockTab, "files");
 });

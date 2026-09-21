@@ -1,0 +1,77 @@
+/* B0 壳层三列 — 数值来自 v1.8.1 spec §4.0(设计事实,非外部代码拷贝) */
+.frame {
+  position: relative;
+  display: grid;
+  grid-template-rows: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-base);
+  transition: grid-template-columns .3s var(--ease);
+}
+.frame[data-dragging] { transition: none; }
+
+/* Windows:原生 titleBarOverlay 接管窗控;Frame 自带 40px 标题栏拖拽区 */
+.frame[data-windows-titlebar] {
+  padding-top: 40px;
+  background: var(--bg-panel);
+}
+.frame[data-windows-titlebar]::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 40px;
+  background: var(--bg-panel);
+  -webkit-app-region: drag;
+  z-index: 12;
+}
+.frame[data-windows-titlebar] .center {
+  background: var(--bg-base);
+  border-radius: 16px 0 0 0;
+}
+
+/* 自绘标题栏占位(绝对定位压在 ::before 拖拽区上;B4 删 TitleBar 后此槽可空) */
+.chrome {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  z-index: 20;
+  pointer-events: none;
+}
+.chrome > * { pointer-events: auto; height: 100%; }
+
+.sidebar {
+  min-width: 0;
+  overflow: hidden;
+  background: var(--bg-panel);
+  border-right: .5px solid var(--border-strong);
+}
+.center {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.rightbar {
+  position: relative;
+  min-width: 0;
+  overflow: visible;
+}
+
+.handle {
+  position: absolute;
+  top: 40px;
+  bottom: 0;
+  width: 8px;
+  margin-left: -4px;
+  cursor: col-resize;
+  z-index: 11;
+  touch-action: none;
+  transition: left .3s var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frame, .handle { transition: none; }
+}

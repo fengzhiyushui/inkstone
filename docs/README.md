@@ -117,6 +117,7 @@ docs/
 - [v3-phase-d5 tui-redesign](specs/frontend/2026-07-06-v3-phase-d5-tui-redesign-design.md) — **D-5 TUI 重设计**:行内滚动流 agent 会话(原生滚动区 + 底部固定输入/状态栏)+ 流式 onDelta 透传 + 工具/diff/审批卡片 + slash 补全 + /config 共享 api-profiles(激活重建 kernel 保上下文);手写 ANSI,zh/en 双语,kernel 核心零改动
 - [v1.4.0 frontend-redesign](specs/frontend/2026-07-28-v1.4.0-frontend-redesign-design.md) — **v1.4.0 前端界面整体重做(✅ 设计定稿 + 已实现,终稿 = prototypes/v1.4.0-redesign/v4/)**:GUI 借鉴 Codex/Claude Desktop、TUI 仿 opencode;10 套主题(3 浅 7 深)单一 token 源,色值取自各方案官方定义源并通过 WCAG 对比度校验;五轮 HTML 稿迭代定型(侧栏=功能区/项目分区/独立对话,每项目独立分区内挂会话、新建会话继承项目目录;指标 5 形态可选;TUI 首页 opencode 构图 + /theme + /shell);已在 feat/v1.4 分支按 plan 实施完成;kernel 零改动
 - [v1.8.0 ergo-restyle](specs/frontend/2026-09-17-v1.8.0-ergo-restyle-design.md) — **v1.8.0 工学换肤(✅ 已评审 2026-09-17)**:换视觉语言不换信息架构;10 套主题重编为**四段带**(暗 3 / 柔暗 2 / 柔明 2 / 明 3——正文 ≥7:1 闸门使中灰 L90–164 成死区,"过渡"只能两侧各自延伸);卡片两段式 + composer 柔光 + 主题中枢;γ 分层落地(DOM 冻结)、β 重建保留为升级口;不做粒子与网格,极简舒适;对比度闸门升级为常驻单测
+- [v1.8.1 dsh-shell](specs/frontend/2026-09-20-v1.8.1-dsh-shell-design.md) — **壳层重构 · DSH 参照 · β 路径(草案,五项待拍板)**:DSH 已是 Electron 桌面端,本版 = 换壳(三列可拖 + 右栏 dock + 模态设置)与视觉(冷蓝灰阶 + 单一品牌蓝),信息架构全保留;主题体系三选一(模式×配色 / 全保留 / 两套);B0–B4 分层,重做 dom-contract 与 smoke 基线
 - [D-G7 gui-recovery-center](plans/frontend/2026-09-15-d-g7-gui-recovery-center.md) — **✅ v1.7.1**:GUI Recovery Center(收 V2-18 Task 13);kernel-host 代理 + IPC + RecoveryView
 
 ### plans/roadmap — 宏观阶段
@@ -146,6 +147,7 @@ docs/
 
 ### plans/frontend — 前端实施计划
 - [v1.7.2 gui-defects](plans/frontend/2026-09-17-v1.7.2-gui-defects.md) — **v1.7.2 GUI 三处现有缺陷 + 敏感模态截图欠账(patch)**:agent 回复从不入流 / 状态行数据首屏一次不刷新 / `.sn-*` 引用 7 个未定义 CSS 变量;各附 HEAD 复现证据、失败测试全文、内容锚点;**v1.8.0 P2 的硬前置**
+- [v1.8.1 dsh-shell plan](plans/frontend/2026-09-20-v1.8.1-dsh-shell-plan.md) — **v1.8.1 壳层重构实施方案(B0 骨架 → B1 token → B2 侧栏/会话页 → B3 右栏 dock → B4 设置模态/收口)**:全量搬设计事实、零引用外部代码(B0 首个任务即守卫测试);附录 A 逐项标注取值来源;前置 v1.8.0
 - [v1.8.0 ergo-restyle plan](plans/frontend/2026-09-17-v1.8.0-ergo-restyle-plan.md) — **v1.8.0 工学换肤实施方案(P0 tokens 地基 → P1 壳层视觉 → P2 卡片/推理摘要/外观 → P3 收口)**:每层文件路径 / 断言值 / 验收命令写到零上下文可执行;附录 A 六套新主题色值(两名独立复核 110 项闸门);前置 v1.7.2(**✅ 已实施完成**,1107 测试全绿,P0–P3 四层各自五项准入)
 - [v2-5 interface-migration](plans/frontend/2026-05-30-v2-5-interface-migration.md)
 - [v2-14 gui-workbench-branch-rewind](plans/frontend/2026-05-31-v2-14-gui-workbench-branch-rewind.md)
