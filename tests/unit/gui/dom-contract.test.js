@@ -21,4 +21,6 @@ test("frozen DOM/CSS contracts survive (v1.8.1 B0 冻结清单)", () => {
   for (const sel of [".ide", 'header[role="banner"]', ".shell", ".rail", ".pane", ".rail-fn", ".cz-input", ".titlebar .actions .lang"])
     assert.ok(main.includes(`querySelector(${JSON.stringify(sel)})`) || main.includes(`querySelector('${sel}')`), `smoke 门选择器 ${sel}`);
   assert.ok(!/telemetry|statusbar/.test(app), "不得出现遥测条/独立状态栏");
+  assert.ok(!/ChangesView|RecoveryView/.test(app), "B3 后 App 不再直接挂 ChangesView/RecoveryView");
+  assert.match(app, /rightbar=\{!/);
 });

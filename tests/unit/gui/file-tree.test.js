@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildTree } from "../../../gui/src/state/file-tree.js";
+import { buildTree, treeFromPaths } from "../../../gui/src/state/file-tree.js";
 
 test("buildTree nests paths; dirs first then alphabetical", () => {
   const t = buildTree(["src/index.js", "README.md", "src/core/x.js"]);
@@ -19,4 +19,18 @@ test("buildTree nests paths; dirs first then alphabetical", () => {
 test("buildTree empty → []", () => {
   assert.deepEqual(buildTree([]), []);
   assert.deepEqual(buildTree(null), []);
+});
+
+test("treeFromPaths builds nested dirs, dirs first, sorted", () => {
+  const t = treeFromPaths(["src/b.js", "src/a.js", "README.md", "src/lib/x.js"]);
+  assert.deepEqual(t.map((n) => n.name), ["src", "README.md"]);
+  assert.deepEqual(t[0].children.map((n) => n.name), ["lib", "a.js", "b.js"]);
+  assert.equal(t[0].children[0].children[0].path, "src/lib/x.js");
+  assert.equal(t[0].type, "directory");
+  assert.equal(t[1].type, "file");
+});
+
+test("treeFromPaths tolerates empty and duplicate input", () => {
+  assert.deepEqual(treeFromPaths([]), []);
+  assert.equal(treeFromPaths(["a.js", "a.js"]).length, 1);
 });

@@ -101,6 +101,18 @@ export function useKernel(dispatch) {
       testConnection: (profileId) => api?.testConnection?.(profileId),
 
       openFile: openFileImpl,
+      listTree: async () => {
+        if (!api?.listTree) return [];
+        try {
+          const files = await api.listTree();
+          const list = Array.isArray(files) ? files : (files && files.files) || [];
+          dispatch({ type: "tree_loaded", files: list });
+          return list;
+        } catch (err) {
+          dispatch(errorToAction("listTree", err));
+          return [];
+        }
+      },
 
       refreshChanges: async (limit) => {
         if (!api?.listChanges) return;

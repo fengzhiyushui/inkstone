@@ -11,7 +11,8 @@ import css from "./Rail.module.css";
 
 export default function Rail({
   t, state, version, setView, onSwitchProject, onNewSession, onOpenFolder,
-  collapsed = false, onToggleCollapse
+  collapsed = false, onToggleCollapse,
+  onOpenDock
 }) {
   const view = state.view;
   const projects = state.projects || [];
@@ -33,8 +34,8 @@ export default function Rail({
   const fn = [
     { id: "home", label: t("rail.home"), icon: Home },
     { id: "projects", label: t("rail.projects"), icon: FolderKanban, badge: projects.length || null },
-    { id: "changes", label: t("rail.changes"), icon: GitCompare, badge: (state.changes || []).length || null },
-    { id: "recovery", label: t("rail.recovery"), icon: LifeBuoy },
+    { id: "changes", label: t("rail.changes"), icon: GitCompare, badge: (state.changes || []).length || null, dock: "changes" },
+    { id: "recovery", label: t("rail.recovery"), icon: LifeBuoy, dock: "recovery" },
     { id: "mcp", label: t("rail.mcp"), icon: Network },
     { id: "plugins", label: t("rail.plugins"), icon: Puzzle }
   ];
@@ -101,8 +102,12 @@ export default function Rail({
       </div>
 
       <nav className={`rail-fn ${css.fn}`}>
-        {fn.map(({ id, label, icon: Icon, badge }) => (
-          <button type="button" key={id} className={`fn-item ${css.fnItem} ${view === id ? "on" : ""}`} onClick={() => setView(id)}>
+        {fn.map(({ id, label, icon: Icon, badge, dock }) => (
+          <button type="button" key={id} className={`fn-item ${css.fnItem} ${view === id || (dock && state.dockTab === dock && state.rightbarOpen) ? "on" : ""}`}
+            onClick={() => {
+              if (dock) onOpenDock?.(dock);
+              else setView(id);
+            }}>
             <span className="ic"><Icon size={16} /></span>
             <span className="tt">{label}</span>
             {badge ? <span className="badge">{badge}</span> : null}

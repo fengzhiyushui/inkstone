@@ -31,3 +31,23 @@ function toArray(level) {
       : { name: n.name, path: n.path, type: "file" }
   );
 }
+
+// B3 dock 文件树:与 buildTree 同排序,节点 type 用 "directory"|"file"(dock 面板契约)
+export function treeFromPaths(paths) {
+  const seen = new Set();
+  const unique = [];
+  for (const p of paths || []) {
+    const key = String(p || "").replace(/\\/g, "/").replace(/^\.\//, "");
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(key);
+  }
+  return buildTree(unique).map(normalizeDockNode);
+}
+
+function normalizeDockNode(n) {
+  const type = n.type === "dir" || n.type === "directory" ? "directory" : "file";
+  const node = { name: n.name, path: n.path, type };
+  if (type === "directory") node.children = (n.children || []).map(normalizeDockNode);
+  return node;
+}

@@ -58,6 +58,7 @@ export function createInitialState() {
     rightbarOpen: false,
     dockTab: "files",
     chatTab: "chat",
+    dockFiles: { expanded: {} },
     inspectorMode: "activity",
     theme: "sumi",
     lastDark: "sumi",
@@ -232,6 +233,15 @@ export function applyWorkbenchAction(state, action) {
   }
   if (action.type === "chat_tab_changed") {
     return copy(current, { chatTab: normalize(action.tab, ["chat", "trajectory"], current.chatTab) });
+  }
+  if (action.type === "tree_dir_toggled") {
+    var dirPath = action.path;
+    if (!dirPath || typeof dirPath !== "string") return current;
+    var dockFiles = current.dockFiles || { expanded: {} };
+    var expanded = Object.assign({}, dockFiles.expanded || {});
+    if (expanded[dirPath]) delete expanded[dirPath];
+    else expanded[dirPath] = true;
+    return copy(current, { dockFiles: Object.assign({}, dockFiles, { expanded: expanded }) });
   }
   if (action.type === "preferences_loaded") {
     var prefs = action.preferences || {};

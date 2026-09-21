@@ -10,7 +10,8 @@ import AppFrame from "./components/v4/AppFrame.jsx";
 import Rail from "./components/v4/Rail.jsx";
 import HomeView from "./components/v4/HomeView.jsx";
 import ChatView from "./components/v4/ChatView.jsx";
-import { ProjectsView, ChangesView, McpView, PluginsView, RecoveryView } from "./components/v4/SecondaryViews.jsx";
+import { ProjectsView, McpView, PluginsView } from "./components/v4/SecondaryViews.jsx";
+import Dock from "./components/v4/Dock.jsx";
 import Settings from "./components/Settings/Settings.jsx";
 import SensitiveNoticeModal from "./components/v4/SensitiveNoticeModal.jsx";
 
@@ -49,8 +50,8 @@ export default function App() {
     }
   }, [kernel]);
   useEffect(() => {
-    if (view === "recovery") refreshRecovery().catch(() => {});
-  }, [view, state.currentProject, refreshRecovery]);
+    if ((view === "recovery" || (state.rightbarOpen && state.dockTab === "recovery"))) refreshRecovery().catch(() => {});
+  }, [view, state.rightbarOpen, state.dockTab, state.currentProject, refreshRecovery]);
 
   // 设置页全窗打开时记住来源视图,关闭后回到原处。
   const returnRef = useRef("home");
@@ -116,10 +117,15 @@ export default function App() {
     kernel.setPreferences({ railCollapsed: next });
   }, [state.railCollapsed, dispatch, kernel]);
 
-  // B0 临时:Ctrl/⌘+J 切换右栏轨道(B3 正式化为 dock 开关)
+  // B0 临时 → B3 正式:Ctrl/⌘+J 切换右栏轨道
   const toggleRightbar = useCallback(() => {
     dispatch({ type: "rightbar_toggled", viewport: window.innerWidth });
   }, [dispatch]);
+
+  const openDock = useCallback((tab) => {
+    dispatch({ type: "dock_tab_changed", tab });
+    if (!state.rightbarOpen) dispatch({ type: "rightbar_toggled", viewport: window.innerWidth });
+  }, [dispatch, state.rightbarOpen]);
 
   // 全局快捷键:Ctrl/⌘+N 新建会话、Ctrl/⌘+B 收放侧栏、Ctrl/⌘+J 右栏(B0 临时)。
   useEffect(() => {
@@ -198,7 +204,8 @@ export default function App() {
         sidebar={showRail ? (
           <Rail t={t} state={state} version={VERSION} setView={setView}
             collapsed={state.railCollapsed} onToggleCollapse={toggleRail}
-            onSwitchProject={onSwitchProject} onNewSession={onNewSession} onOpenFolder={onOpenFolder} />
+            onSwitchProject={onSwitchProject} onNewSession={onNewSession} onOpenFolder={onOpenFolder}
+            onOpenDock={openDock} />
         ) : null}
         main={(
           <main className="pane">
@@ -216,39 +223,26 @@ export default function App() {
                 onRemoveProject={(root) => kernel.removeProject(root)}
                 onReveal={(root) => kernel.revealProject(root)} />
             )}
-            {view === "changes" && (
-              <ChangesView t={t} state={state} theme={state.theme}
-                onOpenChange={(id, path) => kernel.openChangeDiff(id, path)}
-                onDismissDiff={() => kernel.dismissChangeDiff()}
-                onReveal={(p, line) => kernel.revealInEditor(p, line)} />
-            )}
             {view === "mcp" && <McpView t={t} />}
             {view === "plugins" && <PluginsView t={t} />}
-            {view === "recovery" && (
-              <RecoveryView
-                t={t}
-                items={recovery.items}
-                report={recovery.report}
-                busy={recovery.busy}
-                onRefresh={() => refreshRecovery()}
-                onResume={async (id) => {
-                  setRecovery((p) => ({ ...p, busy: id }));
-                  try { await kernel.recoveryResume(id); } finally { setRecovery((p) => ({ ...p, busy: null })); await refreshRecovery(); }
-                }}
-                onCancel={async (id) => {
-                  setRecovery((p) => ({ ...p, busy: id }));
-                  try { await kernel.recoveryCancel(id); } finally { setRecovery((p) => ({ ...p, busy: null })); await refreshRecovery(); }
-                }}
-                onClear={async (id) => {
-                  setRecovery((p) => ({ ...p, busy: id }));
-                  try { await kernel.recoveryClear(id); } finally { setRecovery((p) => ({ ...p, busy: null })); await refreshRecovery(); }
-                }}
-              />
-            )}
             {view === "settings" && <Settings t={t} state={state} kernel={kernel} dispatch={dispatch} version={VERSION} onClose={closeSettings} />}
           </main>
         )}
-        rightbar={null /* B3 填 Dock */}
+        rightbar={!isFullWindowSettings && state.rightbarOpen ? (
+          <Dock
+            t={t}
+            state={state}
+            kernel={kernel}
+            dispatch={dispatch}
+            rightbarWidth={state.rightbarWidth || 0}
+            recovery={recovery}
+            onRefreshRecovery={refreshRecovery}
+            onOpenChange={(id, path) => kernel.openChangeDiff(id, path)}
+            onDismissDiff={() => kernel.dismissChangeDiff()}
+            onReveal={(p, line) => kernel.revealInEditor(p, line)}
+            onToggleRightbar={toggleRightbar}
+          />
+        ) : null}
       />
       {/* #9.3:红色风险提醒。全窗模态,压在所有视图之上 —— 它不是审批,
           不进检查器的审批分区。 */}
