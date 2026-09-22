@@ -13,6 +13,14 @@
 
 > 下一个补丁 / 小版本的变更在此累积;发布时按[版本命名规则](README.md#版本命名规则)定级、移入带版本号的小节。
 
+- **Dock 顶部对齐与黑带消除**：修复 `Dock.module.css` 冗余 `top: 40px`，纠正为 `top: 0`，消除右栏 40px 空黑带并恢复完整视口高度。
+- **分隔条键盘微调方向修复**：修复 `DragHandle.jsx` 右栏微调双重反转问题，统一按屏幕物理 X 坐标计算，抽离 `computeKeyboardDelta` 纯函数并补齐单元测试。
+- **折叠卡片交互与内胆样式生效**：修复 `ChatView.jsx` 中 `Collapsible` 点击折叠不生效且 `.cardBody` 丢失问题，包裹条件渲染与 `css.cardBody`，与 `theme.css:223` 规则对齐。
+- **文件树激活项高亮**：修复 `FilesPanel.jsx` 引用不存在的 `expanded.__file` 问题，接入 `state.activeFile` 正确呈现文件打开高亮。
+- **项目切换文件树重载**：`workbench-state.js` 在 `project_switched` 时重置 `fileTree` 与展开目录集合，`FilesPanel.jsx` 监听 `state.currentProject` 变化自动重拉文件树，避免残留上一项目文件。
+- **侧栏折叠拖拽把手守卫**：修复 `AppFrame.jsx` 在 `railCollapsed` 为 56px 图标轨时仍渲染把手导致拖拽跳跃至 264px 的缺陷，补齐 `!railCollapsed` 渲染守卫。
+- **运行时标题栏明暗同步**：`gui/main.js` 在 `gui:preferences-set` 中监听主题明暗档变化，动态调用 `win.setTitleBarOverlay(...)` 更新 Windows 窗控按钮底色与符号色。
+
 ---
 
 ## v1.8.3 — 2026-09-22 · 前端审查修复(生成物一致性 / 样式迁回补完 / 死代码清理)
