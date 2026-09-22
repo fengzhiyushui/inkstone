@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  computeColumns, clampWidth,
+  computeColumns, clampWidth, computeKeyboardDelta,
   SIDEBAR_MIN, SIDEBAR_MAX, SIDEBAR_DEFAULT, SIDEBAR_COLLAPSED,
   RIGHTBAR_MIN, RIGHTBAR_MAX, CENTER_MIN
 } from "../../../gui/src/state/columns.js";
@@ -55,4 +55,13 @@ test("columns sum to viewport (no horizontal overflow)", () => {
       }
     }
   }
+});
+
+test("computeKeyboardDelta computes screen deltas for arrow keys", () => {
+  assert.equal(computeKeyboardDelta("ArrowLeft", false), -8);
+  assert.equal(computeKeyboardDelta("ArrowLeft", true), -32);
+  assert.equal(computeKeyboardDelta("ArrowRight", false), 8);
+  assert.equal(computeKeyboardDelta("ArrowRight", true), 32);
+  assert.equal(computeKeyboardDelta("ArrowUp", false), 0);
+  assert.equal(computeKeyboardDelta("Escape", false), 0);
 });

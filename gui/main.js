@@ -321,7 +321,18 @@ function registerIpcHandlers() {
     catch (error) { return { error: error.message }; }
   });
   handle("gui:preferences-set", async (_event, patch) => {
-    try { return await host.setPreferences(patch || {}); }
+    try {
+      const res = await host.setPreferences(patch || {});
+      if (patch && typeof patch.theme === "string" && win && !win.isDestroyed() && typeof win.setTitleBarOverlay === "function") {
+        const lightIds = new Set(["snow", "sand", "lotus", "latte", "paper"]);
+        const isLight = lightIds.has(patch.theme);
+        const nextOverlay = isLight
+          ? { height: 40, color: "#f9fafb", symbolColor: "#0f1115" }
+          : { height: 40, color: "#1b1b1c", symbolColor: "#f9fafb" };
+        try { win.setTitleBarOverlay(nextOverlay); } catch { /* ignore */ }
+      }
+      return res;
+    }
     catch (error) { return { error: error.message }; }
   });
   handle("config:get", () => host?.getConfig() || {});

@@ -3,7 +3,7 @@ import { File, Folder, FolderOpen } from "lucide-react";
 import { treeFromPaths } from "../../../state/file-tree.js";
 import css from "../Dock.module.css";
 
-function TreeRows({ nodes, expanded, depth, onToggle, onOpen, t }) {
+function TreeRows({ nodes, expanded, activeFile, depth, onToggle, onOpen, t }) {
   return nodes.map((n) => {
     const isDir = n.type === "directory";
     const open = Boolean(expanded[n.path]);
@@ -11,7 +11,7 @@ function TreeRows({ nodes, expanded, depth, onToggle, onOpen, t }) {
       <React.Fragment key={n.path}>
         <button
           type="button"
-          className={`${css.row} ${!isDir && expanded.__file === n.path ? "on" : ""}`}
+          className={`${css.row} ${!isDir && activeFile === n.path ? "on" : ""}`}
           style={{ paddingLeft: 8 + Math.min(depth, 12) * 12 }}
           aria-expanded={isDir ? open : undefined}
           onClick={() => (isDir ? onToggle(n.path) : onOpen(n.path))}
@@ -24,7 +24,7 @@ function TreeRows({ nodes, expanded, depth, onToggle, onOpen, t }) {
           <span className={css.nm}>{n.name}</span>
         </button>
         {isDir && open && n.children?.length > 0 && (
-          <TreeRows nodes={n.children} expanded={expanded} depth={depth + 1} onToggle={onToggle} onOpen={onOpen} t={t} />
+          <TreeRows nodes={n.children} expanded={expanded} activeFile={activeFile} depth={depth + 1} onToggle={onToggle} onOpen={onOpen} t={t} />
         )}
       </React.Fragment>
     );
@@ -37,12 +37,13 @@ export default function FilesPanel({ t, state, kernel, dispatch }) {
   const flat = useMemo(() => paths.map((p) => (typeof p === "string" ? p : p.path)).filter(Boolean), [paths]);
   const tree = useMemo(() => treeFromPaths(flat), [flat]);
   const expanded = state.dockFiles?.expanded || {};
+  const activeFile = state.activeFile || null;
 
   useEffect(() => {
-    if (flat.length === 0 && kernel?.listTree) {
+    if (state.currentProject && kernel?.listTree) {
       kernel.listTree().catch(() => {});
     }
-  }, [flat.length, kernel]);
+  }, [state.currentProject, kernel]);
 
   return (
     <div>
@@ -50,6 +51,7 @@ export default function FilesPanel({ t, state, kernel, dispatch }) {
       <TreeRows
         nodes={tree}
         expanded={expanded}
+        activeFile={activeFile}
         depth={0}
         onToggle={(path) => dispatch({ type: "tree_dir_toggled", path })}
         onOpen={(path) => kernel?.openFile?.(path)}

@@ -27,7 +27,7 @@ function Collapsible({ defaultClosed = false, head, actions, children, className
         </button>
         {actions ? <div className={css.cardActions}>{actions}</div> : null}
       </div>
-      {children}
+      {!closed && children ? <div className={`ev-b ${css.cardBody}`}>{children}</div> : null}
     </div>
   );
 }

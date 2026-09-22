@@ -63,7 +63,7 @@ export default function AppFrame({
       <div className={`${css.sidebar} rail`}>{sidebar}</div>
       <div className={`${css.center} pane`}>{main}</div>
       <div className={css.rightbar} data-rightbar-col="">{rightbar}</div>
-      {!hideSidebar && cols.sidebar > 0 && (
+      {!hideSidebar && !railCollapsed && cols.sidebar > 0 && (
         <DragHandle
           className={css.handle}
           position={cols.sidebar}

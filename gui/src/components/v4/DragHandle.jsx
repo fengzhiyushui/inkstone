@@ -1,4 +1,5 @@
 import React, { useCallback, useRef } from "react";
+import { computeKeyboardDelta } from "../../state/columns.js";
 
 // 8px 命中带;pointer capture;onDrag/onEnd 回调收到 clientX
 export default function DragHandle({
@@ -32,15 +33,14 @@ export default function DragHandle({
 
   const onKeyDown = useCallback((e) => {
     if (disabled) return;
-    const step = e.shiftKey ? 32 : 8;
-    // 侧栏:← 变窄 → 变宽;右栏方向相反(以命中带 clientX 语义对齐)
-    const delta = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
+    // 键盘微调:← 坐标减小(向左移动) → 坐标增大(向右移动),与屏幕物理 clientX 对齐
+    const delta = computeKeyboardDelta(e.key, e.shiftKey);
     if (!delta) return;
     e.preventDefault();
-    const next = (typeof position === "number" ? position : 0) + (side === "rightbar" ? -delta : delta);
+    const next = (typeof position === "number" ? position : 0) + delta;
     onDrag?.(next);
     onEnd?.(next);
-  }, [disabled, onDrag, onEnd, position, side]);
+  }, [disabled, onDrag, onEnd, position]);
 
   return (
     <div

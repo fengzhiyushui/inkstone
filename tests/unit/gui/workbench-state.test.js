@@ -399,3 +399,17 @@ test("settings_toggled opens and closes the settings modal", () => {
   s = state.applyWorkbenchAction(s, { type: "settings_toggled" });
   assert.equal(s.settingsOpen, true);
 });
+
+test("project_switched switches project and resets fileTree and dockFiles", () => {
+  let s = state.createInitialState();
+  s = state.applyWorkbenchAction(s, { type: "tree_loaded", files: ["src/index.js"] });
+  s = state.applyWorkbenchAction(s, { type: "tree_dir_toggled", path: "src" });
+  assert.equal(s.fileTree.length, 1);
+  assert.equal(s.dockFiles.expanded["src"], true);
+
+  s = state.applyWorkbenchAction(s, { type: "project_switched", root: "/path/to/new-proj" });
+  assert.equal(s.currentProject, "/path/to/new-proj");
+  assert.equal(s.view, "chat");
+  assert.deepEqual(s.fileTree, []);
+  assert.deepEqual(s.dockFiles.expanded, {});
+});

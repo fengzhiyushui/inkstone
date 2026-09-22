@@ -47,3 +47,9 @@ export function clampRightbarWidth(px, viewport) {
   );
   return clampWidth(px, RIGHTBAR_MIN, maxRight);
 }
+
+/** 键盘方向键移动步长计算:ArrowLeft 负、ArrowRight 正;shift 加速 */
+export function computeKeyboardDelta(key, shiftKey = false) {
+  const step = shiftKey ? 32 : 8;
+  return key === "ArrowLeft" ? -step : key === "ArrowRight" ? step : 0;
+}

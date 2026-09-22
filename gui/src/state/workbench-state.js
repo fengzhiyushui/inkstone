@@ -278,7 +278,12 @@ export function applyWorkbenchAction(state, action) {
     return copy(current, { sessions: Array.isArray(action.sessions) ? action.sessions : [] });
   }
   if (action.type === "project_switched") {
-    return copy(current, { currentProject: action.root || null, view: "chat" });
+    return copy(current, {
+      currentProject: action.root || null,
+      fileTree: [],
+      dockFiles: { expanded: {} },
+      view: "chat"
+    });
   }
   if (action.type === "language_changed") {
     return copy(current, { language: normalize(action.language, LANGUAGES, "zh") });
