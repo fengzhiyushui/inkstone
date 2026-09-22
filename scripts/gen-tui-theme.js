@@ -16,7 +16,7 @@ export const NAMES = {
 };
 
 // 需要暴露给 TUI 的槽位(tokens.css 变量名 → palette 键)
-const SLOTS = [
+export const SLOTS = [
   ["bg-base", "bg"], ["bg-panel", "panel"], ["text", "fg"], ["text-mut", "mut"],
   ["text-faint", "faint"], ["border", "border"], ["accent", "accent"],
   ["accent-hover", "accentHover"], ["ok", "ok"], ["warn", "warn"],
@@ -73,8 +73,9 @@ function parseThemes(css) {
   return themes;
 }
 
-function main() {
-  const css = readFileSync(tokensPath, "utf8");
+// v1.8.3:生成逻辑抽成纯函数,tokens.css → palette 对象/全文 可被测试直接复算,
+// 从而把「生成物入库不得滞后」变成可自证的守卫(此前 tokens 改了却没重生成,测试抓不到)。
+export function buildPalette(css) {
   const themes = parseThemes(css);
   if (themes.length !== 10) throw new Error(`期望 10 主题,实得 ${themes.length}`);
   const palette = {};
@@ -88,13 +89,27 @@ function main() {
     }
     palette[id] = entry;
   }
-  const body =
-    "// 由 scripts/gen-tui-theme.js 从 gui/src/styles/tokens.css 生成 —— 请勿手改;重新生成:node scripts/gen-tui-theme.js\n" +
-    "// 槽位均为 xterm-256 色号(16–255)。\n\n" +
-    "export const TUI_THEMES = " + JSON.stringify(palette, null, 2) + ";\n\n" +
+  return palette;
+}
+
+const HEADER =
+  "// 由 scripts/gen-tui-theme.js 从 gui/src/styles/tokens.css 生成 —— 请勿手改;重新生成:node scripts/gen-tui-theme.js\n" +
+  "// 槽位均为 xterm-256 色号(16–255)。\n\n";
+
+function bodyFromPalette(palette) {
+  return "export const TUI_THEMES = " + JSON.stringify(palette, null, 2) + ";\n\n" +
     "export const DEFAULT_TUI_THEME = \"sumi\";\n";
-  writeFileSync(outPath, body);
-  console.log(`已生成 ${outPath}(${themes.length} 主题)`);
+}
+
+// 生成物全文 —— 必须与 src/apps/tui/theme-palette.js 逐字节一致。
+export function buildPaletteBody(css) {
+  return HEADER + bodyFromPalette(buildPalette(css));
+}
+
+function main() {
+  const palette = buildPalette(readFileSync(tokensPath, "utf8"));
+  writeFileSync(outPath, HEADER + bodyFromPalette(palette));
+  console.log(`已生成 ${outPath}(${Object.keys(palette).length} 主题)`);
 }
 
 // 仅直接执行时生成;被测试 import 时只导出纯函数(不触碰文件系统)。

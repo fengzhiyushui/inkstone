@@ -11,7 +11,7 @@
 
 ## v1.8.2 — 2026-09-20 · 前端缺陷修复(样式迁回 / 按键 / 溢出)
 
-> 补丁:修复 v1.8.1 code review 问题清单中的前端样式、按键与溢出缺陷;内核零改动。对比度闸门恢复 **110/110**(ode scripts/check-theme-contrast.mjs);色值权威为 v1.8.0 plan 附录 A。
+> 补丁:修复 v1.8.1 code review 问题清单中的前端样式、按键与溢出缺陷;内核零改动。对比度闸门恢复 **110/110**(node scripts/check-theme-contrast.mjs);色值权威为 v1.8.0 plan 附录 A。
 
 - **P0 闸门与列宽**:对比度脚本恢复 11 对 × 10 套 = 110 项;paper 的 warn 按附录 A 改回 #ad8301;clampWidth 在 max < min 时保下限;右栏拖拽/持久化加上限 RIGHTBAR_MAX=1600 与 clampRightbarWidth。
 - **P1 样式迁回**:补回 B4 删 shell.css 后丢失的敏感模态 .sn-*、侧栏 .sec-body.closed/.proj-b 收放、项目/会话省略号、.new-menu、.s-body/.s-in、改动双栏、.th-detail、首页问候渐变;守卫测试 shell-styles-restored.test.js。

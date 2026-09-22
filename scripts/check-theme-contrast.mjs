@@ -22,7 +22,8 @@ export const GATE = [
   ["border-strong/bg-base", "border-strong", "bg-base", 1.5, Infinity]
 ];
 
-// 附加对(不计入 110;与 v1.8.0 P2 备注一致)
+// 附加对:**不计入 110 项闸门与脚本退出码**,由 tests/unit/gui/theme-contrast.test.js 单独守护。
+// v1.8.3:此前导出后从未被引用(死代码),会制造"覆盖更多"的错觉;现接入 checkPairs 成为真实检查。
 export const EXTRA_GATE = [
   ["text/bg-element", "text", "bg-element", 7, 19.5],
   ["text/code-bg", "text", "code-bg", 7, 19.5]
@@ -36,15 +37,20 @@ export function parseThemes(css) {
   });
 }
 
-export function checkThemes(css) {
+// 通用判定:给定色对表,对 10 套主题逐项算对比度。checkThemes = checkPairs(css, GATE)。
+export function checkPairs(css, pairs) {
   const rows = [];
   for (const { id, vars } of parseThemes(css)) {
-    for (const [pair, fg, bg, min, max] of GATE) {
+    for (const [pair, fg, bg, min, max] of pairs) {
       const value = +contrastRatio(vars[fg], vars[bg]).toFixed(2);
       rows.push({ theme: id, pair, value, min, max, pass: value >= min && value <= max });
     }
   }
   return { ok: rows.every((r) => r.pass), rows };
+}
+
+export function checkThemes(css) {
+  return checkPairs(css, GATE);
 }
 
 const isDirect = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;

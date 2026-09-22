@@ -9,6 +9,7 @@ import {
   walkWorkspaceFiles,
   normalizeRelativePath
 } from "../../../src/workspace/path-safety.js";
+import { symlinkTraversalSupported, SYMLINK_SKIP_REASON } from "../../helpers/symlink-capability.js";
 
 test("resolveWorkspacePath keeps relative paths inside project root", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "dsc-ws-"));
@@ -29,7 +30,8 @@ test("resolveWorkspacePath rejects lexical path traversal", async () => {
   );
 });
 
-test("resolveWorkspacePath rejects symlink escape", async () => {
+test("resolveWorkspacePath rejects symlink escape", async (t) => {
+  if (!(await symlinkTraversalSupported())) { t.skip(SYMLINK_SKIP_REASON); return; }
   const root = await mkdtemp(path.join(tmpdir(), "dsc-ws-"));
   const outside = await mkdtemp(path.join(tmpdir(), "dsc-out-"));
   await writeFile(path.join(outside, "secret.txt"), "secret");

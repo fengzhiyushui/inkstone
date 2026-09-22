@@ -158,7 +158,7 @@ export const TUI_THEMES = {
     "accent": 62,
     "accentHover": 68,
     "ok": 35,
-    "warn": 214,
+    "warn": 136,
     "err": 203,
     "info": 30
   }

@@ -9,6 +9,7 @@ import {
   formatDiffSummary,
   assertDiffPathsSafe
 } from "../../../src/edits/diff-parser.js";
+import { symlinkTraversalSupported, SYMLINK_SKIP_REASON } from "../../helpers/symlink-capability.js";
 
 test("normalizeUnifiedDiff extracts fenced unified diff", () => {
   const diff = normalizeUnifiedDiff("```diff\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new\n```");
@@ -39,7 +40,8 @@ test("assertDiffPathsSafe rejects lexical traversal", async () => {
   );
 });
 
-test("assertDiffPathsSafe rejects symlink escape before legacy apply", async () => {
+test("assertDiffPathsSafe rejects symlink escape before legacy apply", async (t) => {
+  if (!(await symlinkTraversalSupported())) { t.skip(SYMLINK_SKIP_REASON); return; }
   const root = await mkdtemp(path.join(tmpdir(), "dsc-edit-safe-"));
   const outside = await mkdtemp(path.join(tmpdir(), "dsc-edit-out-"));
   await writeFile(path.join(outside, "secret.txt"), "secret\n");
