@@ -9,6 +9,17 @@
 
 ---
 
+## v1.8.2 — 2026-09-20 · 前端缺陷修复(样式迁回 / 按键 / 溢出)
+
+> 补丁:修复 v1.8.1 code review 问题清单中的前端样式、按键与溢出缺陷;内核零改动。对比度闸门恢复 **110/110**(ode scripts/check-theme-contrast.mjs);色值权威为 v1.8.0 plan 附录 A。
+
+- **P0 闸门与列宽**:对比度脚本恢复 11 对 × 10 套 = 110 项;paper 的 warn 按附录 A 改回 #ad8301;clampWidth 在 max < min 时保下限;右栏拖拽/持久化加上限 RIGHTBAR_MAX=1600 与 clampRightbarWidth。
+- **P1 样式迁回**:补回 B4 删 shell.css 后丢失的敏感模态 .sn-*、侧栏 .sec-body.closed/.proj-b 收放、项目/会话省略号、.new-menu、.s-body/.s-in、改动双栏、.th-detail、首页问候渐变;守卫测试 shell-styles-restored.test.js。
+- **P2 按键交互**:事件卡去掉嵌套 button(操作钮外置);全局快捷键经 hotkeys.js 在输入态/设置/敏感模态下放行;分隔条可键盘微调;分区头/新会话菜单改 button;Composer Esc 失焦、附件钮不再误插 @;首页「改动」改开右栏 dock;VIEWS 与主区路由对齐。
+- **P3 溢出布局**:气泡/正文 overflow-wrap:anywhere;stream/composer 内容宽按 920+padding 校正;dock tab 条高度 40px;右栏列宽 <300 时不渲染 Dock;文件树缩进上限;消息流上限 200 条。
+
+---
+
 ## v1.8.1 — 2026-09-20 · 壳层重构(三列 dock + 设置模态 + 中性阶梯)
 
 > 小版本:换壳层布局与视觉语言,信息架构保留;内核零改动(八目录 diff 为空)。计划见 [`plans/frontend/2026-09-20-v1.8.1-dsh-shell-plan.md`](plans/frontend/2026-09-20-v1.8.1-dsh-shell-plan.md),设计见 [`specs/frontend/2026-09-20-v1.8.1-dsh-shell-design.md`](specs/frontend/2026-09-20-v1.8.1-dsh-shell-design.md)。**合入 main、打 tag 由维护者完成。**
