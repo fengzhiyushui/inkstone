@@ -16,7 +16,7 @@ export const color = {
 export function banner() {
   return [
     color.cyan(color.bold(`${BRAND} ${VERSION}`)),
-    color.dim("面向 DeepSeek 的本�?AI 编程 Agent")
+    color.dim("面向 DeepSeek 的本地 AI 编程 Agent")
   ].join("\n");
 }
 
