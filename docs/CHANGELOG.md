@@ -9,6 +9,28 @@
 
 ---
 
+## [Unreleased]
+
+> 下一个补丁 / 小版本的变更在此累积;发布时按[版本命名规则](README.md#版本命名规则)定级、移入带版本号的小节。
+
+---
+
+## v1.8.3 — 2026-09-22 · 前端审查修复(生成物一致性 / 样式迁回补完 / 死代码清理)
+
+> 补丁:逐条修复 v1.8.1–v1.8.2 的 code review 问题清单;内核零改动(八目录 diff 为空)。刻意偏离原方案的三处理由见对应条目。
+
+- **生成物一致性**:`src/apps/tui/theme-palette.js` 与 `tokens.css` 失同步——v1.8.2 把 `paper --warn` 改回 `#ad8301` 却未重跑生成器,TUI 仍显示旧色号 214。生成逻辑抽为纯函数 `buildPalette` / `buildPaletteBody`,新增守卫断言**生成物与源逐字节一致**;重生成后为 136。
+- **闸门自证**:`check-theme-contrast.mjs` 的 `EXTRA_GATE` 此前导出后从未被引用(死代码,注释理由亦与 v1.8.0 不符)。重构出通用 `checkPairs`,附加两对改由单测守护(20/20);新增「`GATE` 恒为 11 对」用例锁定 110 项口径。`110/110 PASS` 契约不变。
+- **样式迁回补完**:v1.8.2 的人工 `REQUIRED` 清单漏掉 `.cz-meta.compact`(**compact 偏好因此整体失效**,含窄窗隐藏规则)、`.api-item .ai-ic`、`.f-in.short`、`.f-in.mid`。改用**自动守卫**(从当前 JSX 反推类名,ALLOW 须给理由),漏项全部迁回;刻意不迁回已无引用的 `.api-item.off .ai-ic` 与恒被内联 style 覆盖的 `.seg.acc`。
+- **`undefined` 类名**:`ChatView` 的 `css.mode` 在 `ChatView.module.css` 中不存在 → className 会渲染出字面量 `undefined`。删除 `css.mode` 与失效的 `acc`(外观由内联 style 不变);新增 CSS Module 成员守卫。
+- **守卫有效性**:迁移守卫取代人工清单,W1/W2 迁回结果钉为防回退断言;`no-dsh-imports.test.js` 扩展覆盖 `main.js` / `preload.js` / `kernel-host.js`;`dom-contract.test.js` 记录 `.shell` / `.rail-off` 为「无样式结构钩子」。
+- **symlink 用例平台门控**:实测本机 junction 可创建但 `realpath`/`stat`/`scandir` 全抛 `UNKNOWN`,测试前提无法建立 → 按仓库既有惯例(无 Electron / 无 node-pty 则 skip)加能力门控,**断言本身未削弱**;`npm test` 由 2 失败转为 0 失败(2 环境性跳过)。
+- **死状态清理**:`railMode` / `railView` / `contextCollapsed` 与三个对应 action、`RAIL_MODES` / `RAIL_VIEWS` / `GUI_RAIL_MODES` 仅存在于状态层、零组件引用,随 v1.8.1 三列壳层一并退役;旧偏好文件中的残留键被归一丢弃。
+- **文档**:修复 `docs/README.md` 版本行被截断(行首 `当前版本 **v1` 丢失、残留 `.8.2**(...)`);当前版本 → v1.8.3;恢复 `[Unreleased]` 小节。另修 `contrast.js` 残留注释、`theme.js` EOF 换行、本文件 `ode` → `node` 错别字。
+- 全量回归 **1139 单测**(0 失败 / 2 环境性跳过)+ `npm run check` + renderer build + gui-smoke(`GUI_SMOKE_READY`)通过。
+
+---
+
 ## v1.8.2 — 2026-09-20 · 前端缺陷修复(样式迁回 / 按键 / 溢出)
 
 > 补丁:修复 v1.8.1 code review 问题清单中的前端样式、按键与溢出缺陷;内核零改动。对比度闸门恢复 **110/110**(node scripts/check-theme-contrast.mjs);色值权威为 v1.8.0 plan 附录 A。
