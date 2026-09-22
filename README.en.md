@@ -1,196 +1,321 @@
 # Inkstone
 
+<div align="center">
+
 [简体中文](./README.md) · **English**
 
-![version](https://img.shields.io/badge/version-v1.0.0-blue.svg)
-![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)
-![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)
-![deps](https://img.shields.io/badge/core%20runtime%20deps-0-success.svg)
+[![version](https://img.shields.io/badge/version-v1.8.3-blue.svg)](./package.json)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
+[![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org/)
+[![deps](https://img.shields.io/badge/core%20runtime%20deps-0-success.svg)](./package.json)
+[![tests](https://img.shields.io/badge/tests-1141%20passed-brightgreen.svg)](./tests/)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/fengzhiyushui/inkstone/pulls)
 
-> A local AI coding agent for DeepSeek — **CLI · TUI · desktop GUI**, all sharing one kernel.
+**High-Performance Local AI Coding Agent for DeepSeek Models**  
+*CLI · TUI · Modern Desktop GUI — One Unified Kernel, Three Experiences*
 
-Inkstone runs inside your project directory: it reads code, edits code, runs tests, and records every model call, tool execution, file change, and approval as a replayable, branchable, rewindable session timeline. It talks to DeepSeek models directly. **The core runtime has zero dependencies.** Node ≥ 20 and an API key is all you need.
+</div>
 
-> ⚠️ **Disclaimer:** This is an **unofficial** third-party open-source project. "DeepSeek" is a trademark of its respective owner; the name is used here only to describe model compatibility.
+> ⚠️ **Disclaimer:** This is an **unofficial** third-party open-source project. "DeepSeek" is a trademark of its respective owner; the name is used here only to describe native model compatibility.
 
 ---
 
-## ✨ Features
+## 📖 Table of Contents
 
-### One kernel, three frontends
+- [1. Project Overview](#-project-overview)
+  - [Why Inkstone?](#why-inkstone)
+  - [The Three Core Pillars](#the-three-core-pillars)
+  - [The Three-Interface Matrix](#the-three-interface-matrix)
+- [2. System Architecture](#-system-architecture)
+- [3. Quick Start](#-quick-start)
+- [4. Local Deployment & In-Depth Guide](#-local-deployment--in-depth-guide)
+- [5. Common Commands & Workflows](#-common-commands--workflows)
+- [6. Model Configuration & Endpoints](#-model-configuration--endpoints)
+- [7. Repository Structure](#-repository-structure)
+- [8. Guardrails & Security Architecture](#-guardrails--security-architecture)
+- [9. Quality Gates & Contributing](#-quality-gates--contributing)
+- [10. Roadmap & Changelog](#-roadmap--changelog)
+- [11. License](#-license)
 
-The CLI, TUI, and desktop GUI all share a single kernel facade — `createKernel()` — that exposes one agent runtime, one tool-execution path, one edit/rollback service, and one session timeline. The frontends handle input, display, and approvals only; they never touch agent business logic.
+---
 
-- **Transactional edits & rollback** — Snapshots before writing, rollback on failure. Every change gets an id you can inspect with `changes` and undo with `rollback`.
-- **Verify-repair loop** — Changes are verified after they apply, with a repair round when needed.
-- **Branching & time travel** — Fork a session from any turn, or rewind to a prior state.
-- **Runtime guardrails** — Timeouts for tools and model calls (120s by default); configurable caps on tokens, model calls, and malformed-tool retries. Graceful stop on limit — no hard crash.
-- **Durable recovery** (opt-in) — Resume interrupted turns after a crash via project lock + transaction journal + paused-turn sidecar. Orchestration pauses can survive a process restart.
+## 💡 Project Overview
 
-### Pillar ① Context engine — putting the right code in the prompt
+**Inkstone** is an autonomous local coding agent tailored specifically for the DeepSeek model family. Running directly inside your local repository, it goes far beyond a simple chat assistant: it can **read code, safely modify files, run tests, decompose complex engineering tasks, and coordinate multi-agent workflows**.
 
-- **File-level** (default): incremental workspace scan + manifest cache + path-priority ranking + per-channel token-budget greedy fill + snapshot caching.
-- **Semantic-level** (optional, `--semantic-context`): retrieves by **symbol** (function/class) rather than whole file, expanding along import/call dependency edges. Built on web-tree-sitter (WASM, no native build requirements). **Supports JavaScript / TypeScript / Python.** `--include-method-hints` enables method disambiguation (unique `obj.method()` → `probable` edge). Byte-identical to file-level when disabled. Opt-in, off by default.
+Every model invocation, tool execution, file modification, and human approval is immutably logged into a hash-chained session timeline, enabling **instant atomic rollbacks, turn-level branching, and crash-resilient durable recovery**.
 
-### Pillar ② Multi-agent orchestration — complex tasks, automatic decomposition
+### Why Inkstone?
 
-**One `send` call — the kernel routes to single-agent or multi-agent automatically.** Simple tasks pay zero orchestration overhead.
+- 🚀 **Zero Runtime Dependencies**: The core CLI and TUI are built entirely on native Node.js 20+ APIs with zero external production dependencies. Clone and run immediately.
+- 🏛️ **True "One Kernel, Three Frontends"**: CLI, TUI, and Desktop GUI are unified over a single facade `createKernel()`, sharing 100% of runtime logic, tool executors, transactional edit services, and session state.
+- 🛡️ **Transactional Edits & Rollback**: Every file modification is preceded by a state snapshot and assigned a unique Change ID. Any change can be reverted atomically with a single command.
+- ⚡ **DeepSeek-Native Integration**: Tailored for DeepSeek V3 and R1 models, featuring purpose-routed model lanes, chain-of-thought visualization, FIM code completion, SSE streaming, and self-repairing JSON-mode tool calls.
+- 🤝 **Adaptive Multi-Agent Collaboration**: Simple prompts execute in a lightweight single-agent flow; complex multi-file engineering tasks are automatically decomposed into a subtask tree, executed by workers in parallel write-isolated sandboxes, verified by independent reviewers, and synthesized into a final delivery report.
 
-- **Tiered router** (on by default): obvious cases are free heuristic decisions; ambiguous cases hit a cheap model once (`router.model.enabled=false` reverts to heuristic-only).
-- **Orchestration loop**: Planner decomposes → Workers execute → **two-tier independent review** (worker self-check + read-only Reviewer) → Synthesizer assembles the final answer. Failed or incomplete rounds get adaptive replanning. A cost budget gate runs throughout.
-- **Parallel write isolation**: independent subtasks with non-overlapping file scopes run in parallel in fs-copied isolation workspaces; results merge back atomically with consistency checks.
-- **Cross-task experience memory** (`crossTaskLearning`, off by default): sub-agents distill lessons at task boundaries into a dedicated experience store (three-tier scoring with decay + Jaccard dedup). New tasks retrieve relevant experience to inform planning. Risk-cue experience monotonically tightens permissions (allow → ask only, never loosens).
-- **Durable recovery** (`recovery.enabled`, off by default): includes **cross-process orchestration-level** resume.
+---
 
-### Pillar ③ Three frontends — one kernel, three ways to interact
+### The Three Core Pillars
 
-**Desktop GUI** (Electron + React + Vite; **original hand-built VS Code-style design system**, no off-the-shelf UI kits; bilingual zh/en, defaults to Chinese): real file tree · Monaco editor (local worker) · node-pty interactive terminal · settings panel (multi-API management / online model listing / edit-and-save through transactional editService / branch switching / checkpoint rewind) · **agent change tracking** (SCM "AGENT CHANGES" section → before/after side-by-side diff → hunk-to-source jump). Renderer fully sandboxed; API key masked, never crosses IPC in plaintext.
+```text
+┌────────────────────────────────────────────────────────────────────────┐
+│                        Inkstone Core Pillars                           │
+├───────────────────┬──────────────────────────┬─────────────────────────┤
+│ ① Context Engine  │ ② Multi-Agent Dispatch   │ ③ Frontend Matrix       │
+├───────────────────┼──────────────────────────┼─────────────────────────┤
+│ • File-level scan │ • Tiered decision router │ • CLI: Script automation│
+│ • Token budget    │ • Subtask tree planning  │ • TUI: Keyboard terminal│
+│ • WASM AST symbol │ • Parallel write sandbox │ • GUI: Modern VS Code-  │
+│ • Graph expansion │ • Two-tier verification  │   style desktop app     │
+└───────────────────┴──────────────────────────┴─────────────────────────┘
+```
 
-**Terminal TUI** (Claude Code-style inline-scroll session): history scrolls in the terminal's native scrollback (mouse wheel / copy / search all native); a fixed bottom region for input + status bar. Streaming typewriter preview · tool/diff/approval/orchestration cards · slash-command completion (`/help /config /diff /changes /mode /lang /clear /recovery /quit`) · `/config` shares the same API profile store as the GUI (activate rebuilds the kernel while preserving conversation context). Hand-written ANSI/VT rendering; **bilingual, defaults to Chinese**.
+1. **Pillar ① Intelligent Context Engine**:
+   - **File-level (default)**: Incremental scanning, manifest caching, path-priority ranking, and token-budget greedy packing.
+   - **Semantic-level (optional, `--semantic-context`)**: WebAssembly-powered tree-sitter AST parser (no native C++ build required) extracting function, class, and interface symbols across **JavaScript / TypeScript / Python**, with dependency graph expansion.
+2. **Pillar ② Multi-Agent Adaptive Orchestration**:
+   - The kernel detects task complexity automatically—no manual mode switching needed.
+   - The Planner constructs a subtask dependency tree; Workers execute subtasks in file-isolated sandbox directories and merge back atomically using CAS consistency checks.
+   - An independent read-only Reviewer inspects all worker outputs, triggering replanning upon detecting regressions.
+3. **Pillar ③ Unified Frontend Matrix**:
+   - **CLI**: Streamlined for one-off tasks, patch generation, workspace scanning, and CI/CD pipelines.
+   - **TUI**: Claude Code-inspired scrollable terminal interface with hand-crafted ANSI/VT rendering, slash commands, and real-time approval cards.
+   - **GUI (v1.8)**: An original VS Code-style three-column desktop IDE built with Electron, React 19, Vite, Monaco Editor, interactive system terminal, and SCM visual diff inspector.
 
-**CLI**: `ask / chat / edit / test / scan / search / diff / config / changes / rollback / tui` subcommands; chat REPL with `/mode` and `/recovery` (resume/cancel/clear); multi-agent orchestration summary lines.
+---
 
-### DeepSeek-native integration
+### The Three-Interface Matrix
 
-Purpose-routed models (reply / act → flash; plan / review / repair → pro with thinking enabled; FIM via `/beta/completions`), JSON mode guard, hand-written SSE streaming, FIM code completion, tool-call repair, per-channel/per-model usage telemetry.
+| Interface | Best For | Prerequisites | Key Highlights |
+|:---|:---|:---|:---|
+| **CLI** | Scripting, single questions, automated refactors | Node.js ≥ 20 (0 extra dependencies) | Clean output, composable via pipes, forwards project test exit codes |
+| **TUI** | Keyboard-centric developers, remote SSH servers | Node.js ≥ 20 (0 extra dependencies) | Native scrollback buffer, typewriter streaming, approval prompts, slash commands |
+| **Desktop GUI** | Codebase browsing, visual diff reviews, full IDE flow | Electron + React 19 | Three-column workspace, Monaco editor, side-by-side diff review, embedded terminal |
+
+---
+
+## 🏗️ System Architecture
+
+```mermaid
+flowchart TD
+    subgraph UI["Presentation Layer (Frontends)"]
+        CLI["CLI Commands<br/>(bin/inkstone.js)"]
+        TUI["TUI Terminal App<br/>(src/apps/tui/)"]
+        GUI["Desktop Workbench<br/>(gui/ - Electron + React)"]
+    end
+
+    subgraph Kernel["Inkstone Unified Kernel"]
+        K["createKernel()<br/>(src/index.js)"]
+    end
+
+    subgraph CoreEngine["Kernel Subsystems"]
+        direction TB
+        RT["Agent Runtime<br/>(core/runtime)"]
+        ORCH["Multi-Agent Orchestrator<br/>(Planner / Worker / Reviewer)"]
+        REC["Durable Recovery<br/>(core/recovery)"]
+        CTX["Tiered Context Engine<br/>(File-level + WASM Symbols)"]
+        DS["DeepSeek Protocol Gateway<br/>(Router / SSE / FIM / Repair)"]
+        TLS["Secure Tool Plane<br/>(15 Built-in Tools / Policy Engine)"]
+        EDT["Transactional Edit Service<br/>(Snapshots / Diffs / Rollback)"]
+        SES["Session Timeline Store<br/>(Immutable JSONL + Hash Chain)"]
+    end
+
+    CLI --> K
+    TUI --> K
+    GUI --> K
+    K --> RT
+    RT --> ORCH
+    RT --> CTX
+    RT --> DS
+    RT --> TLS
+    RT --> EDT
+    RT --> SES
+    RT --> REC
+```
 
 ---
 
 ## 🚀 Quick Start
 
-**Prerequisite:** Node.js ≥ 20.
+### Prerequisites
+- **Node.js**: `>= 20.0.0`
+- **Operating System**: Windows, macOS, or Linux
+
+### 3-Step Quick Start (CLI / TUI, No Install Needed)
 
 ```bash
-git clone <your-repo-url> inkstone
+# 1. Clone the repository
+git clone https://github.com/fengzhiyushui/inkstone.git
 cd inkstone
-# The core CLI has no required dependencies — no npm install needed to run.
 
-# Configure your API key (pick one)
-node ./bin/inkstone.js config init --api-key sk-xxxx   # writes .deepseek-code/config.json
-# or: export DEEPSEEK_API_KEY="sk-xxxx"                     # environment variable (bash/zsh)
+# 2. Configure your DeepSeek API Key (writes to .deepseek-code/config.json)
+node ./bin/inkstone.js config init --api-key sk-your-api-key
+# Or set via environment variable: export DEEPSEEK_API_KEY="sk-your-api-key"
 
-# Try it out
-node ./bin/inkstone.js help
-node ./bin/inkstone.js ask "Explain this project's architecture"
-node ./bin/inkstone.js edit "Fix the typos in README" --dry-run
-node ./bin/inkstone.js edit "Fix the typos in README" --yes
+# 3. Start exploring!
+node ./bin/inkstone.js ask "Explain the architecture of this project"
 node ./bin/inkstone.js tui
 ```
 
-> After global install, use the short commands `inkstone` / `dsc`: `npm link` or `npm i -g .`.
+> 💡 **Global Shortcuts**: Run `npm link` or `npm install -g .` to use `inkstone` or the shorthand `dsc` anywhere on your machine.
 
 ---
 
-## 🧭 Commands
+## 📚 Local Deployment & In-Depth Guide
 
-| Command | What it does |
-|---------|-------------|
-| `ask "<question>"` | Ask a question with project context (`--semantic-context` / `--autonomy` available) |
-| `chat [question]` | Interactive conversation; read-only by default, `/mode` switches `gated` / `auto`; `/recovery` manages recovery items |
-| `edit "<request>"` | Generate and apply a diff; `--dry-run` previews only, `--yes` skips confirmation, `--file <path>` specifies relevant files (repeatable) |
-| `test [args...]` | Run **your project's** tests and forward the exit code |
-| `tui` | Open the agent-session terminal UI |
-| `scan` | Scan and print the project context index |
-| `search "<keyword>"` | Search project code (`--max` controls count, default 80) |
-| `diff` | Show git diff |
-| `config show \| init \| test` | Show effective config / write local config / test API connectivity |
-| `changes list \| show [id\|latest]` | List and inspect change records (`--limit`) |
-| `rollback [id\|latest]` | Roll back a specific change |
+For detailed walkthroughs covering production desktop builds, AST symbol engine setup, and advanced workflows:
 
-> `ask` / `chat` / `edit` also accept `--semantic-context` / `--include-method-hints`, `--no-stream`, `--max-files`, and `--max-bytes`.
-> `inkstone test` runs **your project's** tests; `npm test` runs Inkstone's own test suite.
+👉 **[📖 Read the Full Local Deployment & Usage Guide (docs/DEPLOYMENT_AND_USAGE.md)](docs/DEPLOYMENT_AND_USAGE.md)**
+
+### Deployment Options Summary
+
+- **Option A: Instant CLI / TUI**: Zero runtime dependencies, run straight with Node.js 20+.
+- **Option B: Semantic AST Context Engine**: Install optional WASM package `npm install web-tree-sitter@0.20.8 --no-save`, then add `--semantic-context`.
+- **Option C: Desktop GUI Setup**:
+  ```bash
+  cd gui
+  npm install
+  npm run build:renderer
+  npm start               # Launch production desktop app
+  # npm run dev           # Start Vite hot-reload development mode
+  ```
 
 ---
 
-## ⚙️ Configuration
+## 🧭 Common Commands & Workflows
 
-**Config files** (contain API keys, gitignored): project-level `./.deepseek-code/config.json` (preferred), fallback `~/.deepseek-code/config.json`.
+| Command | Example | Description |
+|:---|:---|:---|
+| **`ask`** | `inkstone ask "Explain auth flow" --semantic-context` | Ask a contextual question; supports AST symbol retrieval |
+| **`chat`** | `inkstone chat` | Interactive REPL session; `/mode` switches autonomy, `/recovery` resumes turns |
+| **`edit`** | `inkstone edit "Refactor logging" --dry-run` | Generate and apply patches; `--dry-run` previews diffs, `--yes` auto-applies |
+| **`changes`**| `inkstone changes list` / `show latest` | Inspect past change records and their unified diffs |
+| **`rollback`**| `inkstone rollback latest` | Atomically undo changes back to a specific Change ID |
+| **`diff`** | `inkstone diff` | View git diffs within the current workspace |
+| **`test`** | `inkstone test [args...]` | Run your project's test suite and forward exit codes |
+| **`scan`** | `inkstone scan` | Scan workspace source files and print token budget allocation |
+| **`search`**| `inkstone search "createKernel" --max 50` | Search codebase safely without executing external grep binaries |
+| **`config`**| `inkstone config show` / `init` / `test` | Inspect configuration / initialize credentials / test connection |
+| **`tui`** | `inkstone tui` | Launch the full-featured interactive terminal coding agent |
 
-**Key environment variables** (override config file values):
+---
+
+## ⚙️ Model Configuration & Endpoints
+
+Inkstone loads configuration from `./.deepseek-code/config.json` (gitignored) and falls back to user-level `~/.deepseek-code/config.json`.
+
+### Environment Variables
 
 | Variable | Default | Description |
-|----------|---------|-------------|
-| `DEEPSEEK_API_KEY` | — | Used when config has no `apiKey` |
-| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | API base URL |
-| `DEEPSEEK_MODEL` | `deepseek-v4-flash` | Default chat model |
-| `DEEPSEEK_REASONING_EFFORT` | `high` | Reasoning effort |
-| `DEEPSEEK_TOOL_TIMEOUT_MS` | `120000` | Tool-call timeout override |
-| `DEEPSEEK_MODEL_TIMEOUT_MS` | `120000` | Model-call timeout override |
+|:---|:---|:---|
+| `DEEPSEEK_API_KEY` | — | DeepSeek API authentication key |
+| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | Base endpoint URL (compatible with Ollama/vLLM) |
+| `DEEPSEEK_MODEL` | `deepseek-v4-flash` | Default model for conversations and tool actions |
+| `DEEPSEEK_REASONING_EFFORT` | `high` | Thinking model reasoning intensity (`low` / `medium` / `high`) |
+| `DEEPSEEK_TOOL_TIMEOUT_MS` | `120000` (120s) | Execution timeout per tool call |
+| `DEEPSEEK_MODEL_TIMEOUT_MS` | `120000` (120s) | Request & streaming timeout per model call |
 
-**Guardrail `limits`** (in `config.json` under `limits`):
+### Custom Endpoints (Ollama / vLLM / OpenRouter)
 
-| Parameter | Default | Meaning |
-|-----------|---------|---------|
-| `toolTimeoutMs` | `120000` (on) | Per-tool timeout; errors rather than hard-kills on expiry |
-| `modelTimeoutMs` | `120000` (on) | Per-model-call timeout (covers tool-loop, approval resume, repair paths) |
-| `maxTurnTokens` | `null` (off) | Per-turn token cap; graceful stop when hit |
-| `maxModelCalls` | `null` (off) | Per-turn model-call cap |
-| `maxToolCallRepairs` | `null` (off) | Bounded retries for malformed tool calls |
+Inkstone works out of the box with any OpenAI / DeepSeek-compatible endpoint:
 
-> `null` or `≤0` disables the guardrail. Full details: [`docs/project-overview.md` §7](docs/project-overview.md#7-运行护栏与配置).
+```json
+{
+  "apiKey": "ollama",
+  "baseUrl": "http://localhost:11434/v1",
+  "model": "deepseek-coder-v2:latest",
+  "models": {
+    "act": "deepseek-coder-v2:latest",
+    "think": "deepseek-r1:latest",
+    "fim": "deepseek-coder-v2:latest"
+  }
+}
+```
 
-Use `config.orchestration` and `config.context.semantic` to tune multi-agent orchestration and semantic context. Set `config.recovery.enabled = true` to enable durable recovery. For a full key listing, run `node ./bin/inkstone.js config show` or see [`docs/project-overview.md`](docs/project-overview.md).
+See [Deployment Guide §3](docs/DEPLOYMENT_AND_USAGE.md#三模型配置与接入指南) for additional options and guardrails.
 
 ---
 
-## 🏗️ Architecture
+## 📂 Repository Structure
 
 ```text
-CLI / TUI / GUI
-   └─ src/index.js · createKernel()
-        ├─ core/runtime          Agent lifecycle · executor loop · verify-repair
-        ├─ core/orchestration    Multi-agent: routing · planning · parallel isolation ·
-        │                          two-tier review · replanning
-        ├─ core/recovery         Durable recovery (incl. orchestration-level) · project lock
-        ├─ context               Tiered context engine · semantic symbol retrieval (opt-in)
-        ├─ deepseek              Model gateway · routing · JSON mode · SSE streaming ·
-        │                          FIM · usage tracking
-        ├─ tools                 Registry · schema · executor · permission engine · 15 built-in tools
-        ├─ edits                 Diff preview / apply / rollback (transactional)
-        ├─ sessions              Event timeline (56 event types · JSONL + hash chain) ·
-        │                          branching · rewind
-        ├─ workspace · security · shared
-        └─ apps/                 Shared event display contract · CLI/TUI adapters · GUI kernel host
+inkstone/
+├── bin/
+│   └── inkstone.js           # CLI / TUI entrypoint
+├── src/                      # Core runtime and kernel implementation
+│   ├── index.js              # createKernel() composition root
+│   ├── core/                 # Runtime lifecycle, orchestration, protocol, recovery
+│   ├── context/              # Context engine (file scans, caching, WASM AST parser)
+│   ├── deepseek/             # DeepSeek gateway (routing, streaming, FIM, repair)
+│   ├── tools/                # Tool registry, permission engine, 15 built-in tools
+│   ├── edits/                # Transactional editing, diff parser, atomic rollback
+│   ├── sessions/             # Immutable session event log, branching, rewinding
+│   ├── security/             # SSRF prevention, shell command safety, redactions
+│   └── apps/                 # CLI / TUI adapters and GUI kernel host
+├── gui/                      # Desktop GUI application (Electron + React 19 + Vite)
+│   ├── main.js               # Electron main process
+│   ├── preload.js            # Sandboxed preload bridge
+│   └── src/                  # React UI (AppFrame, Dock, Monaco, SCM, Chat)
+├── docs/                     # Documentation center
+│   ├── DEPLOYMENT_AND_USAGE.md # Local deployment & usage manual
+│   ├── project-overview.md   # Deep architectural specification
+│   └── CHANGELOG.md          # Release history
+└── tests/                    # Comprehensive test suite (1140+ unit & E2E tests)
 ```
 
-Core principle: **one** kernel facade, **one** tool-execution path, **one** edit/rollback service, **one** session timeline. The frontends only handle input, display, and approvals.
+---
 
-> For architecture details, tool execution order, edit/rollback mechanics, recovery, security invariants, the full session-event catalog, and a directory map, see **[`docs/project-overview.md`](docs/project-overview.md)**.
+## 🛡️ Guardrails & Security Architecture
+
+Security is central to local agent design:
+
+1. **Path Boundary Defense**: All workspace path interactions are validated using `realpath`, strictly preventing path traversal and symlink escapes.
+2. **Command Policy & Whitelists**:
+   - `shell: true` is forbidden; subprocesses execute via structured argv arrays.
+   - Destructive operations (`mkfs`, `diskpart`, `dd`, etc.) are unconditionally rejected.
+   - Dangerous commands require explicit user approval in all permission modes.
+3. **SSRF Guard**: The `web_fetch` tool blocks localhost, private LAN ranges, and IPv6 literals across all redirect hops.
+4. **Secret Masking & UI Sandboxing**: Secrets are automatically redacted from logs. The Desktop GUI runs in a sandboxed Electron renderer with context isolation; plain text API keys never cross IPC to the renderer.
+5. **Resource Guardrails**: Hard limits on tool execution timeouts, model latency, turn tokens, and model calls prevent runaway cost and hanging processes.
 
 ---
 
-## 🔐 Security
+## 🧪 Quality Gates & Contributing
 
-- File paths are realpath-validated against the workspace root; symlink escapes are blocked
-- `shell` accepts structured argv only, executed with `shell:false` (no injection surface)
-- `web_fetch` blocks localhost / private / link-local / IPv4-mapped IPv6 / IPv6 literal addresses; every redirect hop is re-validated
-- Secrets in output are redacted (Bearer / api_key); GUI enforces `nodeIntegration:false` + `contextIsolation:true` + `sandbox:true` + IPC whitelist; API key plaintext only lives in the gitignored `.deepseek-code/` directory
-- Tool categories are trusted only from the registry definition; destructive operations can never be auto-allowed by a trust rule
-
----
-
-## 🧪 Development
+Contributions are welcome! To safeguard stability, Inkstone enforces strict **Five Quality Gates**:
 
 ```bash
-npm test            # node --test: full suite (currently 932 passing)
-npm run check       # node --check: syntax-validate all source files
+# 1. Run full unit and integration test suite (1141 tests all green)
+npm test
+
+# 2. Syntax and type check across all source files
+npm run check
+
+# 3. GUI renderer builds cleanly with zero errors
+cd gui && npm run build:renderer
+
+# 4. GUI end-to-end smoke tests pass
+DEEPSEEK_CODE_GUI_SMOKE=1 node --test tests/e2e/gui-smoke.test.js
+
+# 5. Eight-directory lock integrity check (ensures core contracts remain pristine)
+git diff --stat main..HEAD -- src/core src/deepseek src/tools src/edits src/sessions src/context src/security src/workspace
 ```
-
-The docs maintenance order (code → specs/plans → project-overview → CHANGELOG → index; the main README zh+en is **rewritten only on major-version updates, at the developer's discretion**) and conventions are in [`docs/README.md`](docs/README.md).
-
-**Versioning** follows [Semantic Versioning](https://semver.org/) `major.minor.patch` from v1.0.0 onward: major versions (e.g. v2.0.0) are for large feature additions or new model-generation adaptations, **initiated by the maintainer**; minor versions add features within a major version's plan without restructuring the core; patch versions cover docs, small fixes, and tests. See [`docs/README.md` §版本命名规则](docs/README.md#版本命名规则).
 
 ---
 
-## 📚 Docs
+## 🗺️ Roadmap & Changelog
 
-- **[`docs/project-overview.md`](docs/project-overview.md)** — In-depth reference: architecture, tools, edits, recovery, security, events, directory layout
-- [`docs/README.md`](docs/README.md) — Doc index + maintenance conventions + version-naming rules
-- [`docs/CHANGELOG.md`](docs/CHANGELOG.md) — Version log (currently v1.0.0, consolidating all prior iterations)
-- `docs/specs/` · `docs/plans/` — Design specs and implementation plans (organized by architecture / backend / frontend)
+- [x] **v1.0.0**: Unified kernel foundation, three frontends sharing one runtime, transactional rollback.
+- [x] **v1.2.0**: Tool security hardening, environment whitelists, cooperative grep timeouts.
+- [x] **v1.4.0**: Tiered context engine, multi-agent orchestration, parallel write sandboxing.
+- [x] **v1.8.0**: Modern three-column desktop workbench redesign, Monaco integration, profile switcher.
+- [x] **v1.8.3**: Comprehensive GUI code review, state synchronization fixes, deployment documentation.
+- [ ] **Future**: Plugin extension ecosystem, additional language AST support, collaborative multi-device agents.
+
+See [**`docs/CHANGELOG.md`**](docs/CHANGELOG.md) for detailed release notes.
 
 ---
 
 ## 📄 License
 
-[Apache-2.0](LICENSE).
+This project is licensed under the [Apache-2.0 License](LICENSE).

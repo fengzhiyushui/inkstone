@@ -11,6 +11,7 @@
 ```
 docs/
   README.md                 ← 本文件:文档索引 + 维护规范
+  DEPLOYMENT_AND_USAGE.md   ← 本地部署与使用完整指南(系统准备/配置/三端教程/排错)
   project-overview.md       ← 项目深入说明(架构/工具/编辑/恢复/安全/事件/目录)
   CHANGELOG.md              ← 项目变更日志(自 v1.0.0 起语义化版本)
   specs/                    ← 设计文档(design specs:目标、架构、取舍)
@@ -72,6 +73,9 @@ docs/
 ---
 
 ## 索引
+
+### 部署与使用(面向用户与开发者)
+- [DEPLOYMENT_AND_USAGE](DEPLOYMENT_AND_USAGE.md) — **本地部署与使用完整指南**:系统准备 · 极速部署(CLI/TUI零依赖) · 桌面 GUI 构建 · 模型配置 · 三端实战教程 · 常见排错
 
 ### 项目说明(内部深入)
 - [project-overview](project-overview.md) — **维护者视角的项目说明**:架构内核 · DeepSeek 适配 · 工具平面 · 编辑/回滚 · 持久化恢复 · 运行护栏 · 安全不变量 · 会话事件全集 · 存储布局 · 目录地图
