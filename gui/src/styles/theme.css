@@ -513,3 +513,23 @@ select.f-in { min-width: 160px; }
   .sec-head .chev, .proj-h .chev, .pnew, .r-item .xx { transition: none; }
 }
 
+/* ══ v1.8.3 迁回补完:B4 删 shell.css 时漏迁的**修饰符级**规则 ══
+   v1.8.2 的人工 REQUIRED 清单未覆盖这些,导致静默视觉/行为丢失;
+   现由 tests/unit/gui/shell-class-migration.test.js 自动守卫(禁止再次遗漏)。
+
+   两条**刻意不迁回**(避免把死 CSS 搬回来):
+   · `.api-item.off .ai-ic` —— 全仓已无 `api-item … off` 用法。
+   · `.seg.acc` —— ChatView 该胶囊的内联 style 已写死 background/color,
+     类名效果恒被覆盖;v1.8.3 改为直接删掉 JSX 上失效的 `acc` / `css.mode` token。 */
+
+/* 状态行紧凑态(.cz-meta 的 compact 偏好,v1.8.1 后曾完全失效) */
+.cz-meta.compact .m-bar .lb, .cz-meta.compact .m-dots .lb { display: none; }
+@media (max-width: 1180px) { .cz-meta.compact .sg.opt { display: none; } }
+
+/* 概念预览 / 模型接入:图标槽(ModelAccess.jsx · SecondaryViews.jsx) */
+.api-item .ai-ic { color: var(--accent); display: grid; place-items: center; flex: none; }
+
+/* 设置表单:短/中宽度档(Settings.jsx · StatusDisplayPanel.jsx) */
+.f-in.short { min-width: 0; width: 92px; }
+.f-in.mid { min-width: 0; width: 148px; }
+

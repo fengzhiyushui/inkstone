@@ -208,7 +208,7 @@ export default function ChatView({ t, state, actions, kernel, statusLine, setVie
         onToggleRightbar={() => onToggleRightbar?.()}
         onTabChange={(tab) => onChatTab?.(tab)}
         right={(
-          <span className={`seg acc ${css.mode}`} title={t("settings.model")} style={{ height: 24, padding: "1px 8px", borderRadius: 24, fontSize: 13, background: "var(--hover)", color: "var(--text-mut)", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <span className="seg" title={t("settings.model")} style={{ height: 24, padding: "1px 8px", borderRadius: 24, fontSize: 13, background: "var(--hover)", color: "var(--text-mut)", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {state.config?.model || "—"}
           </span>
         )}
