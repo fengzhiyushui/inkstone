@@ -174,7 +174,7 @@ function normalizeGuiPreferences(value = {}) {
     railCollapsed: typeof input.railCollapsed === "boolean" ? input.railCollapsed : false,
     statusDisplay: input.statusDisplay || null, // 不透明透传;渲染侧 normalizeStatusDisplay 补默认
     sidebarWidth: Number.isInteger(sw) && sw >= 264 && sw <= 420 ? sw : 280,
-    rightbarWidth: Number.isInteger(rw) && (rw === 0 || rw >= 300) ? rw : 0,
+    rightbarWidth: Number.isInteger(rw) && (rw === 0 || (rw >= 300 && rw <= 1600)) ? rw : 0,
     rightbarOpen: typeof input.rightbarOpen === "boolean" ? input.rightbarOpen : false,
     dockTab: GUI_DOCK_TABS.has(input.dockTab) ? input.dockTab : "files"
   };

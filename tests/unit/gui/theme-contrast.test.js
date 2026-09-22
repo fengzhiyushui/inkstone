@@ -5,15 +5,15 @@ import { checkThemes, contrastRatio } from "../../../scripts/check-theme-contras
 
 test("contrastRatio reproduces v1.4 recorded values", () => {
   assert.equal(contrastRatio("#d3c6aa", "#2d353b").toFixed(2), "7.38"); // forest(退役前)
-  assert.equal(contrastRatio("#dcd7ba", "#1f1f28").toFixed(2), "11.26"); // sumi
-  assert.equal(contrastRatio("#1c1b1a", "#fffcf0").toFixed(2), "16.73"); // paper
+  assert.equal(contrastRatio("#dcd7ba", "#1f1f28").toFixed(2), "11.26"); // sumi(v1.8.0)
+  assert.equal(contrastRatio("#1c1b1a", "#fffcf0").toFixed(2), "16.73"); // paper(v1.8.0)
 });
 
-test("structure 2 groups × 7 + accent 10 × 4 = 54 rows all pass", () => {
+test("11 pairs × 10 themes = 110 rows all pass (附录 A 口径)", () => {
   const css = readFileSync(new URL("../../../gui/src/styles/tokens.css", import.meta.url), "utf8");
   const r = checkThemes(css);
   const failed = r.rows.filter((x) => !x.pass);
-  assert.equal(r.rows.length, 54, "结构 2×7 + 强调 10×4");
+  assert.equal(r.rows.length, 110, "11 对 × 10 套 = 110");
   assert.deepEqual(failed, [], failed.map((x) => `${x.theme} ${x.pair}=${x.value}`).join("\n"));
 });
 

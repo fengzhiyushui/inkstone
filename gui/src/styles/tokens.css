@@ -118,7 +118,7 @@
   --text: #0f1115; --text-mut: #61666b; --text-faint: #81858c;
   --border: #e1e5ee; --border-strong: #cfd3d6;
   --accent: #3465d4; --accent-hover: #4176e6; --accent-soft: #edf3fe; --accent-text: #ffffff;
-  --ok: #16a34a; --warn: #f59e0b; --err: #ef4444; --info: #24837b;
+  --ok: #16a34a; --warn: #ad8301; --err: #ef4444; --info: #24837b;
   --code-bg: #f9fafb;
 }
 

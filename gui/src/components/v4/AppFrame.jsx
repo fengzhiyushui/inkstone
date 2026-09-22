@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  computeColumns, clampWidth,
-  SIDEBAR_MIN, SIDEBAR_MAX, RIGHTBAR_MIN
+  computeColumns, clampWidth, clampRightbarWidth,
+  SIDEBAR_MIN, SIDEBAR_MAX
 } from "../../state/columns.js";
 import DragHandle from "./DragHandle.jsx";
 import css from "./AppFrame.module.css";
@@ -46,7 +46,7 @@ export default function AppFrame({
   }, [dispatch, kernel]);
 
   const applyRightbar = useCallback((clientX, persist) => {
-    const w = Math.max(RIGHTBAR_MIN, Math.round(viewport - clientX));
+    const w = clampRightbarWidth(viewport - clientX, viewport);
     dispatch?.({ type: "rightbar_resized", width: w });
     if (persist) kernel?.setPreferences?.({ rightbarWidth: w });
   }, [dispatch, kernel, viewport]);

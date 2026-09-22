@@ -2,7 +2,7 @@
 // the legacy UMD gui/renderer/workbench-state.js, now consumed by React useReducer).
 
 import { normalizeStatusDisplay } from "./status-display.js";
-import { SIDEBAR_MIN, SIDEBAR_MAX, SIDEBAR_DEFAULT, RIGHTBAR_MIN } from "./columns.js";
+import { SIDEBAR_MIN, SIDEBAR_MAX, SIDEBAR_DEFAULT, RIGHTBAR_MIN, RIGHTBAR_MAX } from "./columns.js";
 
 var RAIL_MODES = ["chat", "context", "branches", "timeline", "settings"];
 var VIEWS = ["home", "chat", "projects", "changes", "mcp", "plugins", "settings"]; // v1.4.0 七视图
@@ -23,7 +23,7 @@ function normalizeSidebarWidth(value, fallback) {
 function normalizeRightbarWidth(value) {
   if (!Number.isFinite(Number(value))) return 0;
   var n = Math.round(Number(value));
-  return n === 0 || n >= RIGHTBAR_MIN ? n : 0;
+  return n === 0 || (n >= RIGHTBAR_MIN && n <= RIGHTBAR_MAX) ? n : 0;
 }
 
 function normalizeTheme(value, fallback) {
@@ -262,7 +262,7 @@ export function applyWorkbenchAction(state, action) {
       contextCollapsed: typeof prefs.contextCollapsed === "boolean" ? prefs.contextCollapsed : current.contextCollapsed,
       railCollapsed: typeof prefs.railCollapsed === "boolean" ? prefs.railCollapsed : current.railCollapsed,
       sidebarWidth: normalizeSidebarWidth(prefs.sidebarWidth, current.sidebarWidth || SIDEBAR_DEFAULT),
-      rightbarWidth: normalizeRightbarWidth(prefs.rightbarWidth),
+      rightbarWidth: normalizeRightbarWidth(prefs.rightbarWidth === undefined ? current.rightbarWidth : prefs.rightbarWidth),
       rightbarOpen: typeof prefs.rightbarOpen === "boolean" ? prefs.rightbarOpen : current.rightbarOpen,
       dockTab: normalize(prefs.dockTab, DOCK_TABS, current.dockTab || "files")
     });
