@@ -5,6 +5,7 @@ import { makeT } from "./i18n/strings.js";
 import { trafficTone, formatLatency } from "./state/workbench-state.js";
 import { themeLabel, isLightTheme, isDarkTheme } from "./state/themes.js";
 import { nextInGroup, otherModeTheme } from "./state/theme-hub.js";
+import { shouldHandleShellShortcut } from "./state/hotkeys.js";
 import AppFrame from "./components/v4/AppFrame.jsx";
 import Rail from "./components/v4/Rail.jsx";
 import HomeView from "./components/v4/HomeView.jsx";
@@ -14,7 +15,7 @@ import Dock from "./components/v4/Dock.jsx";
 import SettingsPanels from "./components/Settings/Settings.jsx";
 import SensitiveNoticeModal from "./components/v4/SensitiveNoticeModal.jsx";
 
-const VERSION = "1.8.1";
+const VERSION = "1.8.2";
 
 export default function App() {
   const [state, dispatch] = useWorkbench();
@@ -116,9 +117,16 @@ export default function App() {
     if (!state.rightbarOpen) dispatch({ type: "rightbar_toggled", viewport: window.innerWidth });
   }, [dispatch, state.rightbarOpen]);
 
+  const setViewOrDock = useCallback((v) => {
+    if (v === "settings") { openSettings(); return; }
+    if (v === "changes" || v === "recovery") { openDock(v); return; }
+    dispatch({ type: "view_changed", view: v });
+  }, [openSettings, openDock, dispatch]);
+
   useEffect(() => {
     const onKey = (e) => {
-      if (!(e.ctrlKey || e.metaKey)) return;
+      const modalOpen = Boolean(state.sensitiveNotice);
+      if (!shouldHandleShellShortcut(e, { settingsOpen, modalOpen })) return;
       const k = e.key.toLowerCase();
       if (k === "n") { e.preventDefault(); onNewSession(state.currentProject); }
       else if (k === "b") { e.preventDefault(); toggleRail(); }
@@ -128,7 +136,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onNewSession, toggleRail, toggleRightbar, openSettings, toggleTheme, state.currentProject]);
+  }, [onNewSession, toggleRail, toggleRightbar, openSettings, toggleTheme, state.currentProject, settingsOpen, state.sensitiveNotice]);
 
   const statusLine = useMemo(() => ({
     display: state.statusDisplay,
@@ -168,10 +176,7 @@ export default function App() {
         dispatch={dispatch}
         kernel={kernel}
         sidebar={(
-          <Rail t={t} state={state} version={VERSION} setView={(v) => {
-            if (v === "settings") { openSettings(); return; }
-            dispatch({ type: "view_changed", view: v });
-          }}
+          <Rail t={t} state={state} version={VERSION} setView={setViewOrDock}
             collapsed={state.railCollapsed} onToggleCollapse={toggleRail}
             onSwitchProject={onSwitchProject} onNewSession={onNewSession} onOpenFolder={onOpenFolder}
             onOpenDock={openDock} />
@@ -180,12 +185,12 @@ export default function App() {
           <main className="pane">
             {view === "home" && (
               <HomeView t={t} state={state} actions={actions}
-                setView={(v) => { if (v === "settings") openSettings(); else dispatch({ type: "view_changed", view: v }); }}
+                setView={setViewOrDock}
                 onSwitchProject={onSwitchProject} statusLine={statusLine} />
             )}
             {view === "chat" && (
               <ChatView t={t} state={state} actions={actions} kernel={kernel}
-                setView={(v) => { if (v === "settings") openSettings(); else dispatch({ type: "view_changed", view: v }); }}
+                setView={setViewOrDock}
                 statusLine={statusLine}
                 onChatTab={(tab) => dispatch({ type: "chat_tab_changed", tab })}
                 onToggleRightbar={toggleRightbar} />

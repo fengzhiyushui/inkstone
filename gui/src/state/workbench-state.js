@@ -5,7 +5,7 @@ import { normalizeStatusDisplay } from "./status-display.js";
 import { SIDEBAR_MIN, SIDEBAR_MAX, SIDEBAR_DEFAULT, RIGHTBAR_MIN, RIGHTBAR_MAX } from "./columns.js";
 
 var RAIL_MODES = ["chat", "context", "branches", "timeline", "settings"];
-var VIEWS = ["home", "chat", "projects", "changes", "mcp", "plugins", "settings"]; // v1.4.0 七视图
+var VIEWS = ["home", "chat", "projects", "mcp", "plugins"]; // 主区路由;changes/recovery 走右栏 dock;settings 走模态
 var RAIL_VIEWS = ["explorer", "search", "scm", "run", "ext", "agent", "settings"];
 var INSPECTOR_MODES = ["activity", "approval", "rewind", "details", "checkpoints", "branch"];
 var THEMES = ["sumi", "slate", "vesper", "nord", "ash", "snow", "sand", "lotus", "latte", "paper"]; // v1.8.0 token 主题(10)
@@ -99,8 +99,9 @@ export function applyWorkbenchAction(state, action) {
   var current = state || createInitialState();
   if (!action || !action.type) return current;
   if (action.type === "message_added") {
+    // 防长会话 DOM/内存无界增长
     return copy(current, {
-      messages: current.messages.concat([action.message]),
+      messages: current.messages.concat([action.message]).slice(-200),
       emptyStateVisible: false
     });
   }
@@ -119,7 +120,7 @@ export function applyWorkbenchAction(state, action) {
     // 缺陷①(v1.7.2):agent 的最终回复此前从不进消息流,.a-msg 分支永远渲染不出来。
     // 空 content 不追加(避免空气泡);stopped 也入流,让用户看到为什么停了。
     if (event.type === "agent:final" && typeof event.content === "string" && event.content.length > 0) {
-      patch.messages = current.messages.concat([{ role: "assistant", text: event.content }]);
+      patch.messages = current.messages.concat([{ role: "assistant", text: event.content }]).slice(-200);
     }
     if (event.type === "agent:error" || event.type === "session:rewind_conflict" || event.type === "session:rewind_failed" || event.type === "session:rewind_recovery_failed") {
       patch.inspectorMode = "details";

@@ -1,5 +1,5 @@
 import React from "react";
-import { MoreHorizontal, PanelRightOpen, PanelRightClose } from "lucide-react";
+import { PanelRightOpen, PanelRightClose } from "lucide-react";
 import css from "./SessionHeader.module.css";
 
 export default function SessionHeader({
@@ -49,9 +49,6 @@ export default function SessionHeader({
         onClick={() => onToggleRightbar?.()}
       >
         {rightbarOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
-      </button>
-      <button type="button" className={`iconbtn ${css.iconbtn}`} title={t("chat.more")}>
-        <MoreHorizontal size={15} />
       </button>
       {right}
     </header>

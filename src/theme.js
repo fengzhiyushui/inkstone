@@ -1,5 +1,5 @@
 export const BRAND = "Inkstone";
-export const VERSION = "1.8.1";
+export const VERSION = "1.8.2";
 
 const supportsColor = process.stdout.isTTY && process.env.NO_COLOR === undefined;
 
@@ -16,7 +16,7 @@ export const color = {
 export function banner() {
   return [
     color.cyan(color.bold(`${BRAND} ${VERSION}`)),
-    color.dim("面向 DeepSeek 的本�?AI 编程 Agent")
+    color.dim("面向 DeepSeek 的本�?AI 编程 Agent")
   ].join("\n");
 }
 

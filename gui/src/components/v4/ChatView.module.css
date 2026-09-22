@@ -8,7 +8,7 @@
 }
 .streamIn {
   padding: 16px 32px;
-  max-width: min(100% - 32px, 920px);
+  max-width: min(100%, 984px); /* 920 内容 + 左右 32 padding */
   margin: 0 auto;
   width: 100%;
   display: flex;
@@ -29,6 +29,8 @@
   font-size: 14px;
   line-height: 22px;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   color: var(--text);
 }
 .bubble code {
@@ -57,6 +59,8 @@
   font-size: 14px;
   line-height: 22px;
   color: var(--text);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .assistant .tx code {
   font-family: var(--font-mono);
@@ -75,23 +79,70 @@
   background: var(--bg-base);
   overflow: hidden;
 }
+.cardHeadRow {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  gap: 4px;
+}
 .cardHead {
-  height: 32px;
+  min-height: 32px;
   padding: 0 12px;
   font-size: 13px;
   color: var(--text-mut);
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   border: none;
   background: transparent;
   cursor: pointer;
+  text-align: left;
+}
+.cardHead:disabled { cursor: default; opacity: 1; }
+.cardHead .r { margin-left: auto; display: flex; align-items: center; gap: 6px; flex: none; }
+.cardActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 10px;
+  flex: none;
+}
+.headSum {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stepId {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.thoughtText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .cardBody {
   padding: 8px 12px;
   background: var(--code-bg);
   border-top: .5px solid var(--border-l1);
+  overflow-x: auto;
+}
+.cardHeadRow .mini,
+.cardHead .arg {
+  min-width: 0;
+}
+.cardHead .arg {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 1 auto;
 }
 
 /* 推理折叠行 */

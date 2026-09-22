@@ -14,7 +14,11 @@ export default function Composer({
     onSend(text);
   };
   const onKey = (e) => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); return; }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      if (ref.current) ref.current.blur();
+    }
   };
   const insert = (token) => {
     setDraft(`${draft || ""}${draft && !draft.endsWith(" ") ? " " : ""}${token}`);
@@ -25,9 +29,9 @@ export default function Composer({
     <div className={`cz ${css.wrap}`} style={flat ? { padding: 0 } : undefined}>
       <div className={`cz-in ${css.card}`}>
         <textarea ref={ref} className={`cz-input ${css.input}`} rows={2} placeholder={placeholder || t("chat.placeholder")}
-          autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={onKey} />
+          value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={onKey} />
         <div className={`cz-row ${css.row}`}>
-          <button type="button" className={`cz-tool ${css.tool}`} title={t("chat.attach")} onClick={() => insert("@")}>
+          <button type="button" className={`cz-tool ${css.tool}`} title={t("chat.attach")} aria-label={t("chat.attach")}>
             <Paperclip size={14} />
           </button>
           <button type="button" className={`cz-tool ${css.tool}`} title={t("chat.mention")} onClick={() => insert("@")}>

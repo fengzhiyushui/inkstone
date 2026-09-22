@@ -17,7 +17,7 @@ const QUICK = [
   { id: "bug", icon: Bug },
   { id: "feature", icon: Sparkles },
   { id: "read", icon: Search },
-  { id: "changes", icon: FileDiff, go: "changes" }
+  { id: "changes", icon: FileDiff, go: "changes" } // setViewOrDock 会转到右栏 dock
 ];
 
 export default function HomeView({ t, state, actions, setView, onSwitchProject, statusLine }) {

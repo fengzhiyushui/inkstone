@@ -48,12 +48,18 @@ export default function Rail({
   const openSession = (root) => { if (root && root !== currentRoot) onSwitchProject(root); else setView("chat"); };
 
   const SectionHead = ({ id, label, count, onAdd, addTitle }) => (
-    <div className={`sec-head ${css.secHead} ${collapsedSections[id] ? "closed" : ""}`}
-      onClick={() => setCollapsedSections((p) => ({ ...p, [id]: !p[id] }))}>
-      <span className="chev">{collapsedSections[id] ? <ChevronRight size={11} /> : <ChevronDown size={11} />}</span>
-      {label}
+    <div className={`sec-head ${css.secHead} ${collapsedSections[id] ? "closed" : ""}`}>
+      <button
+        type="button"
+        className={css.secToggle}
+        aria-expanded={!collapsedSections[id]}
+        onClick={() => setCollapsedSections((p) => ({ ...p, [id]: !p[id] }))}
+      >
+        <span className="chev">{collapsedSections[id] ? <ChevronRight size={11} /> : <ChevronDown size={11} />}</span>
+        {label}
+      </button>
       {onAdd
-        ? <button type="button" className="add" title={addTitle} onClick={(e) => { e.stopPropagation(); onAdd(); }}><FolderPlus size={13} /></button>
+        ? <button type="button" className="add" title={addTitle} onClick={onAdd}><FolderPlus size={13} /></button>
         : <span className="cnt">{count}</span>}
     </div>
   );
@@ -77,21 +83,21 @@ export default function Rail({
           <div className={`new-menu open ${css.newMenu}`}>
             <div className={`nm-h ${css.hd}`}>{t("rail.newWhere")}</div>
             {projects.map((p) => (
-              <div key={p.id} className={`nm-i ${css.it} ${p.root === currentRoot ? "on" : ""}`}
+              <button type="button" key={p.id} className={`nm-i ${css.it} ${p.root === currentRoot ? "on" : ""}`}
                 onClick={() => { setNewMenu(false); onNewSession(p.root); }}>
                 <div>
                   <div className="t">{p.name}{p.root === currentRoot && <span className="cur">{t("rail.current")}</span>}</div>
                   <div className={`s ${css.sub}`}>{p.root === currentRoot ? t("rail.inheritDir") : p.root}</div>
                 </div>
-              </div>
+              </button>
             ))}
             <div className="nm-sep" />
-            <div className={`nm-i ${css.it}`} onClick={() => { setNewMenu(false); onNewSession(null); }}>
+            <button type="button" className={`nm-i ${css.it}`} onClick={() => { setNewMenu(false); onNewSession(null); }}>
               <div><div className="t">{t("rail.standalone")}</div><div className={`s ${css.sub}`}>{t("rail.noProject")}</div></div>
-            </div>
-            <div className={`nm-i ${css.it}`} onClick={() => { setNewMenu(false); onOpenFolder(); }}>
+            </button>
+            <button type="button" className={`nm-i ${css.it}`} onClick={() => { setNewMenu(false); onOpenFolder(); }}>
               <div><div className="t">{t("rail.openFolder")}</div><div className={`s ${css.sub}`}>{t("rail.onlyNew")}</div></div>
-            </div>
+            </button>
           </div>
         )}
       </div>
@@ -127,16 +133,22 @@ export default function Rail({
             const groups = groupSessionsByDate(sessions, now);
             return (
               <div key={p.id} className={`proj ${p.root === currentRoot ? "cur" : ""} ${open ? "open" : ""}`}>
-                <div className={`proj-h ${css.row} ${p.root === currentRoot ? "cur" : ""}`}
-                  onClick={() => setClosedProject((prev) => ({ ...prev, [p.id]: open }))}>
-                  <span className="chev">{open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}</span>
-                  <span className="dot" />
-                  <span className="nm" title={p.root}>{p.name}</span>
+                <div className={`proj-h ${css.row} ${p.root === currentRoot ? "cur" : ""}`}>
+                  <button
+                    type="button"
+                    className={css.secToggle}
+                    aria-expanded={open}
+                    onClick={() => setClosedProject((prev) => ({ ...prev, [p.id]: !open }))}
+                  >
+                    <span className="chev">{open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}</span>
+                    <span className="dot" />
+                    <span className="nm" title={p.root}>{p.name}</span>
+                  </button>
                   {p.root === currentRoot
                     ? <span className="tag">{t("rail.current")}</span>
                     : <span className="cnt">{sessions.length}</span>}
                   <button type="button" className={`pnew ${css.iconbtn}`} title={t("rail.newInProject")}
-                    onClick={(e) => { e.stopPropagation(); onNewSession(p.root); }}><Plus size={12} /></button>
+                    onClick={() => onNewSession(p.root)}><Plus size={12} /></button>
                 </div>
                 <div className="proj-b">
                   {groups.length === 0 && <div className="proj-empty">{t("rail.noSessions")}</div>}

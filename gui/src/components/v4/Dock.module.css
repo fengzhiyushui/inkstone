@@ -14,14 +14,15 @@
 }
 
 .tabbar {
-  height: 28px;
-  padding: 10px 6px 0 10px;
+  height: 40px;
+  padding: 8px 6px 0 10px;
   gap: 4px;
   display: flex;
   align-items: flex-end;
   flex: none;
   background: var(--bg-panel);
   border-bottom: .5px solid var(--border-l2);
+  box-sizing: border-box;
 }
 
 .tab {

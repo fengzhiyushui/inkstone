@@ -223,6 +223,19 @@
   padding: 8px 8px 4px;
   color: var(--text-faint);
   font-size: 12px;
-  cursor: pointer;
   user-select: none;
+}
+.secToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
 }

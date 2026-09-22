@@ -39,7 +39,7 @@ export default function ChangesPanel({ t, state, onOpenChange }) {
               onClick={() => onOpenChange?.(change.id, f.path)}
               title={f.path}
             >
-              <span className={css.nm}>{f.path}</span>
+              <span className={css.nm} title={f.path}>{f.path}</span>
               {f.added != null && <span style={{ color: "var(--ok)", fontSize: 12 }}>+{f.added}</span>}
               {f.removed != null && <span style={{ color: "var(--err)", fontSize: 12 }}>−{f.removed}</span>}
             </button>

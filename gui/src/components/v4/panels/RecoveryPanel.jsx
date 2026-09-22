@@ -14,7 +14,7 @@ export default function RecoveryPanel({ t, recovery, kernel, onRefreshRecovery }
       {items.length === 0 && <div className={css.empty}><LifeBuoy size={18} style={{ display: "inline", verticalAlign: "middle", marginRight: 6 }} />{t("recovery.empty")}</div>}
       {items.map((it) => (
         <div key={it.id || it.task_id} className={css.row} style={{ height: "auto", padding: "8px", alignItems: "flex-start", flexDirection: "column", gap: 4 }}>
-          <div style={{ fontSize: 13 }}>{it.summary || it.id}</div>
+          <div style={{ fontSize: 13, overflowWrap: "anywhere" }}>{it.summary || it.id}</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             <button type="button" className="btn ghost" style={{ fontSize: 12 }}
               disabled={busy === it.id}

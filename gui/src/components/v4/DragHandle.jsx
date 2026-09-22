@@ -30,6 +30,18 @@ export default function DragHandle({
     onEnd?.(e.clientX);
   }, [onEnd]);
 
+  const onKeyDown = useCallback((e) => {
+    if (disabled) return;
+    const step = e.shiftKey ? 32 : 8;
+    // 侧栏:← 变窄 → 变宽;右栏方向相反(以命中带 clientX 语义对齐)
+    const delta = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
+    if (!delta) return;
+    e.preventDefault();
+    const next = (typeof position === "number" ? position : 0) + (side === "rightbar" ? -delta : delta);
+    onDrag?.(next);
+    onEnd?.(next);
+  }, [disabled, onDrag, onEnd, position, side]);
+
   return (
     <div
       className={className}
@@ -37,11 +49,14 @@ export default function DragHandle({
       role="separator"
       aria-orientation="vertical"
       aria-label={side === "rightbar" ? "rightbar resize" : "sidebar resize"}
+      aria-valuenow={typeof position === "number" ? Math.round(position) : undefined}
+      tabIndex={0}
       data-side={side}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={finish}
       onPointerCancel={finish}
+      onKeyDown={onKeyDown}
     />
   );
 }

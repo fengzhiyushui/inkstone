@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { ShieldAlert } from "lucide-react";
 
 // #9.3 敏感文件风险提醒 —— 红色全屏模态。
@@ -13,6 +13,13 @@ export default function SensitiveNoticeModal({ notice, t, onRespond }) {
   if (!notice || !notice.descriptor) return null;
   const descriptor = notice.descriptor;
   const paths = descriptor.paths || [];
+
+  useEffect(() => {
+    // 危险模态不响应 Escape,避免误关;仅锁背景滚动
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prev; };
+  }, []);
 
   return (
     <div className="sn-backdrop" role="dialog" aria-modal="true" aria-labelledby="sn-title">

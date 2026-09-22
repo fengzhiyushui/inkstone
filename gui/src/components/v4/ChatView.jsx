@@ -1,22 +1,32 @@
 import React, { useMemo, useState } from "react";
 import {
   ChevronDown, ChevronRight, Wrench, FileDiff, TriangleAlert, ListChecks,
-  Workflow, Check, CircleCheck, CircleX, Zap, GitCompare, Settings, Diamond, Sparkles
+  Workflow, Check, CircleCheck, CircleX, GitCompare, Diamond, Sparkles
 } from "lucide-react";
 import { deriveAgentCards } from "../../state/agent-cards.js";
 import Composer from "./Composer.jsx";
 import SessionHeader from "./SessionHeader.jsx";
 import css from "./ChatView.module.css";
 
-function Collapsible({ defaultClosed = false, head, children, className = "" }) {
+// 卡片头:整行可点用于折叠,但操作按钮放在 button 之外,避免嵌套交互元素
+function Collapsible({ defaultClosed = false, head, actions, children, className = "" }) {
   const [closed, setClosed] = useState(defaultClosed);
   const collapsible = Boolean(children);
   return (
     <div className={`ev ${css.card} ${closed ? "closed" : ""} ${className}`}>
-      <button type="button" className={`ev-h ${css.cardHead}`} aria-expanded={!closed} onClick={() => collapsible && setClosed(!closed)}>
-        {collapsible && <span className="car">{closed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}</span>}
-        {head}
-      </button>
+      <div className={css.cardHeadRow}>
+        <button
+          type="button"
+          className={`ev-h ${css.cardHead}`}
+          aria-expanded={!closed}
+          disabled={!collapsible}
+          onClick={() => collapsible && setClosed(!closed)}
+        >
+          {collapsible && <span className="car">{closed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}</span>}
+          {head}
+        </button>
+        {actions ? <div className={css.cardActions}>{actions}</div> : null}
+      </div>
       {children}
     </div>
   );
@@ -43,7 +53,7 @@ function PlanCard({ card, t }) {
             <span className="bx">
               {s.status === "done" ? <Check size={10} /> : s.status === "run" ? <span className="spin" style={{ width: 9, height: 9, borderWidth: 1.5 }} /> : null}
             </span>
-            {s.id}
+            <span className={css.stepId}>{s.id}</span>
             {s.status === "failed" && <span className="mini err" style={{ marginLeft: "auto" }}>{t("ev.failed")}</span>}
           </div>
         ))}
@@ -78,39 +88,38 @@ function DiffCard({ card, t, onOpen }) {
       <FileDiff size={13} />
       <span className="ttl">{t("ev.diff")}</span>
       <span>· {card.files?.length || 0}</span>
-      <span className="r">
-        {card.added != null && <span className="mini ok">+{card.added}</span>}
-        {card.removed != null && <span className="mini err">−{card.removed}</span>}
-        <button type="button" className="btn ghost" style={{ fontSize: 11, padding: "1px 8px" }}
-          onClick={(e) => { e.stopPropagation(); onOpen(card.changeId, card.files?.[0]?.path); }}>
-          {t("ev.openDiff")}
-        </button>
-      </span>
     </>
   );
-  return <Collapsible head={head} />;
+  const actions = (
+    <>
+      {card.added != null && <span className="mini ok">+{card.added}</span>}
+      {card.removed != null && <span className="mini err">−{card.removed}</span>}
+      <button type="button" className="btn ghost" style={{ fontSize: 11, padding: "1px 8px" }}
+        onClick={() => onOpen(card.changeId, card.files?.[0]?.path)}>
+        {t("ev.openDiff")}
+      </button>
+    </>
+  );
+  return <Collapsible head={head} actions={actions} />;
 }
 
 function ApprovalCard({ card, t, onApprove }) {
-  return (
-    <Collapsible className="ap" head={
-      <>
-        <TriangleAlert size={13} />
-        <span className="ttl">{t("ev.approval")}</span>
-        {card.summary && <span>· {card.summary}</span>}
-        <span className="r">
-          {card.resolved
-            ? <span className={`mini ${card.decision === "approved" ? "ok" : "err"}`}>{t(`ev.decision.${card.decision === "approved" ? "approved" : "denied"}`)}</span>
-            : (
-              <>
-                <button type="button" className="btn ghost" onClick={() => onApprove(card.id, "deny")}>{t("ev.deny")}</button>
-                <button type="button" className="btn accent" onClick={() => onApprove(card.id, "approve")}>{t("ev.approve")}</button>
-              </>
-            )}
-        </span>
-      </>
-    } />
+  const head = (
+    <>
+      <TriangleAlert size={13} />
+      <span className="ttl">{t("ev.approval")}</span>
+      {card.summary && <span className={css.headSum}>· {card.summary}</span>}
+    </>
   );
+  const actions = card.resolved
+    ? <span className={`mini ${card.decision === "approved" ? "ok" : "err"}`}>{t(`ev.decision.${card.decision === "approved" ? "approved" : "denied"}`)}</span>
+    : (
+      <>
+        <button type="button" className="btn ghost" onClick={() => onApprove(card.id, "deny")}>{t("ev.deny")}</button>
+        <button type="button" className="btn accent" onClick={() => onApprove(card.id, "approve")}>{t("ev.approve")}</button>
+      </>
+    );
+  return <Collapsible className="ap" head={head} actions={actions} />;
 }
 
 function OrchCard({ card, t }) {
@@ -150,7 +159,6 @@ function TestCard({ card, t }) {
   );
 }
 
-// v1.8.1 推理摘要:DSH 折叠行形态(2px 竖线 + 13px faint)
 function ThoughtCard({ card, t }) {
   const [open, setOpen] = useState(false);
   const meta = [card.purpose, card.reasoningTokens != null ? `${card.reasoningTokens} tokens` : null].filter(Boolean).join(" · ");
@@ -159,7 +167,7 @@ function ThoughtCard({ card, t }) {
       <button type="button" className={css.thoughtRow} aria-expanded={open} onClick={() => setOpen(!open)}>
         <span className={css.thoughtBar} />
         <Sparkles size={12} />
-        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span className={css.thoughtText}>
           {t("ev.thought")}{meta ? ` · ${meta}` : ""}
         </span>
         {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
@@ -200,11 +208,9 @@ export default function ChatView({ t, state, actions, kernel, statusLine, setVie
         onToggleRightbar={() => onToggleRightbar?.()}
         onTabChange={(tab) => onChatTab?.(tab)}
         right={(
-          <>
-            <span className={`seg acc ${css.mode}`} title={t("settings.model")} style={{ height: 24, padding: "1px 8px", borderRadius: 24, fontSize: 13, background: "var(--hover)", color: "var(--text-mut)" }}>
-              {state.config?.model || "—"}
-            </span>
-          </>
+          <span className={`seg acc ${css.mode}`} title={t("settings.model")} style={{ height: 24, padding: "1px 8px", borderRadius: 24, fontSize: 13, background: "var(--hover)", color: "var(--text-mut)", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {state.config?.model || "—"}
+          </span>
         )}
       />
 

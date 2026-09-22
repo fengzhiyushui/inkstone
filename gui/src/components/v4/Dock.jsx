@@ -30,6 +30,9 @@ export default function Dock({
     if (tab === "recovery" && onRefreshRecovery) onRefreshRecovery();
   }, [tab, onRefreshRecovery]);
 
+  // 列宽被挤掉时不可绝对定位盖住主区
+  if (!rightbarWidth || rightbarWidth < 300) return null;
+
   return (
     <div className={css.dock} style={{ width: rightbarWidth }} role="complementary" aria-label="dock">
       <div className={css.tabbar} role="tablist" aria-label="dock tabs">

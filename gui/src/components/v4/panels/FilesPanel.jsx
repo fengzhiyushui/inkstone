@@ -12,10 +12,11 @@ function TreeRows({ nodes, expanded, depth, onToggle, onOpen, t }) {
         <button
           type="button"
           className={`${css.row} ${!isDir && expanded.__file === n.path ? "on" : ""}`}
-          style={{ paddingLeft: 8 + depth * 16 }}
+          style={{ paddingLeft: 8 + Math.min(depth, 12) * 12 }}
           aria-expanded={isDir ? open : undefined}
           onClick={() => (isDir ? onToggle(n.path) : onOpen(n.path))}
           title={n.path}
+          data-depth={depth}
         >
           {isDir
             ? (open ? <FolderOpen size={14} /> : <Folder size={14} />)
