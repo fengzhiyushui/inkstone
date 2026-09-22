@@ -351,3 +351,164 @@ select.f-in { min-width: 160px; }
 @media (max-width: 800px) {
   [glass="on"] .view .cz-in { backdrop-filter: none; }
 }
+
+/* ══ v1.8.2 迁回:B4 删 shell.css 后丢失的布局显隐 / 模态 / 省略号 ══
+   只恢复功能与截断契约,视觉 token 仍走 v1.8.1 中性阶梯。 */
+
+/* 侧栏:分区折叠 + 项目树收放 + 长标题省略 */
+.sec-head .chev { display: inline-grid; place-items: center; transition: transform .18s ease; }
+.sec-head.closed .chev { transform: rotate(-90deg); }
+.sec-head .cnt { margin-left: auto; font-family: var(--font-mono); letter-spacing: 0; }
+.sec-head .add { margin-left: auto; color: var(--text-mut); background: none; border: none; cursor: pointer; padding: 0 2px; display: grid; place-items: center; }
+.sec-head .add:hover { color: var(--accent); }
+.sec-body.closed { display: none; }
+
+.proj { margin-bottom: 1px; }
+.proj-h .chev { display: inline-grid; place-items: center; color: var(--text-faint); width: 12px; flex: none; transition: transform .18s ease; }
+.proj:not(.open) > .proj-h .chev { transform: rotate(-90deg); }
+.proj-h .dot { width: 7px; height: 7px; border-radius: 2px; flex: none; background: var(--text-faint); }
+.proj.cur > .proj-h .dot { background: var(--ok); }
+.proj.cur > .proj-h .nm { font-weight: 600; }
+.proj-h .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-h .tag {
+  font-size: 10px; color: var(--ok); font-family: var(--font-mono);
+  padding: 1px 5px; border-radius: 4px; background: var(--bg-inset); flex: none;
+}
+.proj-h .cnt { font-size: 10px; color: var(--text-faint); font-family: var(--font-mono); flex: none; }
+.pnew { width: 22px; height: 22px; border-radius: 6px; flex: none; display: grid; place-items: center;
+  color: var(--text-mut); background: transparent; border: none; cursor: pointer; opacity: 0; transition: opacity .12s ease; }
+.proj-h:hover .pnew, .proj.open > .proj-h .pnew { opacity: 1; }
+.pnew:hover { background: var(--accent); color: var(--accent-text); }
+
+.proj-b { display: none; margin: 2px 0 6px 13px; padding-left: 9px; border-left: 1px solid var(--border-l2); }
+.proj.open > .proj-b { display: block; }
+.proj-more {
+  display: block; width: 100%; text-align: left;
+  padding: 5px 9px; margin-top: 1px; border-radius: 6px; border: none; background: transparent;
+  color: var(--text-mut); font-size: 11px; cursor: pointer;
+}
+.proj-more:hover { background: var(--hover); color: var(--accent); }
+.r-item .tt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.r-item .xx { color: var(--text-faint); font-size: 11px; opacity: 0; font-family: var(--font-mono); flex: none; transition: opacity .12s ease; }
+.r-item:hover .xx, .r-item.on .xx { opacity: 1; }
+.r-item .ric { color: var(--text-faint); display: grid; place-items: center; flex: none; }
+
+/* 新会话菜单:显隐 + 条目 */
+.new-menu {
+  display: none; position: absolute; z-index: 30; top: calc(100% + 5px); left: 0; right: 0;
+  background: var(--bg-panel); border: .5px solid var(--border-l3);
+  border-radius: 12px; padding: 5px; box-shadow: var(--shadow-2);
+}
+.new-menu.open { display: block; }
+.new-menu .nm-h { padding: 6px 9px 5px; color: var(--text-faint); font-size: 12px; }
+.nm-i { display: flex; gap: 9px; padding: 7px 9px; border-radius: 8px; cursor: pointer; align-items: flex-start; color: var(--text); text-align: left; width: 100%; border: none; background: none; }
+.nm-i:hover { background: var(--hover); }
+.nm-i.on { background: var(--accent-soft); }
+.nm-i .t { font-size: 13px; color: var(--text); display: flex; align-items: center; gap: 7px; }
+.nm-i .t .cur { font-size: 10px; color: var(--ok); font-family: var(--font-mono); }
+.nm-i .s { font-size: 11px; color: var(--text-faint); margin-top: 2px; line-height: 1.45; overflow-wrap: anywhere; }
+.nm-sep { height: 1px; background: var(--border-l2); margin: 5px 9px; }
+[glass="on"] .new-menu { background: var(--bg-glass); backdrop-filter: blur(12px); }
+
+/* 首页问候 */
+.home .hello .hello-txt {
+  background: linear-gradient(92deg, var(--accent) 10%, var(--info) 90%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+
+/* 次级视图滚动壳(项目 / MCP / 插件 / 恢复) */
+.s-body { flex: 1; overflow-y: auto; min-height: 0; }
+.s-in { max-width: 760px; padding: 22px 30px 60px; }
+
+/* 改动双栏(SecondaryViews.ChangesView 仍在字典/导出面) */
+.changes { flex: 1; display: grid; grid-template-columns: 264px 1fr; min-height: 0; }
+.c-list { border-right: 1px solid var(--border-l2); overflow-y: auto; padding: 12px 10px; min-height: 0; }
+.c-list .cl-h { padding: 0 8px 8px; color: var(--text-faint); font-size: 11px; letter-spacing: .09em; text-transform: uppercase; }
+.c-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  padding: 8px 10px; border-radius: 8px; font-size: 12px;
+  font-family: var(--font-mono); color: var(--text); border: none; background: none; cursor: pointer;
+}
+.c-item:hover { background: var(--hover); }
+.c-item.on { background: var(--accent-soft); }
+.c-item .ps { margin-left: auto; display: flex; gap: 6px; font-size: 11px; }
+.c-item .ps .a { color: var(--ok); } .c-item .ps .d { color: var(--err); }
+.c-src { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); font-family: var(--font-ui); flex: none; }
+.c-view { overflow-y: auto; display: flex; flex-direction: column; min-height: 0; }
+.c-view .cv-h {
+  display: flex; align-items: center; gap: 10px; padding: 14px 22px;
+  border-bottom: 1px solid var(--border-l2); position: sticky; top: 0; background: var(--bg-base); z-index: 1;
+}
+.c-view .cv-h .fp { font-family: var(--font-mono); font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.c-view .cv-body { flex: 1; min-height: 0; }
+.c-view .df { padding: 10px 0 40px; }
+.c-view .df .ln { padding: 0 22px; }
+.c-view .df .hk { padding: 6px 22px; }
+
+/* 主题细节色板 */
+.th-detail {
+  margin-top: 10px; padding: 9px 11px;
+  border: .5px solid var(--border-l2); border-radius: 8px; background: var(--bg-panel);
+}
+
+/* 敏感文件风险提醒(红卡模态;与审批卡刻意不同形) */
+.sn-backdrop {
+  position: fixed; inset: 0; z-index: 80;
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--bg-base) 72%, transparent);
+  backdrop-filter: blur(6px);
+}
+.sn-card {
+  width: min(560px, calc(100vw - 48px));
+  background: var(--bg-panel);
+  border: 1px solid var(--err);
+  border-left: 3px solid var(--err);
+  border-radius: 10px;
+  padding: 18px 20px;
+  box-shadow: 0 16px 48px color-mix(in srgb, var(--err) 18%, transparent);
+}
+.sn-head { display: flex; align-items: center; gap: 8px; color: var(--err); }
+.sn-title { font-weight: 600; font-size: 14px; }
+.sn-body { margin: 12px 0 8px; color: var(--text); font-size: 13px; line-height: 1.6; }
+.sn-paths { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; }
+.sn-paths li { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.sn-paths code {
+  color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent);
+  padding: 2px 7px; border-radius: 4px; font-size: 12px;
+  overflow-wrap: anywhere; min-width: 0;
+}
+.sn-reason { color: var(--text-mut); font-size: 12px; flex: none; }
+.sn-record { margin: 0 0 16px; color: var(--text-mut); font-size: 12px; overflow-wrap: anywhere; }
+.sn-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.sn-btn {
+  padding: 7px 16px; border-radius: 6px; font-size: 13px; cursor: pointer;
+  border: 1px solid var(--border-strong); background: var(--bg-element); color: var(--text);
+}
+.sn-refuse { border-color: var(--err); color: var(--err); font-weight: 600; }
+.sn-refuse:hover { background: color-mix(in srgb, var(--err) 12%, transparent); }
+.sn-allow:hover { background: var(--hover); }
+
+/* 通用模态壳(与 sn 同形,无 err 描边) */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--bg-base) 72%, transparent);
+  backdrop-filter: blur(6px);
+}
+.modal-card {
+  position: relative;
+  width: min(560px, calc(100vw - 48px));
+  background: var(--bg-panel);
+  border: .5px solid var(--border-l3);
+  border-radius: 10px;
+  padding: 18px 20px;
+  box-shadow: var(--shadow-2);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .sn-backdrop, .modal-backdrop, [glass="on"] .new-menu { backdrop-filter: none !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sec-head .chev, .proj-h .chev, .pnew, .r-item .xx { transition: none; }
+}
+
