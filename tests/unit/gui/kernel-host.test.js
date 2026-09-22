@@ -305,6 +305,7 @@ test("kernel host exposes active branch delegate", async () => {
 test("gui preferences normalize invalid values to safe defaults", () => {
   const { normalizeGuiPreferences } = require("../../../gui/kernel-host.js");
 
+  // 输入刻意保留退役键 railMode / contextCollapsed(模拟旧偏好文件残留),期望被丢弃。
   assert.deepEqual(normalizeGuiPreferences({
     schema: 99,
     theme: "neon",
@@ -319,8 +320,6 @@ test("gui preferences normalize invalid values to safe defaults", () => {
     lastLight: "latte",
     glass: true,
     language: "zh",
-    railMode: "chat",
-    contextCollapsed: false,
     railCollapsed: false,
     statusDisplay: null,
     sidebarWidth: 280,
@@ -339,6 +338,7 @@ test("gui preferences load missing corrupt and save sanitized values", async () 
   const root = await mkdtemp(path.join(os.tmpdir(), "dsc-gui-pref-"));
   assert.equal((await loadGuiPreferences(root)).theme, "sumi");
 
+  // 存档时带上退役键:写盘后必须被归一丢弃。
   await saveGuiPreferences(root, { theme: "day", railMode: "branches", contextCollapsed: true, railCollapsed: true, secret: "x" });
   assert.deepEqual(await loadGuiPreferences(root), {
     schema: 1,
@@ -347,8 +347,6 @@ test("gui preferences load missing corrupt and save sanitized values", async () 
     lastLight: "latte",
     glass: true,
     language: "zh",
-    railMode: "branches",
-    contextCollapsed: true,
     railCollapsed: true,
     statusDisplay: null,
     sidebarWidth: 280,
@@ -383,8 +381,9 @@ test("kernel host exposes gui preference delegates", async () => {
   await host.init();
 
   await host.setPreferences({ theme: "day", railMode: "timeline" });
-  assert.equal((await host.getPreferences()).theme, "latte");
-  assert.equal((await host.getPreferences()).railMode, "timeline");
+  const prefs = await host.getPreferences();
+  assert.equal(prefs.theme, "latte");
+  assert.equal("railMode" in prefs, false); // v1.8.3:退役键不得落盘
 });
 
 test("kernel host exposes project registry + session index delegates", async () => {

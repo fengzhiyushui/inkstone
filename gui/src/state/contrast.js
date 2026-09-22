@@ -1,6 +1,6 @@
 // gui/src/state/contrast.js — WCAG 相对亮度与对比度(纯函数)。
-// 单一实现:GUI 的 ThemeHub 运行时实测与 scripts/check-theme-contrast.mjs 闸门共用这一处,
-// 避免把 Node 脚本拉进 Vite 构建。
+// 单一实现:GUI 设置›外观(Appearance.jsx,v1.8.1 起由 ThemeHub 并入)的运行时实测
+// 与 scripts/check-theme-contrast.mjs 闸门共用这一处,避免把 Node 脚本拉进 Vite 构建。
 export function relLum(hex) {
   const v = String(hex || "").replace("#", "");
   const c = [0, 2, 4].map((i) => parseInt(v.slice(i, i + 2), 16) / 255)

@@ -11,12 +11,13 @@ test("normalizeGuiPreferences persists language (default zh)", () => {
   assert.equal(normalizeGuiPreferences({ language: "fr" }).language, "zh");
 });
 
-test("normalizeGuiPreferences keeps existing fields (no regression)", () => {
+test("normalizeGuiPreferences keeps existing fields and drops retired keys (no regression)", () => {
   const p = normalizeGuiPreferences({ theme: "day", railMode: "branches", contextCollapsed: true });
   assert.equal(p.theme, "latte");
-  assert.equal(p.railMode, "branches");
-  assert.equal(p.contextCollapsed, true);
   assert.equal(p.language, "zh");
+  // v1.8.3:railMode / contextCollapsed 随 v1.8.1 三列壳层退役 —— 旧偏好文件里的残留键必须被丢弃
+  assert.equal("railMode" in p, false);
+  assert.equal("contextCollapsed" in p, false);
 });
 
 test("normalizeGuiPreferences persists railCollapsed (default false)", () => {

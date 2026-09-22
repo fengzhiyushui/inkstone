@@ -4,9 +4,7 @@
 import { normalizeStatusDisplay } from "./status-display.js";
 import { SIDEBAR_MIN, SIDEBAR_MAX, SIDEBAR_DEFAULT, RIGHTBAR_MIN, RIGHTBAR_MAX } from "./columns.js";
 
-var RAIL_MODES = ["chat", "context", "branches", "timeline", "settings"];
 var VIEWS = ["home", "chat", "projects", "mcp", "plugins"]; // 主区路由;changes/recovery 走右栏 dock;settings 走模态
-var RAIL_VIEWS = ["explorer", "search", "scm", "run", "ext", "agent", "settings"];
 var INSPECTOR_MODES = ["activity", "approval", "rewind", "details", "checkpoints", "branch"];
 var THEMES = ["sumi", "slate", "vesper", "nord", "ash", "snow", "sand", "lotus", "latte", "paper"]; // v1.8.0 token 主题(10)
 var LEGACY_THEME_MAP = { night: "sumi", day: "latte", dawn: "lotus", mocha: "sumi", moon: "slate", forest: "ash", clay: "vesper", rose: "sumi" }; // 旧 id → token 主题
@@ -49,9 +47,6 @@ export function createInitialState() {
     rewindPreview: null,
     rewindResult: null,
     forceRewind: false,
-    railMode: "chat",
-    railView: "explorer",
-    contextCollapsed: false,
     railCollapsed: false,
     sidebarWidth: SIDEBAR_DEFAULT,
     rightbarWidth: 0,
@@ -190,12 +185,6 @@ export function applyWorkbenchAction(state, action) {
   if (action.type === "force_rewind_changed") {
     return copy(current, { forceRewind: Boolean(action.force) });
   }
-  if (action.type === "rail_mode_changed") {
-    return copy(current, { railMode: normalize(action.mode, RAIL_MODES, "chat"), contextCollapsed: false });
-  }
-  if (action.type === "rail_view_changed") {
-    return copy(current, { railView: normalize(action.view, RAIL_VIEWS, "explorer") });
-  }
   if (action.type === "cursor_moved") {
     var pos = action.position || {};
     return copy(current, {
@@ -207,9 +196,6 @@ export function applyWorkbenchAction(state, action) {
     return copy(current, {
       config: { model: cfg.model || null, hasApiKey: Boolean(cfg.hasApiKey) }
     });
-  }
-  if (action.type === "context_collapsed_changed") {
-    return copy(current, { contextCollapsed: Boolean(action.collapsed) });
   }
   if (action.type === "rail_collapsed_changed") {
     return copy(current, { railCollapsed: Boolean(action.collapsed) });
@@ -258,9 +244,7 @@ export function applyWorkbenchAction(state, action) {
       lastLight: isLightId(lastLight) ? lastLight : current.lastLight,
       glass: typeof prefs.glass === "boolean" ? prefs.glass : current.glass,
       language: normalize(prefs.language, LANGUAGES, current.language),
-      railMode: normalize(prefs.railMode, RAIL_MODES, current.railMode),
       statusDisplay: normalizeStatusDisplay(prefs.statusDisplay, current.statusDisplay),
-      contextCollapsed: typeof prefs.contextCollapsed === "boolean" ? prefs.contextCollapsed : current.contextCollapsed,
       railCollapsed: typeof prefs.railCollapsed === "boolean" ? prefs.railCollapsed : current.railCollapsed,
       sidebarWidth: normalizeSidebarWidth(prefs.sidebarWidth, current.sidebarWidth || SIDEBAR_DEFAULT),
       rightbarWidth: normalizeRightbarWidth(prefs.rightbarWidth === undefined ? current.rightbarWidth : prefs.rightbarWidth),

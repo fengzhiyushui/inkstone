@@ -9,6 +9,9 @@ test("frozen DOM/CSS contracts survive (v1.8.1 B4 冻结清单)", () => {
   const themeCss = read("gui/src/styles/theme.css"), main = read("gui/main.js");
   const appFrame = read("gui/src/components/v4/AppFrame.jsx");
   assert.match(app, /setAttribute\("theme", state\.theme\)/);
+  // v1.8.3(I2):`shell` / `rail-off` 是**无样式的结构钩子** —— 布局由 AppFrame.module.css 的
+  // .frame + 内联 gridTemplateColumns 承担,这两个类名目前在 gui/src 的任何 CSS 里都没有规则。
+  // 此处保留断言以冻结 DOM,但请勿据此认为它们有视觉作用;若将来要删除,需同步改本行。
   assert.match(app, /className=\{`shell\$\{state\.railCollapsed \? " rail-off" : ""\}`\}/);
   for (const cls of ["rail-fn", "rail-scroll", "rail-foot", "rail-new"]) assert.match(rail, new RegExp(`className=\\{?[\`"']${cls}`), cls);
   assert.match(metrics, /"cz-meta"/);

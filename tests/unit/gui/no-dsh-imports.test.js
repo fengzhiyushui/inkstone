@@ -18,7 +18,15 @@ test("gui never depends on or references the reference project's packages", () =
   const pkg = JSON.parse(readFileSync(join(ROOT, "gui/package.json"), "utf8"));
   const deps = { ...pkg.dependencies, ...pkg.devDependencies, ...pkg.optionalDependencies };
   assert.deepEqual(Object.keys(deps).filter((k) => k.startsWith("@deepseek-ai/")), [], "gui/package.json 不得依赖 @deepseek-ai/*");
-  for (const f of walk(join(ROOT, "gui/src"))) {
+  // v1.8.3(I5):原实现只扫 gui/src,遗漏 Electron 主进程/预加载/宿主三个入口。
+  const targets = [
+    ...walk(join(ROOT, "gui/src")),
+    join(ROOT, "gui/main.js"),
+    join(ROOT, "gui/preload.js"),
+    join(ROOT, "gui/kernel-host.js"),
+    join(ROOT, "gui/vite.renderer.config.mjs")
+  ].filter((f) => statSync(f).isFile());
+  for (const f of targets) {
     const s = readFileSync(f, "utf8");
     assert.ok(!/from\s+['"]@deepseek-ai\//.test(s), `${f} 不得 import @deepseek-ai/*`);
     assert.ok(!/--dsw-|--dsh-/.test(s), `${f} 不得使用 --dsw-/--dsh- 变量名`);

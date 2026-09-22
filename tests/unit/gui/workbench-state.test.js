@@ -12,9 +12,11 @@ test("createInitialState defines workbench defaults", () => {
   assert.equal(initial.rewindPreview, null);
   assert.equal(initial.rewindResult, null);
   assert.equal(initial.forceRewind, false);
-  assert.equal(initial.railMode, "chat");
-  assert.equal(initial.contextCollapsed, false);
   assert.equal(initial.railCollapsed, false);
+  // v1.8.3:railMode / railView / contextCollapsed 随 v1.8.1 三列壳层退役,不得复活
+  assert.equal("railMode" in initial, false);
+  assert.equal("railView" in initial, false);
+  assert.equal("contextCollapsed" in initial, false);
   assert.equal(initial.sidebarWidth, 280);
   assert.equal(initial.rightbarWidth, 0);
   assert.equal(initial.rightbarOpen, false);
@@ -97,14 +99,10 @@ test("error_reported caps errors and redacts empty messages", () => {
 test("message activity and presentation actions update workbench state", () => {
   let current = state.createInitialState();
   current = state.applyWorkbenchAction(current, { type: "message_added", message: { role: "user", content: "inspect README" } });
-  current = state.applyWorkbenchAction(current, { type: "rail_mode_changed", mode: "branches" });
-  current = state.applyWorkbenchAction(current, { type: "context_collapsed_changed", collapsed: true });
   current = state.applyWorkbenchAction(current, { type: "inspector_mode_changed", mode: "checkpoints" });
   current = state.applyWorkbenchAction(current, { type: "theme_changed", theme: "slate" });
 
   assert.equal(current.emptyStateVisible, false);
-  assert.equal(current.railMode, "branches");
-  assert.equal(current.contextCollapsed, true);
   assert.equal(current.inspectorMode, "checkpoints");
   assert.equal(current.theme, "slate");
   assert.equal(state.statusSummary(current).runtime, "idle");
@@ -139,11 +137,9 @@ test("risk events move focus to contextual inspector modes", () => {
 
 test("invalid presentation choices fall back to safe defaults", () => {
   let current = state.createInitialState();
-  current = state.applyWorkbenchAction(current, { type: "rail_mode_changed", mode: "nonsense" });
   current = state.applyWorkbenchAction(current, { type: "inspector_mode_changed", mode: "nonsense" });
   current = state.applyWorkbenchAction(current, { type: "theme_changed", theme: "neon" });
 
-  assert.equal(current.railMode, "chat");
   assert.equal(current.inspectorMode, "activity");
   assert.equal(current.theme, "sumi");
   assert.equal(state.themeLabel("sumi"), "墨");
@@ -156,16 +152,16 @@ test("preferences_loaded hydrates only safe presentation fields", () => {
     type: "preferences_loaded",
     preferences: {
       theme: "day",
-      railMode: "timeline",
-      contextCollapsed: true,
+      railMode: "timeline",       // 退役键:必须被忽略
+      contextCollapsed: true,     // 退役键:必须被忽略
       railCollapsed: true,
       messages: [{ role: "user", content: "ignored" }]
     }
   });
 
   assert.equal(current.theme, "latte");
-  assert.equal(current.railMode, "timeline");
-  assert.equal(current.contextCollapsed, true);
+  assert.equal("railMode" in current, false);
+  assert.equal("contextCollapsed" in current, false);
   assert.equal(current.railCollapsed, true);
   assert.deepEqual(current.messages, []);
 });
@@ -213,7 +209,7 @@ test("state-changing actions return a NEW reference", () => {
     { type: "event_received", event: { type: "agent:step" } },
     { type: "theme_changed", theme: "day" },
     { type: "branch_selected", branch_id: "br_x" },
-    { type: "rail_mode_changed", mode: "timeline" }
+    { type: "dock_tab_changed", tab: "changes" }
   ];
   let prev = s0;
   for (const a of mutating) {
@@ -266,17 +262,6 @@ test("tree_loaded / file open / activate / close", () => {
   s = state.applyWorkbenchAction(s, { type: "file_closed", path: "a.js" });
   assert.equal(s.openFiles.length, 1);
   assert.equal(s.activeFile, "b.js");                  // fallback to remaining
-});
-
-// D3-M3: activity-bar viewlet switching (distinct from legacy railMode)
-test("rail_view_changed switches the active viewlet; invalid falls back", () => {
-  assert.equal(state.createInitialState().railView, "explorer");
-  const scm = state.applyWorkbenchAction(state.createInitialState(), { type: "rail_view_changed", view: "scm" });
-  assert.equal(scm.railView, "scm");
-  const settings = state.applyWorkbenchAction(scm, { type: "rail_view_changed", view: "settings" });
-  assert.equal(settings.railView, "settings");
-  const bad = state.applyWorkbenchAction(settings, { type: "rail_view_changed", view: "nope" });
-  assert.equal(bad.railView, "explorer");
 });
 
 // D3-M10: per-file dirty tracking for editable Monaco + save

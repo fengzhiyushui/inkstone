@@ -93,8 +93,6 @@ const GUI_PREFERENCE_DEFAULTS = Object.freeze({
   lastLight: "latte",
   glass: true,
   language: "zh",
-  railMode: "chat",
-  contextCollapsed: false,
   railCollapsed: false,
   statusDisplay: null,
   sidebarWidth: 280,
@@ -103,7 +101,6 @@ const GUI_PREFERENCE_DEFAULTS = Object.freeze({
   dockTab: "files"
 });
 
-const GUI_RAIL_MODES = new Set(["chat", "context", "branches", "timeline", "settings"]);
 const GUI_DOCK_TABS = new Set(["files", "changes", "recovery"]);
 
 const EXT_LANGUAGE = {
@@ -169,8 +166,6 @@ function normalizeGuiPreferences(value = {}) {
     lastLight: GUI_LIGHT.has(input.lastLight) ? input.lastLight : "latte",
     glass: typeof input.glass === "boolean" ? input.glass : true,
     language: input.language === "en" ? "en" : "zh",
-    railMode: GUI_RAIL_MODES.has(input.railMode) ? input.railMode : "chat",
-    contextCollapsed: typeof input.contextCollapsed === "boolean" ? input.contextCollapsed : false,
     railCollapsed: typeof input.railCollapsed === "boolean" ? input.railCollapsed : false,
     statusDisplay: input.statusDisplay || null, // 不透明透传;渲染侧 normalizeStatusDisplay 补默认
     sidebarWidth: Number.isInteger(sw) && sw >= 264 && sw <= 420 ? sw : 280,
