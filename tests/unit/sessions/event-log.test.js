@@ -6,7 +6,8 @@ import path from "node:path";
 import {
   createSessionEventLog,
   openSessionEventLog,
-  projectIdFromRoot
+  projectIdFromRoot,
+  verifyEventLog
 } from "../../../src/sessions/event-log.js";
 
 test("event log creates session start and strips reserved data fields", async () => {
@@ -94,3 +95,44 @@ test("projectIdFromRoot is stable and filesystem safe", () => {
   assert.equal(first, second);
   assert.match(first, /^proj_[a-f0-9]{12}$/);
 });
+
+test("verifyEventLog validates intact hash chain and detects corruption or tampering", async () => {
+  const sessionRoot = await mkdtemp(path.join(tmpdir(), "dsc-session-verify-"));
+  const log = await createSessionEventLog({ sessionRoot, projectId: "proj", sessionId: "sess" });
+  await log.append("user:message", { content: "hello" });
+  await log.append("agent:step", { step: { id: "step_1" } });
+  await log.flush();
+
+  // Full 64-hex sha256 hash check
+  const events = await log.tail(10);
+  assert.equal(events[0].event_hash.length, 71); // 'sha256:' (7) + 64 hex = 71 chars
+
+  // 1. Valid intact log verification
+  const checkPass = await log.verify();
+  assert.equal(checkPass.valid, true);
+  assert.equal(checkPass.verified_count, 3);
+  assert.equal(checkPass.errors.length, 0);
+
+  // 2. Corrupt JSON line detection
+  await appendFile(log.filePath, "corrupt bad json\n", "utf8");
+  const checkCorrupt = await verifyEventLog(log.filePath);
+  assert.equal(checkCorrupt.valid, false);
+  assert.ok(checkCorrupt.errors.some((e) => e.error === "corrupt_line"));
+
+  // 3. Tampered prev_hash / chain break detection
+  const tamperedEvent = JSON.stringify({
+    schema_version: 2,
+    event_id: "evt_tampered",
+    prev_hash: "sha256:fake000000000000000000000000000000000000000000000000000000000000",
+    event_hash: "sha256:badhash",
+    type: "user:message",
+    timestamp: "2026-05-30T00:00:00.000Z",
+    seq: 5,
+    session_id: "sess"
+  });
+  await appendFile(log.filePath, `${tamperedEvent}\n`, "utf8");
+  const checkTampered = await verifyEventLog(log.filePath);
+  assert.equal(checkTampered.valid, false);
+  assert.ok(checkTampered.errors.some((e) => e.error === "chain_broken" || e.error === "hash_mismatch"));
+});
+

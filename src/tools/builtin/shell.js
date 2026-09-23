@@ -29,7 +29,8 @@ export function createShellTool() {
       const cwd = await resolveWorkspacePath(context.projectRoot, normalized.cwd, { mustExist: true });
       return runProcess(normalized.argv, {
         cwd: cwd.real,
-        timeoutMs: normalized.timeout_ms
+        timeoutMs: normalized.timeout_ms,
+        signal: context.signal
       });
     }
   };

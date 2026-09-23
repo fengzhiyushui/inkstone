@@ -74,7 +74,10 @@ export function createToolExecutor({ registry, permissionEngine, eventBus = null
 
     try {
       const timeoutMs = context.toolTimeoutMs ?? defaultToolTimeoutMs;
-      const raw = await runWithTimeout(() => def.execute(securedCall.params, context), timeoutMs);
+      const raw = await runWithTimeout(
+        ({ signal } = {}) => def.execute(securedCall.params, { ...context, ...(signal ? { signal } : {}) }),
+        timeoutMs
+      );
       return publishResult(createToolResult({
         callId: toolCall.id,
         status: raw.status || "success",
@@ -111,18 +114,20 @@ function publicTool(def) {
 }
 
 function runWithTimeout(promiseFactory, timeoutMs) {
-  if (!timeoutMs) return promiseFactory();
+  if (!timeoutMs) return promiseFactory({});
+  const ac = new AbortController();
   return new Promise((resolve, reject) => {
     let settled = false;
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
+      try { ac.abort(); } catch {}
       const err = new Error(`tool timed out after ${timeoutMs}ms`);
       err.code = "TOOL_TIMEOUT";
       reject(err);
     }, timeoutMs);
     Promise.resolve()
-      .then(promiseFactory)
+      .then(() => promiseFactory({ signal: ac.signal }))
       .then((value) => { if (!settled) { settled = true; clearTimeout(timer); resolve(value); } })
       .catch((error) => { if (!settled) { settled = true; clearTimeout(timer); reject(error); } });
   });

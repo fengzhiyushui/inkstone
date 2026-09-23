@@ -109,7 +109,8 @@ async function realpathOrResolve(inputPath) {
 
 function assertInside(realRoot, realTarget, originalPath) {
   const rel = path.relative(realRoot, realTarget);
-  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+  const isEscape = rel === ".." || rel.startsWith(".." + path.sep) || rel.startsWith("../") || path.isAbsolute(rel);
+  if (isEscape) {
     throw new Error(`path escapes project root: ${originalPath}`);
   }
 }

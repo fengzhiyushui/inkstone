@@ -15,12 +15,22 @@ export async function runDispatchLoop({
   const order = orderOf(plan);
   const deps = { workerFactory, makeReviewer, synthesizer, budget, maxWorkerAttempts, autonomy, onEvent, toBatches, maxParallelWorkers, runIsolatedWorker, mergeSubtask, removeIso, projectRules, orchestrationMarker };
   const collected = [];
+  const failedIds = new Set();
   for (let i = 0; i < order.length; i += 1) {
     const st = order[i];
+    const failedDep = (st.depends_on || []).find((dep) => failedIds.has(dep));
+    if (failedDep) {
+      failedIds.add(st.id);
+      collected.push({ st, status: "failed", lastFeedback: `dependency ${failedDep} failed` });
+      continue;
+    }
     const r = await processSubtask(st, { workerFactory, makeReviewer, maxWorkerAttempts, autonomy, onEvent, projectRules, orchestrationMarker });
     if (r.control === "awaiting_approval") {
       return { status: "awaiting_approval", approval: r.approval, collected,
         resume: { pausedWorker: r.worker, pausedApprovalId: r.approval.id, pausedSubtask: st, remaining: order.slice(i + 1), deps } };
+    }
+    if (r.entry.status !== "complete") {
+      failedIds.add(st.id);
     }
     collected.push(r.entry);
     if (budget.exceeded()) return finishPartial(collected, synthesizer, "budget");
@@ -88,29 +98,50 @@ async function processSubtask(st, { workerFactory, makeReviewer, maxWorkerAttemp
 async function runBatched({ plan, workerFactory, makeReviewer, synthesizer, budget, maxWorkerAttempts, autonomy, toBatches, maxParallelWorkers, runIsolatedWorker, mergeSubtask, removeIso, onEvent, projectRules = [], orchestrationMarker = null }) {
   const order = orderOf(plan);
   const runId = `run_${order.map((s) => s.id).join("-")}`.slice(0, 80);
+  const completedIds = new Set();
+  const failedIds = new Set();
   const batches = toBatches(order, { completedIds: new Set(), maxParallelWorkers });
   const collected = [];
   let runDir = null; // parent of iso subtask dirs; cleaned at the end for zero residue
 
   for (const batch of batches) {
-    if (batch.length === 1) {
-      const r = await processSubtask(batch[0], { workerFactory, makeReviewer, maxWorkerAttempts, autonomy, onEvent, projectRules, orchestrationMarker });
+    const runnable = [];
+    for (const st of batch) {
+      const failedDep = (st.depends_on || []).find((dep) => failedIds.has(dep));
+      if (failedDep) {
+        failedIds.add(st.id);
+        collected.push({ st, status: "failed", lastFeedback: `dependency ${failedDep} failed` });
+      } else {
+        runnable.push(st);
+      }
+    }
+    if (runnable.length === 0) continue;
+
+    if (runnable.length === 1) {
+      const r = await processSubtask(runnable[0], { workerFactory, makeReviewer, maxWorkerAttempts, autonomy, onEvent, projectRules, orchestrationMarker });
       if (r.control === "awaiting_approval") {
         await cleanupRun(runDir, removeIso);
         const remaining = batches.slice(batches.indexOf(batch) + 1).flat();
         const deps = { workerFactory, makeReviewer, synthesizer, budget, maxWorkerAttempts, autonomy, onEvent, toBatches, maxParallelWorkers, runIsolatedWorker, mergeSubtask, removeIso, projectRules, orchestrationMarker };
         return { status: "awaiting_approval", approval: r.approval, collected,
-          resume: { pausedWorker: r.worker, pausedApprovalId: r.approval.id, pausedSubtask: batch[0], remaining, deps } };
+          resume: { pausedWorker: r.worker, pausedApprovalId: r.approval.id, pausedSubtask: runnable[0], remaining, deps } };
       }
+      if (r.entry.status === "complete") completedIds.add(runnable[0].id);
+      else failedIds.add(runnable[0].id);
       collected.push(r.entry);
     } else {
-      const results = await Promise.all(batch.map((st) =>
+      const results = await Promise.all(runnable.map((st) =>
         Promise.resolve(runIsolatedWorker({ subtask: st, runId })).catch((error) => ({ st, error }))));
       results.sort((a, b) => (a.st.id < b.st.id ? -1 : a.st.id > b.st.id ? 1 : 0)); // deterministic merge order
       const actuals = results.map((r) => ({ id: r.st.id, paths: actualPaths(r.actual) }));
       for (const r of results) {
         if (r.isoRoot && !runDir) runDir = path.dirname(r.isoRoot);
-        try { collected.push(await settleWorker(r, { mergeSubtask, actuals })); }
+        try {
+          const entry = await settleWorker(r, { mergeSubtask, actuals });
+          if (entry.status === "complete") completedIds.add(r.st.id);
+          else failedIds.add(r.st.id);
+          collected.push(entry);
+        }
         finally { if (r.isoRoot && removeIso) await removeIso(r.isoRoot).catch(() => {}); } // zero residue (per copy)
       }
     }

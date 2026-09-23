@@ -99,7 +99,10 @@ export async function rollbackChange(root, id) {
   const record = await readChange(root, id || "latest");
   // 截断守卫:任何文件缺 before 全文就无法安全回滚,先全部校验再动手,
   // 绝不写 `before ?? ""` 把用户文件清空。
-  const truncated = record.files?.find((file) => file.truncated);
+  const truncated = record.files?.find((file) => {
+    if (file.status === "create") return false;
+    return file.before_truncated || (file.truncated && (file.before == null || (file.before_size && file.before_size > (file.before?.length || 0))));
+  });
   if (truncated) {
     const error = new Error(
       `change ${record.id} 的 ${truncated.path} 超过记录大小上限,未保存回滚所需的完整内容,无法安全回滚。`

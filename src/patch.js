@@ -98,6 +98,10 @@ export function parseUnifiedDiff(diff) {
           break;
         }
         if (hunkLine.startsWith("\\ No newline")) {
+          const prev = hunkLines[hunkLines.length - 1];
+          if (prev && (prev.type === "+" || prev.type === " ")) {
+            current.noNewlineAtEnd = true;
+          }
           index += 1;
           continue;
         }
@@ -159,7 +163,14 @@ export function applyPatchToText(original, patch) {
     cursor += 1;
   }
 
-  return joinLines(result, original.endsWith("\n"));
+  const isCrlf = original.includes("\r\n");
+  const eol = isCrlf ? "\r\n" : "\n";
+  const isNewFile = patch.oldPath === "/dev/null" || !original;
+  const finalNewline = isNewFile
+    ? !patch.noNewlineAtEnd
+    : (patch.noNewlineAtEnd ? false : original.endsWith("\n"));
+
+  return joinLines(result, finalNewline, eol);
 }
 
 function validatePatch(patch) {
@@ -211,9 +222,10 @@ function splitPreserveFinalNewline(text) {
   return lines.map((line) => line.endsWith("\r") ? line.slice(0, -1) : line);
 }
 
-function joinLines(lines, finalNewline) {
-  const joined = lines.join("\n");
-  return finalNewline || lines.length ? `${joined}\n` : "";
+function joinLines(lines, finalNewline, eol = "\n") {
+  if (!lines.length) return "";
+  const joined = lines.join(eol);
+  return finalNewline ? `${joined}${eol}` : joined;
 }
 
 function stripBom(value) {

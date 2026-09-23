@@ -61,7 +61,7 @@ export function buildChildEnv(baseEnv = process.env, { allowExtra = [] } = {}) {
   return out;
 }
 
-export function runProcess(argv, { cwd, timeoutMs = 30000, env } = {}) {
+export function runProcess(argv, { cwd, timeoutMs = 30000, env, signal = null } = {}) {
   return new Promise((resolve) => {
     let settled = false;
     let stdout = "";
@@ -105,10 +105,29 @@ export function runProcess(argv, { cwd, timeoutMs = 30000, env } = {}) {
       return;
     }
 
+    if (signal) {
+      if (signal.aborted) {
+        try { child.kill(); } catch {}
+      } else {
+        signal.addEventListener("abort", () => {
+          try { child.kill(); } catch {}
+        }, { once: true });
+      }
+    }
+
     timer = setTimeout(() => { child.kill(); }, timeoutMs);
 
-    child.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
-    child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+    const maxBuffer = 64000;
+    child.stdout.on("data", (chunk) => {
+      if (stdout.length < maxBuffer) {
+        stdout += chunk.toString();
+      }
+    });
+    child.stderr.on("data", (chunk) => {
+      if (stderr.length < maxBuffer) {
+        stderr += chunk.toString();
+      }
+    });
 
     child.on("error", (err) => {
       finish(spawnErrorResult(err.message));

@@ -3,7 +3,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 
 function sha(buf) { return `sha256:${createHash("sha256").update(buf).digest("hex")}`; }
-function splitLines(text) { return text.length ? text.replace(/\n$/, "").split("\n") : []; }
+function splitLines(text) { return text.length ? text.replace(/\r?\n$/, "").split(/\r?\n/) : []; }
 
 // Whole-file-replacement unified diff. Applies cleanly because CAS guarantees
 // the main file equals `baseContent` at merge time.

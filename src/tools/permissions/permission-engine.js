@@ -110,7 +110,12 @@ function matchesRiskCue(rules, toolCall) {
   return cues.some((r) => surface.includes(r.cue));
 }
 
-function ruleMatches(rule, toolCall) {  if (rule.tool && rule.tool !== toolCall.name) return false;
+function ruleMatches(rule, toolCall) {
+  if (!rule || typeof rule !== "object") return false;
+  const hasCondition = Boolean(rule.tool || rule.category || rule.pattern || rule.match?.argv);
+  if (!hasCondition) return false;
+
+  if (rule.tool && rule.tool !== toolCall.name) return false;
   if (rule.category && rule.category !== toolCall.category) return false;
   if (rule.pattern) {
     if (!toolCall.params?.path) return false;

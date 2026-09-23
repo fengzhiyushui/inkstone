@@ -54,6 +54,13 @@ export const SESSION_EVENT_TYPES = Object.freeze([
   "repair:attempt",
   "repair:result",
   "repair:exhausted",
+  "orchestration:planned",
+  "orchestration:round_started",
+  "orchestration:replanned",
+  "orchestration:subtask_started",
+  "orchestration:subtask_reviewed",
+  "orchestration:completed",
+  "orchestration:routed",
   "agent:final",
   "agent:error"
 ]);

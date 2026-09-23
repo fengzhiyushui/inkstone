@@ -13,13 +13,23 @@
 
 > 下一个补丁 / 小版本的变更在此累积;发布时按[版本命名规则](README.md#版本命名规则)定级、移入带版本号的小节。
 
-- **Dock 顶部对齐与黑带消除**：修复 `Dock.module.css` 冗余 `top: 40px`，纠正为 `top: 0`，消除右栏 40px 空黑带并恢复完整视口高度。
-- **分隔条键盘微调方向修复**：修复 `DragHandle.jsx` 右栏微调双重反转问题，统一按屏幕物理 X 坐标计算，抽离 `computeKeyboardDelta` 纯函数并补齐单元测试。
-- **折叠卡片交互与内胆样式生效**：修复 `ChatView.jsx` 中 `Collapsible` 点击折叠不生效且 `.cardBody` 丢失问题，包裹条件渲染与 `css.cardBody`，与 `theme.css:223` 规则对齐。
-- **文件树激活项高亮**：修复 `FilesPanel.jsx` 引用不存在的 `expanded.__file` 问题，接入 `state.activeFile` 正确呈现文件打开高亮。
-- **项目切换文件树重载**：`workbench-state.js` 在 `project_switched` 时重置 `fileTree` 与展开目录集合，`FilesPanel.jsx` 监听 `state.currentProject` 变化自动重拉文件树，避免残留上一项目文件。
-- **侧栏折叠拖拽把手守卫**：修复 `AppFrame.jsx` 在 `railCollapsed` 为 56px 图标轨时仍渲染把手导致拖拽跳跃至 264px 的缺陷，补齐 `!railCollapsed` 渲染守卫。
-- **运行时标题栏明暗同步**：`gui/main.js` 在 `gui:preferences-set` 中监听主题明暗档变化，动态调用 `win.setTitleBarOverlay(...)` 更新 Windows 窗控按钮底色与符号色。
+---
+
+## v1.8.4 — 2026-09-23 · 内核与数据完整性保障 (缺陷报告修复 K1-K14)
+
+> 补丁: 彻底修复评估报告指出的所有 P0/P1/P2 级内核缺陷，涵盖事务日志、符号链接、补丁保真、进程超时、缓冲安全与防篡改校验。
+
+- **K1 事务半提交补偿回滚 (Transaction Journal)**：`transaction-journal.js` 在 `commit()` 失败时自动执行快照补偿回滚，避免留下半提交损坏数据。
+- **K2/K11 符号链接与目录联接保全 (Symlink Preservation)**：恢复原子写入改为 `lstat` 判断并直接重连符号链接/联接点，严禁将软链接毁损为常规文件。
+- **K3/K4 补丁尾换行与 CRLF 换行符字节保真 (Patch EOL Fidelity)**：修复 `patch.js` 的 `joinLines` 拼接条件与 CRLF 字节保真，跨平台应用补丁不增删多余尾换行。
+- **K5 子进程超时真正取消 (Process Cancellation)**：`runWithTimeout` 引入 `AbortController` / `AbortSignal`，超时触发时立即强制终止底层子进程树，防止僵尸进程。
+- **K6 Shell 标准流缓冲溢出防御 (Stream Buffer Safety)**：Shell 执行器收流时设置 `maxBuffer=64000` 截断，防止大体积命令输出耗尽进程内存 (OOM)。
+- **K7 编排器依赖失败跳过 (Orchestration Dependency Guard)**：编排调度循环在子任务失败后，自动将标记为依赖该失败任务的下游子任务标记为跳过，不再盲目派发。
+- **K8/K9 路径穿越精准检测 (Path Safety)**：路径安全性检测改为标准路径段解析，杜绝将含 `..` 的合法目录名（如 `test..dir`）误判为目录穿越。
+- **K10 事务回滚清理空目录**：在回滚删除新增文件后，递归自底向上清理因回滚产生的孤儿空目录。
+- **K12 快照前值回滚允许**：只要存在合法的 `before` 快照，无条件允许执行原子回滚。
+- **K13 事件日志 64-hex SHA-256 全量哈希与链式防篡改校验**：全量升级为标准 64 字符 SHA-256 哈希，并通过 `verifyEventLog` 严格校验哈希链。
+- **K14 空权限规则拒绝放行**：权限引擎中空模式规则一律拒绝放行，杜绝意外越权。
 
 ---
 

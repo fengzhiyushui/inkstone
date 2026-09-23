@@ -93,6 +93,11 @@ class SessionEventLog {
     const events = await readJsonl(this.filePath);
     return events.slice(-safeCount);
   }
+
+  async verify() {
+    await this.flush();
+    return verifyEventLog(this.filePath);
+  }
 }
 
 function assertLogOptions({ sessionRoot, projectId, sessionId }) {
@@ -137,9 +142,70 @@ function stripReservedKeys(data) {
   return cleaned;
 }
 
-function hashEvent(event) {
+export function hashEvent(event) {
   const { event_hash, ...hashable } = jsonSafe(event);
-  return `sha256:${createHash("sha256").update(stableStringify(hashable)).digest("hex").slice(0, 16)}`;
+  return `sha256:${createHash("sha256").update(stableStringify(hashable)).digest("hex")}`;
+}
+
+export async function verifyEventLog(filePath) {
+  try {
+    const content = await fs.readFile(filePath, "utf8");
+    const lines = content.split(/\r?\n/);
+    const errors = [];
+    let prevHash = null;
+    let expectedSeq = 1;
+    let verifiedCount = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line.trim()) continue;
+
+      let event;
+      try {
+        event = JSON.parse(line);
+      } catch (err) {
+        errors.push({ line_number: i + 1, error: "corrupt_line", message: "Malformed JSON line", raw: line });
+        continue;
+      }
+
+      if (!event || typeof event !== "object" || !event.type || !event.event_id) {
+        errors.push({ line_number: i + 1, error: "invalid_schema", message: "Event missing required schema fields", event });
+        continue;
+      }
+
+      if (typeof event.seq === "number" && event.seq !== expectedSeq) {
+        errors.push({ line_number: i + 1, seq: event.seq, error: "seq_discontinuity", expected: expectedSeq, actual: event.seq });
+      }
+      if (typeof event.seq === "number") {
+        expectedSeq = event.seq + 1;
+      }
+
+      if (event.prev_hash !== prevHash) {
+        errors.push({ line_number: i + 1, seq: event.seq, error: "chain_broken", expected_prev_hash: prevHash, actual_prev_hash: event.prev_hash });
+      }
+
+      const expectedHash = hashEvent(event);
+      const isMatch = event.event_hash === expectedHash ||
+        (event.event_hash && event.event_hash.startsWith("sha256:") && expectedHash.startsWith(event.event_hash));
+      if (!isMatch) {
+        errors.push({ line_number: i + 1, seq: event.seq, error: "hash_mismatch", expected_hash: expectedHash, actual_hash: event.event_hash });
+      }
+
+      prevHash = event.event_hash || expectedHash;
+      verifiedCount++;
+    }
+
+    return {
+      valid: errors.length === 0,
+      verified_count: verifiedCount,
+      errors
+    };
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return { valid: true, verified_count: 0, errors: [] };
+    }
+    throw error;
+  }
 }
 
 function jsonSafe(value) {

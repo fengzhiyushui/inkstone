@@ -270,12 +270,24 @@ export function createRewindService({
 
     // Commit journal after successful rewind
     if (journalEntry) {
-      await recoveryJournal.commit(transaction_id, {
-        branch_id: branch.branch_id,
-        rollback_change_ids: previewResult.rollback_change_ids,
-        files: previewResult.files
-      });
-      if (faults) await faults.maybe("after-manifest-committed");
+      try {
+        await recoveryJournal.commit(transaction_id, {
+          branch_id: branch.branch_id,
+          rollback_change_ids: previewResult.rollback_change_ids,
+          files: previewResult.files
+        });
+        if (faults) await faults.maybe("after-manifest-committed");
+      } catch (commitError) {
+        if (journalEntry) await recoveryJournal.abort(transaction_id).catch(() => {});
+        return restoreAfterFailure({
+          previewResult,
+          snapshots,
+          appliedRollbacks,
+          phase: "commit_journal",
+          reason: safeRewindError(commitError, "commit_journal"),
+          force
+        });
+      }
     }
 
     const success = {

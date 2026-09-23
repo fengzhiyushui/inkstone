@@ -28,6 +28,7 @@ export async function snapshotTouchedFiles(projectRoot, patches = []) {
     let beforeBytes = 0;
     let beforeMtimeMs = null;
 
+    let createdDirsBefore = [];
     if (existedBefore) {
       const resolved = await resolveWorkspacePath(projectRoot, patch.oldPath, { mustExist: true });
       const stat = await fs.stat(resolved.real);
@@ -41,6 +42,16 @@ export async function snapshotTouchedFiles(projectRoot, patches = []) {
       if (await fileExists(resolved.absolute)) {
         throw new Error(`create patch target already exists: ${filePath}`);
       }
+      let dir = path.dirname(resolved.absolute);
+      const rootAbs = path.resolve(projectRoot);
+      while (dir !== rootAbs && dir.startsWith(rootAbs)) {
+        if (!(await fileExists(dir))) {
+          createdDirsBefore.push(dir);
+        } else {
+          break;
+        }
+        dir = path.dirname(dir);
+      }
     }
 
     snapshots.push({
@@ -49,6 +60,7 @@ export async function snapshotTouchedFiles(projectRoot, patches = []) {
       newPath: patch.newPath,
       status,
       existed_before: existedBefore,
+      created_dirs: createdDirsBefore,
       before,
       before_hash: beforeHash,
       before_bytes: beforeBytes,
@@ -66,11 +78,8 @@ export async function restoreSnapshots(projectRoot, snapshots = []) {
     const resolved = await resolveWorkspacePath(projectRoot, targetPath, { mustExist: false });
     if (!snapshot.existed_before) {
       await fs.rm(resolved.absolute, { force: true });
-      // Track parent dirs to clean up
-      let dir = path.dirname(resolved.absolute);
-      while (dir !== path.resolve(projectRoot) && !createdDirs.has(dir)) {
-        createdDirs.add(dir);
-        dir = path.dirname(dir);
+      for (const d of snapshot.created_dirs || []) {
+        createdDirs.add(d);
       }
     } else {
       await fs.mkdir(path.dirname(resolved.absolute), { recursive: true });
@@ -162,7 +171,10 @@ export async function detectRollbackConflicts(projectRoot, record) {
 export async function applyRollbackRecord(projectRoot, record) {
   // 截断守卫(与 changes.js 的 rollbackChange 同语义):任何文件缺 before 全文
   // 就无法安全回滚,绝不写 `before ?? ""` 把用户文件清空。
-  const truncated = (record.files || []).find((file) => file.truncated);
+  const truncated = (record.files || []).find((file) => {
+    if (file.status === "create") return false;
+    return file.before_truncated || (file.truncated && (file.before == null || (file.before_bytes && file.before_bytes > (file.before?.length || 0))));
+  });
   if (truncated) {
     const error = new Error(
       `change ${record.id} 的 ${truncated.path} 超过记录大小上限,未保存回滚所需的完整内容,无法安全回滚。`

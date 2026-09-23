@@ -1,4 +1,4 @@
-import { readFile, stat, mkdir, rm, readdir, symlink as createSymlink } from "node:fs/promises";
+import { readFile, stat, lstat, mkdir, rm, readdir, symlink as createSymlink } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { atomicWriteJson, atomicReadJson, atomicWriteBytes, safeRecoverySegment } from "./atomic-file.js";
@@ -103,6 +103,11 @@ export function createTransactionJournal({ root, projectId, faults = createRecov
       const absolutePath = path.join(root, entry.path);
 
       if (entry.kind === "missing") {
+        const currentState = await getCurrentState(absolutePath);
+        if (shouldPreserveCurrent(entry, currentState)) {
+          await preserveCurrent(txId, entry, currentState, "external_modified");
+          preservedCount++;
+        }
         try {
           await rm(absolutePath, { force: true, recursive: false });
         } catch {
@@ -209,7 +214,8 @@ function normalizePath(rawPath) {
   if (path.isAbsolute(normalized)) {
     throw recoveryError("RECOVERY_ABSOLUTE_PATH", `absolute path not allowed: ${rawPath}`);
   }
-  if (normalized.includes("..")) {
+  const segments = normalized.split("/");
+  if (segments.includes("..")) {
     throw recoveryError("RECOVERY_TRAVERSAL", `path traversal not allowed: ${rawPath}`);
   }
   return normalized;
@@ -254,7 +260,7 @@ async function capturePreimage(absolutePath, normalized, blobsDir) {
   let stats;
 
   try {
-    stats = await stat(absolutePath, { bigint: false });
+    stats = await lstat(absolutePath);
   } catch (error) {
     if (error.code === "ENOENT") {
       return {
@@ -275,10 +281,23 @@ async function capturePreimage(absolutePath, normalized, blobsDir) {
   if (stats.isSymbolicLink()) {
     const { readlink } = await import("node:fs/promises");
     const target = await readlink(absolutePath);
+    let symlinkType = null;
+    try {
+      const resolvedTarget = path.resolve(path.dirname(absolutePath), target);
+      const targetStats = await stat(resolvedTarget);
+      if (targetStats.isDirectory()) {
+        symlinkType = process.platform === "win32" ? "junction" : "dir";
+      } else {
+        symlinkType = "file";
+      }
+    } catch {
+      // target may not exist or not be readable
+    }
     return {
       path: normalized,
       path_key: process.platform === "win32" ? normalized.toLowerCase() : normalized,
       kind: "symlink",
+      symlink_type: symlinkType,
       pre_hash: null,
       pre_size: 0,
       pre_mtime_ms: stats.mtimeMs,
@@ -323,7 +342,7 @@ async function capturePreimage(absolutePath, normalized, blobsDir) {
 
 async function getCurrentState(absolutePath) {
   try {
-    const stats = await stat(absolutePath);
+    const stats = await lstat(absolutePath);
 
     if (stats.isSymbolicLink()) {
       const { readlink } = await import("node:fs/promises");
@@ -385,7 +404,16 @@ async function restorePreimage(entry, absolutePath, txDir) {
   if (entry.kind === "symlink") {
     try {
       await rm(absolutePath, { force: true, recursive: false });
-      await createSymlink(entry.symlink_target, absolutePath);
+      const linkType = entry.symlink_type || (process.platform === "win32" ? "junction" : "file");
+      try {
+        await createSymlink(entry.symlink_target, absolutePath, linkType);
+      } catch (linkError) {
+        if (process.platform === "win32" && linkType !== "junction") {
+          await createSymlink(entry.symlink_target, absolutePath, "junction");
+        } else {
+          throw linkError;
+        }
+      }
     } catch (error) {
       throw recoveryError("RECOVERY_BLOCKED", `cannot restore symlink: ${entry.path}`, { error: error.message });
     }

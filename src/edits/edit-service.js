@@ -122,8 +122,21 @@ export function createEditService({
 
     // Commit journal after successful finalization
     if (journalEntry) {
-      await recoveryJournal.commit(transaction_id, { files: record.summary });
-      if (faults) await faults.maybe("after-manifest-committed");
+      try {
+        await recoveryJournal.commit(transaction_id, { files: record.summary });
+        if (faults) await faults.maybe("after-manifest-committed");
+      } catch (commitError) {
+        const restoredFiles = await restoreSnapshots(projectRoot, transaction.snapshots);
+        await recoveryJournal.abort(transaction_id).catch(() => {});
+        publish("file:transaction_failed", {
+          transaction_id,
+          files: parsed.files,
+          restored_files: restoredFiles,
+          restored: true,
+          message: safeTransactionError(commitError)
+        });
+        throw commitError;
+      }
     }
 
     const metadata = {
