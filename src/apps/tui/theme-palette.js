@@ -11,12 +11,12 @@ export const TUI_THEMES = {
     "mut": 252,
     "faint": 249,
     "border": 237,
-    "accent": 68,
-    "accentHover": 69,
-    "ok": 41,
+    "accent": 45,
+    "accentHover": 38,
+    "ok": 36,
     "warn": 214,
     "err": 203,
-    "info": 110
+    "info": 75
   },
   "slate": {
     "id": "slate",
@@ -27,12 +27,12 @@ export const TUI_THEMES = {
     "mut": 252,
     "faint": 249,
     "border": 237,
-    "accent": 111,
-    "accentHover": 111,
-    "ok": 149,
-    "warn": 179,
-    "err": 167,
-    "info": 38
+    "accent": 141,
+    "accentHover": 135,
+    "ok": 78,
+    "warn": 214,
+    "err": 203,
+    "info": 75
   },
   "vesper": {
     "id": "vesper",
@@ -43,12 +43,12 @@ export const TUI_THEMES = {
     "mut": 252,
     "faint": 249,
     "border": 237,
-    "accent": 222,
-    "accentHover": 223,
-    "ok": 122,
-    "warn": 202,
-    "err": 210,
-    "info": 117
+    "accent": 214,
+    "accentHover": 172,
+    "ok": 78,
+    "warn": 209,
+    "err": 204,
+    "info": 81
   },
   "nord": {
     "id": "nord",
@@ -59,12 +59,12 @@ export const TUI_THEMES = {
     "mut": 252,
     "faint": 249,
     "border": 237,
-    "accent": 110,
-    "accentHover": 116,
-    "ok": 144,
-    "warn": 186,
-    "err": 131,
-    "info": 109
+    "accent": 43,
+    "accentHover": 37,
+    "ok": 36,
+    "warn": 178,
+    "err": 203,
+    "info": 75
   },
   "ash": {
     "id": "ash",
@@ -75,12 +75,12 @@ export const TUI_THEMES = {
     "mut": 252,
     "faint": 249,
     "border": 237,
-    "accent": 116,
-    "accentHover": 116,
-    "ok": 108,
-    "warn": 180,
-    "err": 174,
-    "info": 111
+    "accent": 75,
+    "accentHover": 32,
+    "ok": 78,
+    "warn": 214,
+    "err": 203,
+    "info": 105
   },
   "snow": {
     "id": "snow",
@@ -91,12 +91,12 @@ export const TUI_THEMES = {
     "mut": 241,
     "faint": 102,
     "border": 254,
-    "accent": 60,
-    "accentHover": 60,
-    "ok": 65,
-    "warn": 136,
-    "err": 131,
-    "info": 67
+    "accent": 31,
+    "accentHover": 25,
+    "ok": 35,
+    "warn": 130,
+    "err": 160,
+    "info": 26
   },
   "sand": {
     "id": "sand",
@@ -108,11 +108,11 @@ export const TUI_THEMES = {
     "faint": 102,
     "border": 254,
     "accent": 130,
-    "accentHover": 130,
-    "ok": 100,
+    "accentHover": 94,
+    "ok": 29,
     "warn": 130,
     "err": 124,
-    "info": 24
+    "info": 25
   },
   "lotus": {
     "id": "lotus",
@@ -123,12 +123,12 @@ export const TUI_THEMES = {
     "mut": 241,
     "faint": 102,
     "border": 254,
-    "accent": 60,
-    "accentHover": 60,
-    "ok": 65,
-    "warn": 166,
-    "err": 160,
-    "info": 66
+    "accent": 125,
+    "accentHover": 125,
+    "ok": 29,
+    "warn": 130,
+    "err": 125,
+    "info": 25
   },
   "latte": {
     "id": "latte",
@@ -140,11 +140,11 @@ export const TUI_THEMES = {
     "faint": 102,
     "border": 254,
     "accent": 99,
-    "accentHover": 92,
-    "ok": 64,
-    "warn": 136,
-    "err": 161,
-    "info": 30
+    "accentHover": 56,
+    "ok": 29,
+    "warn": 130,
+    "err": 124,
+    "info": 25
   },
   "paper": {
     "id": "paper",
@@ -155,12 +155,12 @@ export const TUI_THEMES = {
     "mut": 241,
     "faint": 102,
     "border": 254,
-    "accent": 62,
-    "accentHover": 68,
-    "ok": 35,
-    "warn": 136,
-    "err": 203,
-    "info": 30
+    "accent": 31,
+    "accentHover": 25,
+    "ok": 29,
+    "warn": 130,
+    "err": 160,
+    "info": 26
   }
 };
 

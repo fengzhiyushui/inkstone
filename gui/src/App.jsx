@@ -15,7 +15,7 @@ import Dock from "./components/v4/Dock.jsx";
 import SettingsPanels from "./components/Settings/Settings.jsx";
 import SensitiveNoticeModal from "./components/v4/SensitiveNoticeModal.jsx";
 
-const VERSION = "1.8.3";
+const VERSION = "1.8.6";
 
 export default function App() {
   const [state, dispatch] = useWorkbench();
@@ -51,8 +51,14 @@ export default function App() {
   useEffect(() => {
     if (state.rightbarOpen && state.dockTab === "recovery") refreshRecovery().catch(() => {});
   }, [state.rightbarOpen, state.dockTab, state.currentProject, refreshRecovery]);
+  useEffect(() => {
+    if (state.changeDiff && (!state.rightbarOpen || state.dockTab !== "changes")) {
+      if (!state.rightbarOpen) dispatch({ type: "rightbar_toggled", open: true });
+      if (state.dockTab !== "changes") dispatch({ type: "dock_tab_changed", tab: "changes" });
+    }
+  }, [state.changeDiff, state.rightbarOpen, state.dockTab, dispatch]);
 
-  const openSettings = useCallback(() => dispatch({ type: "settings_toggled", open: true }), [dispatch]);
+  const openSettings = useCallback((tab = "general") => dispatch({ type: "settings_toggled", open: true, tab }), [dispatch]);
   const closeSettings = useCallback(() => dispatch({ type: "settings_toggled", open: false }), [dispatch]);
 
   const onSwitchProject = useCallback((root) => {
@@ -81,8 +87,13 @@ export default function App() {
   const actions = useMemo(() => ({
     send: (text) => { dispatch({ type: "message_added", message: { role: "user", text } }); kernel.send(text); },
     approve: (id, decision) => kernel.approve(id, decision),
-    interrupt: () => kernel.interrupt()
-  }), [dispatch, kernel]);
+    interrupt: () => kernel.interrupt(),
+    openSettings: (tab) => openSettings(tab),
+    selectModel: async (model) => {
+      dispatch({ type: "settings_loaded", config: { ...(state.config || {}), model } });
+      if (kernel.setConfig) await kernel.setConfig({ model });
+    }
+  }), [dispatch, kernel, openSettings, state.config]);
 
   const cycleTheme = useCallback(() => {
     const next = nextInGroup(state.theme);
@@ -119,7 +130,7 @@ export default function App() {
 
   const setViewOrDock = useCallback((v) => {
     if (v === "settings") { openSettings(); return; }
-    if (v === "changes" || v === "recovery") { openDock(v); return; }
+    if (v === "plan" || v === "changes" || v === "recovery") { openDock(v); return; }
     dispatch({ type: "view_changed", view: v });
   }, [openSettings, openDock, dispatch]);
 
@@ -179,7 +190,8 @@ export default function App() {
           <Rail t={t} state={state} version={VERSION} setView={setViewOrDock}
             collapsed={state.railCollapsed} onToggleCollapse={toggleRail}
             onSwitchProject={onSwitchProject} onNewSession={onNewSession} onOpenFolder={onOpenFolder}
-            onOpenDock={openDock} />
+            onOpenDock={openDock}
+            onCycleTheme={cycleTheme} onToggleLang={toggleLang} />
         )}
         main={(
           <main className="pane">

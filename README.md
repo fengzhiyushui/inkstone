@@ -4,11 +4,11 @@
 
 **简体中文** · [English](./README.en.md)
 
-[![version](https://img.shields.io/badge/version-v1.8.3-blue.svg)](./package.json)
+[![version](https://img.shields.io/badge/version-v1.8.4-blue.svg)](./package.json)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org/)
 [![deps](https://img.shields.io/badge/core%20runtime%20deps-0-success.svg)](./package.json)
-[![tests](https://img.shields.io/badge/tests-1141%20passed-brightgreen.svg)](./tests/)
+[![tests](https://img.shields.io/badge/tests-1152%20passed-brightgreen.svg)](./tests/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/fengzhiyushui/inkstone/pulls)
 
 **面向 DeepSeek 模型的高性能本地 AI 编程智能体 (Coding Agent)**  
@@ -80,7 +80,7 @@
 3. **支柱 ③ 统一体验的三端矩阵**：
    - **CLI**：用于一次性提问、补丁生成、代码扫描与 CI/CD 自动化集成。
    - **TUI**：类 Claude Code 设计的高效滚动终端，手写 ANSI/VT 渲染，支持丰富快捷键与 Slash 命令。
-   - **GUI (v1.8)**：基于 Electron + React 19 + Vite 的原创桌面 IDE，集成 Monaco 编辑器、双栏 SCM Diff 对比、交互式系统终端与全功能设置面板。
+   - **GUI (v1.8)**：基于 Electron + React 19 + Vite 的原创桌面工作台，集成 Monaco 编辑器、双栏 SCM Diff 对比、多功能右栏 Dock（文件/改动/计划/恢复）与全功能设置面板。
 
 ---
 
@@ -90,7 +90,7 @@
 |:---|:---|:---|:---|
 | **CLI** | 脚本集成、单次问答、代码批量重构 | Node.js ≥ 20（零额外依赖） | 简洁输出、可管道组合、透传项目测试退出码 |
 | **TUI** | 全键盘开发者、远程 SSH 终端开发 | Node.js ≥ 20（零额外依赖） | 原生滚动区、实时流式打字卡片、交互式审批、Slash 命令 |
-| **桌面 GUI** | 复杂工程浏览、可视化代码审核、综合 IDE 体验 | Electron + React 19 | 三栏式工作台、Monaco 编辑器、可视化行级 Diff 审查、集成终端 |
+| **桌面 GUI** | 复杂工程浏览、可视化代码审核、综合工作台体验 | Electron + React 19 | 现代工作台、Monaco 编辑器、可视化行级 Diff 审查、多功能右栏 Dock |
 
 ---
 
@@ -316,6 +316,7 @@ git diff --stat main..HEAD -- src/core src/deepseek src/tools src/edits src/sess
 - [x] **v1.4.0**：智能上下文引擎，多智能体分层编排与并行写隔离。
 - [x] **v1.8.0**：桌面 GUI 现代三栏式重构，双向把手折叠，Monaco 深度集成与多 Profile 切换。
 - [x] **v1.8.3**：GUI 深度代码审查与缺陷修复，状态同步强固，全套部署使用指南发布。
+- [x] **v1.8.4**：前端布局工效重构与遥测体系落地（Rail 零抖动平滑开合、消息与 Composer 双遥测、原创高对比调色板与 Plan 专属面板）。
 - [ ] **未来规划**：支持插件扩展体系、更多语言语义分析适配、团队多端协作能力。
 
 完整版本历史见 [**`docs/CHANGELOG.md`**](docs/CHANGELOG.md)。

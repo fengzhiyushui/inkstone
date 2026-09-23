@@ -11,7 +11,7 @@ var LEGACY_THEME_MAP = { night: "sumi", day: "latte", dawn: "lotus", mocha: "sum
 var LIGHT_IDS = ["snow", "sand", "lotus", "latte", "paper"];
 function isLightId(id) { return LIGHT_IDS.indexOf(id) >= 0; }
 var LANGUAGES = ["zh", "en"];
-var DOCK_TABS = ["files", "changes", "recovery"];
+export var DOCK_TABS = ["plan", "files", "changes", "recovery"];
 
 function normalizeSidebarWidth(value, fallback) {
   if (!Number.isFinite(Number(value))) return fallback;
@@ -55,6 +55,7 @@ export function createInitialState() {
     chatTab: "chat",
     dockFiles: { expanded: {} },
     settingsOpen: false,
+    settingsTab: "general",
     inspectorMode: "activity",
     theme: "sumi",
     lastDark: "sumi",
@@ -232,7 +233,10 @@ export function applyWorkbenchAction(state, action) {
     return copy(current, { dockFiles: Object.assign({}, dockFiles, { expanded: expanded }) });
   }
   if (action.type === "settings_toggled") {
-    return copy(current, { settingsOpen: action.open === undefined ? !current.settingsOpen : Boolean(action.open) });
+    return copy(current, {
+      settingsOpen: action.open === undefined ? !current.settingsOpen : Boolean(action.open),
+      settingsTab: action.tab || current.settingsTab || "general"
+    });
   }
   if (action.type === "preferences_loaded") {
     var prefs = action.preferences || {};
@@ -282,7 +286,12 @@ export function applyWorkbenchAction(state, action) {
       currentProject: action.root || null,
       fileTree: [],
       dockFiles: { expanded: {} },
-      view: "chat"
+      view: "chat",
+      messages: [],
+      activity: [],
+      cards: [],
+      openFiles: [],
+      changeDiff: null
     });
   }
   if (action.type === "language_changed") {

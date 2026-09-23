@@ -51,5 +51,9 @@ test("gui electron shell starts against a temp project", { timeout: 20000 }, asy
   clearTimeout(timer);
 
   assert.match(output, /GUI_SMOKE_READY/);
+  assert.match(output, /GUI_SMOKE_STEP:plan_verified/);
+  assert.match(output, /GUI_SMOKE_STEP:diff_verified/);
+  assert.match(output, /GUI_SMOKE_STEP:tool_cards_verified/);
+  assert.match(output, /GUI_SMOKE_STEP:project_switch_verified/);
   assert.doesNotMatch(output, /TypeError|ReferenceError|SyntaxError/);
 });

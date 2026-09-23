@@ -185,12 +185,67 @@
 }
 
 .emptyNote {
-  padding: 40px 16px;
+  padding: 64px 20px 48px;
   text-align: center;
   color: var(--text-faint);
-  font-size: 14px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  margin: auto 0;
 }
+.emptyIconWrap {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 15%, transparent);
+  margin-bottom: 4px;
+}
+.emptyTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.emptySubtitle {
+  font-size: 13.5px;
+  color: var(--text-mut);
+  max-width: 420px;
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+.emptySuggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-width: 560px;
+}
+.suggestionChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border-l2);
+  background: var(--bg-element);
+  color: var(--text-mut);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.suggestionChip:hover {
+  background: var(--hover);
+  color: var(--text);
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+.suggestionChip:active {
+  transform: translateY(0);
+}
+

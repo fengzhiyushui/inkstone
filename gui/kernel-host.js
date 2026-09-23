@@ -101,7 +101,7 @@ const GUI_PREFERENCE_DEFAULTS = Object.freeze({
   dockTab: "files"
 });
 
-const GUI_DOCK_TABS = new Set(["files", "changes", "recovery"]);
+const GUI_DOCK_TABS = new Set(["plan", "files", "changes", "recovery"]);
 
 const EXT_LANGUAGE = {
   js: "javascript", mjs: "javascript", cjs: "javascript", jsx: "javascript",
@@ -253,6 +253,22 @@ function createKernelHost({
       const mod = await import(pathToFileURL(kernelPath).href);
       kernelFactory = mod.createKernel;
     }
+    // 自愈守卫:如果 GUI 的 gui-api-profiles.json 存在且已删空配置,但 config.json 仍残留旧 Key,同步清理
+    try {
+      const profilesFile = path.join(projectRoot, ".deepseek-code", "gui-api-profiles.json");
+      const exists = await fs.stat(profilesFile).then(() => true, () => false);
+      if (exists) {
+        const rawProfiles = JSON.parse(await fs.readFile(profilesFile, "utf8"));
+        if (Array.isArray(rawProfiles.profiles) && rawProfiles.profiles.length === 0) {
+          const m = await loadConfigMod();
+          const current = await m.loadConfig(projectRoot, { allowMissingKey: true });
+          if (current.apiKey) {
+            await m.configureProject(projectRoot, { apiKey: "" });
+          }
+        }
+      }
+    } catch { /* 尽力而为 */ }
+
     const options = await buildKernelOptions(projectRoot, kernelOptions, configLoader);
     const { createSensitiveNoticeHandler } = await import(
       pathToFileURL(path.join(__dirname, "..", "src", "apps", "sensitive-notice-contract.js")).href
@@ -263,6 +279,14 @@ function createKernelHost({
     });
     subscription = kernel.session.subscribe((event) => pushEvent(event));
     return kernel;
+  }
+
+  async function rebuildKernel() {
+    subscription?.unsubscribe?.();
+    subscription = null;
+    if (kernel?.dispose) { try { kernel.dispose(); } catch { /* 尽力而为 */ } }
+    kernel = null;
+    await init();
   }
 
   function ready() {
@@ -498,7 +522,8 @@ function createKernelHost({
       save: async (p) => (await load()).save(p),
       remove: async (id) => (await load()).remove(id),
       activate: async (id) => (await load()).activate(id),
-      getActive: async () => (await load()).getActive()
+      getActive: async () => (await load()).getActive(),
+      reset: () => { promise = null; }
     };
   })();
 
@@ -516,12 +541,33 @@ function createKernelHost({
     return maskConfig(config);
   }
   async function listApiProfiles() { return (await apiProfiles.list()).map(maskProfile); }
-  async function saveApiProfile(p) { return maskProfile(await apiProfiles.save(p)); }
-  async function deleteApiProfile(id) { await apiProfiles.remove(id); return { ok: true }; }
+  async function saveApiProfile(p) {
+    const saved = await apiProfiles.save(p);
+    const active = await apiProfiles.getActive();
+    if (active && active.id === saved.id) {
+      const m = await loadConfigMod();
+      await m.configureProject(projectRoot, { apiKey: saved.apiKey, baseUrl: saved.baseUrl, ...(saved.model ? { model: saved.model } : {}) });
+      if (ready()) await rebuildKernel();
+    }
+    return maskProfile(saved);
+  }
+  async function deleteApiProfile(id) {
+    const active = await apiProfiles.getActive();
+    const wasActive = active && active.id === id;
+    await apiProfiles.remove(id);
+    const remaining = await apiProfiles.list();
+    if (wasActive || remaining.length === 0) {
+      const m = await loadConfigMod();
+      await m.configureProject(projectRoot, { apiKey: "" });
+      if (ready()) await rebuildKernel();
+    }
+    return { ok: true };
+  }
   async function activateApiProfile(id) {
     const prof = await apiProfiles.activate(id);
     const m = await loadConfigMod();
     await m.configureProject(projectRoot, { apiKey: prof.apiKey, baseUrl: prof.baseUrl, ...(prof.model ? { model: prof.model } : {}) });
+    if (ready()) await rebuildKernel();
     return maskProfile(prof);
   }
   async function listModels(profileId, opts = {}) {
@@ -574,6 +620,9 @@ function createKernelHost({
     subscription = null;
     if (kernel?.dispose) { try { kernel.dispose(); } catch { /* 尽力而为 */ } }
     kernel = null;
+    changeStore = null;
+    guiEditService = null;
+    apiProfiles.reset?.();
     projectRoot = root;
     await init();
     return { ok: true, root };
@@ -651,4 +700,4 @@ function createKernelHost({
 }
 
 module.exports = { createKernelHost, resolveProjectRoot, zeroUsage, buildKernelOptions,
-  normalizeGuiPreferences, loadGuiPreferences, saveGuiPreferences };
+  normalizeGuiPreferences, loadGuiPreferences, saveGuiPreferences, GUI_DOCK_TABS };

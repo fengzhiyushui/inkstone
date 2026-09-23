@@ -41,10 +41,7 @@
   node --version  # 应输出 v20.x.x 或更高
   ```
 - **Git**: `>= 2.30.0`（推荐安装，用于事务差异比对及版本管理）。
-- **C/C++ 构建工具**（仅当需要本地编译 GUI 的原生终端扩展 `node-pty` 时需要；预编译包通常可直接使用）：
-  - Windows: Visual Studio Build Tools 或 `npm install -g windows-build-tools`
-  - macOS: Xcode Command Line Tools (`xcode-select --install`)
-  - Linux: `build-essential` (`sudo apt-get install build-essential`)
+- **C/C++ 构建工具**：Inkstone 核心、TUI 及桌面 GUI 均基于纯 JS/TS 与 WebAssembly 构建，**无需本地 C/C++ 编译环境**，开箱即用。
 
 ---
 
@@ -91,7 +88,7 @@ node ./bin/inkstone.js ask "解释项目核心流程" --semantic-context
 
 ### 2.3 方案 C：本地部署与运行桌面 GUI（Electron + React）
 
-桌面 GUI 为开发者提供了全功能 IDE 体验（双语界面、Monaco 编辑器、可视化 SCM 差异对比、node-pty 交互终端、配置面板等）。
+桌面 GUI 为开发者提供了会话优先的 Coding Agent 体验（双语界面、Monaco 只读 Diff、可视化改动跟踪、右侧多功能 Dock 工作坞包括计划/文件/改动/恢复、配置面板等；已清理 node-pty 死路径，保持极简安全）。
 
 #### 步骤 1：安装 GUI 依赖
 ```bash
@@ -395,9 +392,11 @@ npm start
 3. **中央主编辑器区（Monaco Editor）**：
    - 本地化运行的 Monaco Editor，支持代码语法高亮、代码折叠与本地保存。
    - 保存操作自动走事务化 editService，确保任何手动与 AI 改动都有迹可循。
-4. **右侧 / 底部工作坞（Dock）**：
-   - **Agent 对话区（Chat View）**：支持富文本卡片渲染、工具调用详情折叠展开、思维链展开、审批卡片交互。
-   - **内置终端（Integrated Terminal）**：基于 `node-pty` 深度集成的本地系统终端，完全支持原生命令执行、彩色输出与交互程序。
+4. **右侧工作坞（Dock）**：
+   - **计划面板（Plan Panel）**：查看多智能体编排与子任务拆解树，实时展示各步骤执行状态。
+   - **文件树（Files Panel）**：浏览工作区安全目录文件，支持点击打开查看。
+   - **改动列表（Changes Panel）**：逐文件查看前后对比与 hunk 跳转，支持快速回滚。
+   - **恢复中心（Recovery Panel）**：查看中断事务报告，支持一键恢复或清理。
 5. **设置弹窗（Settings Modal）**：
    - 集中式管理 API Keys 与 Base URL，支持一键探测可用模型列表。
    - 实时切换浅色/深色主题，窗口原生标题栏与主题自适应联动同步。
@@ -478,13 +477,6 @@ Inkstone 的编辑内核通过 `EditTransaction` 严格管理所有写入行为�
   2. 确保执行过 `npm run build:renderer` 生成了 `gui/out/renderer` 目录。
   3. 确认使用的 Node 版本与 Electron 版本匹配。
 
-### Q5: GUI 安装时 `node-pty` 编译失败？
-- **原因**：某些系统缺少本地 C++ 编译环境。
-- **解决办法**：
-  - Windows: 安装 Visual Studio C++ 工具包（桌面 C++ 开发），或通过 `npm install --vs=2022`。
-  - macOS: 执行 `xcode-select --install`。
-  - Linux: 执行 `sudo apt install build-essential python3`。
-
-### Q6: 为什么我的代码修改没有生效，或者提示文件超出边界？
+### Q5: 为什么我的代码修改没有生效，或者提示文件超出边界？
 - **原因**：Inkstone 具备严格的工作区路径安全隔离机制，防止路径穿越攻击（Path Traversal）与符号链接逃逸。
 - **解决办法**：所有被编辑的文件必须严格存在于当前工作区目录内部，且不能是指向工作区外部的危险符号链接。

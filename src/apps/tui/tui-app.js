@@ -280,7 +280,20 @@ export function createTuiApp({
       return;
     }
     if (name === "delete") {
+      const wasActive = (await profilesStore.getActive())?.id === profile.id;
       await profilesStore.remove(profile.id);
+      const remaining = await profilesStore.list();
+      if (wasActive || remaining.length === 0) {
+        await configureProjectImpl(root, { apiKey: "" });
+        subscription?.unsubscribe?.();
+        if (ownKernel && kernel?.dispose) await kernel.dispose().catch(() => {});
+        try {
+          kernel = await createKernelImpl(root, { ...(await buildKernelOptionsImpl(root)), onSensitiveNotice: createSensitiveNoticeHandler(waitSensitiveNotice) });
+          ownKernel = true;
+        } catch { kernel = null; }
+        subscribeKernel();
+        dispatch({ type: "status", patch: { model: "" } });
+      }
       await refreshCfgProfiles();
       cfgDispatch({ type: "cfg_notice", notice: T("cfg.deleted") });
     }

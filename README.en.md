@@ -4,11 +4,11 @@
 
 [简体中文](./README.md) · **English**
 
-[![version](https://img.shields.io/badge/version-v1.8.3-blue.svg)](./package.json)
+[![version](https://img.shields.io/badge/version-v1.8.4-blue.svg)](./package.json)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org/)
 [![deps](https://img.shields.io/badge/core%20runtime%20deps-0-success.svg)](./package.json)
-[![tests](https://img.shields.io/badge/tests-1141%20passed-brightgreen.svg)](./tests/)
+[![tests](https://img.shields.io/badge/tests-1152%20passed-brightgreen.svg)](./tests/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/fengzhiyushui/inkstone/pulls)
 
 **High-Performance Local AI Coding Agent for DeepSeek Models**  
@@ -80,7 +80,7 @@ Every model invocation, tool execution, file modification, and human approval is
 3. **Pillar ③ Unified Frontend Matrix**:
    - **CLI**: Streamlined for one-off tasks, patch generation, workspace scanning, and CI/CD pipelines.
    - **TUI**: Claude Code-inspired scrollable terminal interface with hand-crafted ANSI/VT rendering, slash commands, and real-time approval cards.
-   - **GUI (v1.8)**: An original VS Code-style three-column desktop IDE built with Electron, React 19, Vite, Monaco Editor, interactive system terminal, and SCM visual diff inspector.
+   - **GUI (v1.8)**: An original desktop workbench built with Electron, React 19, Vite, Monaco Editor, SCM side-by-side diff inspector, and multi-tab Dock (Files, Changes, Plan, Recovery).
 
 ---
 
@@ -90,7 +90,7 @@ Every model invocation, tool execution, file modification, and human approval is
 |:---|:---|:---|:---|
 | **CLI** | Scripting, single questions, automated refactors | Node.js ≥ 20 (0 extra dependencies) | Clean output, composable via pipes, forwards project test exit codes |
 | **TUI** | Keyboard-centric developers, remote SSH servers | Node.js ≥ 20 (0 extra dependencies) | Native scrollback buffer, typewriter streaming, approval prompts, slash commands |
-| **Desktop GUI** | Codebase browsing, visual diff reviews, full IDE flow | Electron + React 19 | Three-column workspace, Monaco editor, side-by-side diff review, embedded terminal |
+| **Desktop GUI** | Codebase browsing, visual diff reviews, full IDE flow | Electron + React 19 | Modern workbench, Monaco editor, side-by-side diff review, multi-tab Dock (Files, Changes, Plan, Recovery) |
 
 ---
 
@@ -310,6 +310,7 @@ git diff --stat main..HEAD -- src/core src/deepseek src/tools src/edits src/sess
 - [x] **v1.4.0**: Tiered context engine, multi-agent orchestration, parallel write sandboxing.
 - [x] **v1.8.0**: Modern three-column desktop workbench redesign, Monaco integration, profile switcher.
 - [x] **v1.8.3**: Comprehensive GUI code review, state synchronization fixes, deployment documentation.
+- [x] **v1.8.4**: Frontend ergonomics and telemetry overhaul (zero-jitter Rail collapse/expand, dual message & composer telemetry, bespoke high-contrast theme palettes, dedicated Plan dock panel).
 - [ ] **Future**: Plugin extension ecosystem, additional language AST support, collaborative multi-device agents.
 
 See [**`docs/CHANGELOG.md`**](docs/CHANGELOG.md) for detailed release notes.

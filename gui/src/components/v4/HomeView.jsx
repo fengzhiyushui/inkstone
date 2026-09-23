@@ -49,7 +49,11 @@ export default function HomeView({ t, state, actions, setView, onSwitchProject, 
 
           <Composer t={t} flat draft={draft} setDraft={setDraft} onSend={send}
             onInterrupt={actions.interrupt} busy={busy}
-            model={state.config?.model} statusLine={statusLine} />
+            model={state.config?.model}
+            hasApiKey={Boolean(state.config?.hasApiKey)}
+            onOpenSettings={actions.openSettings}
+            onSelectModel={actions.selectModel}
+            statusLine={statusLine} />
 
           <div className="quick">
             {QUICK.map(({ id, icon: Icon, go }) => (

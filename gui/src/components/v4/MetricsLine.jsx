@@ -78,7 +78,7 @@ function Metrics({ t, form, segments, dotsCount }) {
   );
 }
 
-export default function MetricsLine({ t, display, usage, status = {}, actions = {} }) {
+export default function MetricsLine({ t, display, usage, status = {}, actions = {}, inComposer = false }) {
   const d = display || {};
   const show = d.show || {};
   const form = FORMS.includes(d.form) ? d.form : "bar";
@@ -93,7 +93,7 @@ export default function MetricsLine({ t, display, usage, status = {}, actions = 
 
   return (
     <div className={cls}>
-      {show.branch !== false && status.branch && (
+      {show.branch !== false && !inComposer && status.branch && (
         <span className="sg"><GitBranch size={12} /> {status.branch}</span>
       )}
       {show.checkpoint !== false && (
@@ -112,24 +112,28 @@ export default function MetricsLine({ t, display, usage, status = {}, actions = 
         <span className="sg opt"><FileDiff size={12} /> {t("status.turnChanges").replace("{n}", status.turnChanges)}</span>
       )}
 
-      <span className="spacer" />
+      {!inComposer && (
+        <>
+          <span className="spacer" />
 
-      <button type="button" className="mv-btn" title={t("status.cycleForm")}
-        onClick={() => actions.onCycleForm && actions.onCycleForm(nextForm(form))}>
-        <FormIcon size={11} /> {t(`settings.sd.form.${form}`)}
-      </button>
-      {show.model !== false && status.model && (
-        <span className="sg opt"><Cpu size={12} /> {status.model}</span>
-      )}
-      {show.theme !== false && (
-        <button type="button" className="sg click" title={t("status.cycleTheme")} onClick={actions.onCycleTheme}>
-          <Palette size={12} /> {status.themeLabel || status.theme}
-        </button>
-      )}
-      {show.language !== false && (
-        <button type="button" className="sg click" title={t("toggle.lang")} onClick={actions.onToggleLang}>
-          <Languages size={12} /> {status.language === "zh" ? "中文" : "English"}
-        </button>
+          <button type="button" className="mv-btn" title={t("status.cycleForm")}
+            onClick={() => actions.onCycleForm && actions.onCycleForm(nextForm(form))}>
+            <FormIcon size={11} /> {t(`settings.sd.form.${form}`)}
+          </button>
+          {show.model !== false && status.model && (
+            <span className="sg opt"><Cpu size={12} /> {status.model}</span>
+          )}
+          {show.theme !== false && (
+            <button type="button" className="sg click" title={t("status.cycleTheme")} onClick={actions.onCycleTheme}>
+              <Palette size={12} /> {status.themeLabel || status.theme}
+            </button>
+          )}
+          {show.language !== false && (
+            <button type="button" className="sg click" title={t("toggle.lang")} onClick={actions.onToggleLang}>
+              <Languages size={12} /> {status.language === "zh" ? "中文" : "English"}
+            </button>
+          )}
+        </>
       )}
     </div>
   );

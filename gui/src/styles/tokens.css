@@ -17,53 +17,53 @@
    text #f9fafb · text-mut #cfd3d6 · text-faint #adb2b8
    border #353638 · border-strong #616266 · code-bg #1b1b1c */
 
-/* 4 · 墨 sumi — 默认深色;品牌蓝 accent */
+/* 1 · 墨 sumi — 墨玉星海 (默认深色; 冷墨黑曜石与电气水蓝) */
 [theme="sumi"] {
   --bg-base: #151517; --bg-panel: #1b1b1c; --bg-element: #2c2c2e; --bg-inset: #1b1b1c;
   --text: #f9fafb; --text-mut: #cfd3d6; --text-faint: #adb2b8;
   --border: #353638; --border-strong: #616266;
-  --accent: #4176e6; --accent-hover: #5686fe; --accent-soft: #2c2c2e; --accent-text: #0a0c10;
-  --ok: #22c55e; --warn: #f59e0b; --err: #ef4444; --info: #7fb4ca;
+  --accent: #22d3ee; --accent-hover: #06b6d4; --accent-soft: #162a38; --accent-text: #081018;
+  --ok: #10b981; --warn: #f59e0b; --err: #f43f5e; --info: #38bdf8;
   --code-bg: #1b1b1c;
 }
 
-/* 2 · 玄 slate — Tokyo Night Storm accent(配色);结构槽走暗组 C 变体 */
+/* 2 · 玄 slate — 暗夜鸢尾 (天鹅绒暗夜与电幻鸢尾紫) */
 [theme="slate"] {
   --bg-base: #151517; --bg-panel: #1b1b1c; --bg-element: #2c2c2e; --bg-inset: #1b1b1c;
   --text: #f9fafb; --text-mut: #cfd3d6; --text-faint: #adb2b8;
   --border: #353638; --border-strong: #616266;
-  --accent: #7aa2f7; --accent-hover: #8eb0f8; --accent-soft: #2e3c64; --accent-text: #1d202f;
-  --ok: #9ece6a; --warn: #e0af68; --err: #db4b4b; --info: #0db9d7;
+  --accent: #c084fc; --accent-hover: #a855f7; --accent-soft: #2e1c45; --accent-text: #0f0817;
+  --ok: #34d399; --warn: #fbbf24; --err: #f43f5e; --info: #60a5fa;
   --code-bg: #1b1b1c;
 }
 
-/* 3 · 烬 vesper — Vesper accent;结构槽走暗组 C 变体 */
+/* 3 · 烬 vesper — 落日炉火 (精密暖炉沉金与琥珀金) */
 [theme="vesper"] {
   --bg-base: #151517; --bg-panel: #1b1b1c; --bg-element: #2c2c2e; --bg-inset: #1b1b1c;
   --text: #f9fafb; --text-mut: #cfd3d6; --text-faint: #adb2b8;
   --border: #353638; --border-strong: #616266;
-  --accent: #ffc799; --accent-hover: #ffcfa8; --accent-soft: #3e342b; --accent-text: #000000;
-  --ok: #99ffe4; --warn: #ff7300; --err: #ff8080; --info: #99ccff;
+  --accent: #f59e0b; --accent-hover: #d97706; --accent-soft: #382510; --accent-text: #120b02;
+  --ok: #34d399; --warn: #fb923c; --err: #fb7185; --info: #67e8f9;
   --code-bg: #1b1b1c;
 }
 
-/* 7 · 峡 nord — Nord accent;结构槽走暗组 C 变体 */
+/* 4 · 峡 nord — 极光松影 (北欧冷杉针叶黑与极光冰碧) */
 [theme="nord"] {
   --bg-base: #151517; --bg-panel: #1b1b1c; --bg-element: #2c2c2e; --bg-inset: #1b1b1c;
   --text: #f9fafb; --text-mut: #cfd3d6; --text-faint: #adb2b8;
   --border: #353638; --border-strong: #616266;
-  --accent: #88c0d0; --accent-hover: #9ad0df; --accent-soft: #354251; --accent-text: #2e3440;
-  --ok: #a3be8c; --warn: #ebcb8b; --err: #bf616a; --info: #81a1c1;
+  --accent: #2dd4bf; --accent-hover: #14b8a6; --accent-soft: #12302a; --accent-text: #041410;
+  --ok: #10b981; --warn: #eab308; --err: #f87171; --info: #38bdf8;
   --code-bg: #1b1b1c;
 }
 
-/* 5 · 灰 ash — Zenburn accent;结构槽走暗组 C 变体 */
+/* 5 · 灰 ash — 玄铁青峰 (深灰玄铁与天青晴蓝) */
 [theme="ash"] {
   --bg-base: #151517; --bg-panel: #1b1b1c; --bg-element: #2c2c2e; --bg-inset: #1b1b1c;
   --text: #f9fafb; --text-mut: #cfd3d6; --text-faint: #adb2b8;
   --border: #353638; --border-strong: #616266;
-  --accent: #8cd0d3; --accent-hover: #93e0e3; --accent-soft: #366060; --accent-text: #2b2b2b;
-  --ok: #7f9f7f; --warn: #dfaf8f; --err: #cc9393; --info: #94bff3;
+  --accent: #38bdf8; --accent-hover: #0284c7; --accent-soft: #142a3a; --accent-text: #081520;
+  --ok: #4ade80; --warn: #fbbf24; --err: #f87171; --info: #818cf8;
   --code-bg: #1b1b1c;
 }
 
@@ -72,53 +72,53 @@
    text #0f1115 · text-mut #61666b · text-faint #81858c
    border #e1e5ee · border-strong #cfd3d6 · code-bg #f9fafb */
 
-/* 6 · 霜 snow — Nord Snow accent;结构槽走明组 C 变体 */
+/* 6 · 霜 snow — 冰川晨雾 (北欧冰川白与沉着钴蓝) */
 [theme="snow"] {
   --bg-base: #ffffff; --bg-panel: #f9fafb; --bg-element: #ffffff; --bg-inset: #f9fafb;
   --text: #0f1115; --text-mut: #61666b; --text-faint: #81858c;
   --border: #e1e5ee; --border-strong: #cfd3d6;
-  --accent: #4c6c93; --accent-hover: #425d7f; --accent-soft: #c2d0e0; --accent-text: #eceff4;
-  --ok: #6a8a4e; --warn: #a6781d; --err: #bf616a; --info: #3f8aa0;
+  --accent: #0275b1; --accent-hover: #0369a1; --accent-soft: #e0f2fe; --accent-text: #ffffff;
+  --ok: #16a34a; --warn: #b45309; --err: #dc2626; --info: #2563eb;
   --code-bg: #f9fafb;
 }
 
-/* 7 · 沙 sand — Gruvbox accent;结构槽走明组 C 变体 */
+/* 7 · 沙 sand — 陶木原野 (原野暖沙与焦糖琥珀) */
 [theme="sand"] {
   --bg-base: #ffffff; --bg-panel: #f9fafb; --bg-element: #ffffff; --bg-inset: #f9fafb;
   --text: #0f1115; --text-mut: #61666b; --text-faint: #81858c;
   --border: #e1e5ee; --border-strong: #cfd3d6;
-  --accent: #bb4506; --accent-hover: #af3a03; --accent-soft: #eacfa3; --accent-text: #fbf1c7;
-  --ok: #79740e; --warn: #ad7013; --err: #9d0006; --info: #076678;
+  --accent: #b45309; --accent-hover: #92400e; --accent-soft: #fef3c7; --accent-text: #ffffff;
+  --ok: #15803d; --warn: #b45309; --err: #b91c1c; --info: #0369a1;
   --code-bg: #f9fafb;
 }
 
-/* 8 · 荷 lotus — Kanagawa Lotus accent;结构槽走明组 C 变体 */
+/* 8 · 荷 lotus — 晨荷拂露 (粉黛晨露与盛放绛红) */
 [theme="lotus"] {
   --bg-base: #ffffff; --bg-panel: #f9fafb; --bg-element: #ffffff; --bg-inset: #f9fafb;
   --text: #0f1115; --text-mut: #61666b; --text-faint: #81858c;
   --border: #e1e5ee; --border-strong: #cfd3d6;
-  --accent: #4d699b; --accent-hover: #435b87; --accent-soft: #c7d7e0; --accent-text: #f6f2d0;
-  --ok: #6f894e; --warn: #cc6d00; --err: #e82424; --info: #5a7785;
+  --accent: #be185d; --accent-hover: #9d174d; --accent-soft: #fce7f3; --accent-text: #ffffff;
+  --ok: #15803d; --warn: #b45309; --err: #be123c; --info: #0369a1;
   --code-bg: #f9fafb;
 }
 
-/* 3 · 瓷 latte — Catppuccin Latte accent;结构槽走明组 C 变体 */
+/* 9 · 瓷 latte — 燕麦拿铁 (温润柔紫与深邃紫藤) */
 [theme="latte"] {
   --bg-base: #ffffff; --bg-panel: #f9fafb; --bg-element: #ffffff; --bg-inset: #f9fafb;
   --text: #0f1115; --text-mut: #61666b; --text-faint: #81858c;
   --border: #e1e5ee; --border-strong: #cfd3d6;
-  --accent: #8839ef; --accent-hover: #7a2fd6; --accent-soft: #eee2fd; --accent-text: #ffffff;
-  --ok: #3a8f27; --warn: #ba7409; --err: #d20f39; --info: #1a8299;
+  --accent: #7c3aed; --accent-hover: #6d28d9; --accent-soft: #ede9fe; --accent-text: #ffffff;
+  --ok: #15803d; --warn: #b45309; --err: #b91c1c; --info: #0369a1;
   --code-bg: #f9fafb;
 }
 
-/* 1 · 宣 paper — 默认浅色;品牌蓝 accent */
+/* 10 · 宣 paper — 包豪斯宣纸 (默认浅色; 瑞士包豪斯工坊纯白与冷灰钴蓝) */
 [theme="paper"] {
   --bg-base: #ffffff; --bg-panel: #f9fafb; --bg-element: #ffffff; --bg-inset: #f9fafb;
   --text: #0f1115; --text-mut: #61666b; --text-faint: #81858c;
   --border: #e1e5ee; --border-strong: #cfd3d6;
-  --accent: #3465d4; --accent-hover: #4176e6; --accent-soft: #edf3fe; --accent-text: #ffffff;
-  --ok: #16a34a; --warn: #ad8301; --err: #ef4444; --info: #24837b;
+  --accent: #0275b1; --accent-hover: #0369a1; --accent-soft: #e0f2fe; --accent-text: #ffffff;
+  --ok: #059669; --warn: #b45309; --err: #dc2626; --info: #2563eb;
   --code-bg: #f9fafb;
 }
 

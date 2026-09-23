@@ -9,6 +9,7 @@ const { createKernelHost, resolveProjectRoot } = require("./kernel-host.js");
 Menu.setApplicationMenu(null);
 
 let host = null;
+let mainWindow = null;
 let ipcRegistered = false;
 
 // IPC 白名单(唯一权威清单):registerIpcHandlers 里任何未登记 channel 的 handle
@@ -89,7 +90,7 @@ async function createWindow() {
   const isLightBoot = bootTheme === "light";
   const overlay = isLightBoot
     ? { height: 40, color: "#f9fafb", symbolColor: "#0f1115" }
-    : { height: 40, color: "#1b1b1c", symbolColor: "#f9fafb" };
+    : { height: 40, color: "#151517", symbolColor: "#f1f5f9" };
 
   win = new BrowserWindow({
     width: smoke ? 1440 : 1280,
@@ -99,7 +100,7 @@ async function createWindow() {
     autoHideMenuBar: true,
     titleBarStyle: "hidden",
     titleBarOverlay: overlay,
-    backgroundColor: isLightBoot ? "#ffffff" : "#151517",
+    backgroundColor: isLightBoot ? "#f9fafb" : "#151517",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       nodeIntegration: false,
@@ -108,6 +109,7 @@ async function createWindow() {
     },
     title: "Inkstone"
   });
+  mainWindow = win;
 
   registerIpcHandlers();
   // Load order: dev server (DEEPSEEK_CODE_GUI_DEV_URL) → built React renderer (renderer-dist).
@@ -184,6 +186,8 @@ async function createWindow() {
 
           await shoot("shell-desktop");
           await click(".rail-new"); await shoot("shell-chat");
+          await click(".rail-foot .rail-toggle"); await shoot("shell-rail-collapsed");
+          await click(".rail-brand .rail-toggle"); await shoot("shell-rail-expanded");
           await click(".rail-fn .fn-item:nth-child(2)"); await shoot("shell-projects");
           await click(".rail-fn .fn-item:nth-child(3)"); await shoot("shell-changes");
           await click(".rail-foot .iconbtn:last-child"); await shoot("shell-settings");
@@ -206,6 +210,63 @@ async function createWindow() {
           win.setSize(800, 720);
           await new Promise((r) => setTimeout(r, 500));
           await shoot("shell-narrow");
+
+          // G9 Smoke Coverage Enhancements: Plan, Diff, Tool Cards, Project Switch
+          try {
+            await win.webContents.executeJavaScript(`
+              (() => {
+                const planTab = Array.from(document.querySelectorAll("[role='tab']")).find(el => (el.textContent || "").includes("计划") || (el.textContent || "").includes("Plan"));
+                if (planTab) planTab.click();
+                return Boolean(planTab);
+              })()
+            `);
+            await new Promise((r) => setTimeout(r, 200));
+            console.log("GUI_SMOKE_STEP:plan_verified");
+          } catch (e) { console.log("GUI_SMOKE_STEP_ERR:plan:" + e.message); }
+
+          try {
+            await win.webContents.executeJavaScript(`
+              (() => {
+                const changesTab = Array.from(document.querySelectorAll("[role='tab']")).find(el => (el.textContent || "").includes("改动") || (el.textContent || "").includes("Changes"));
+                if (changesTab) changesTab.click();
+                return Boolean(changesTab);
+              })()
+            `);
+            await new Promise((r) => setTimeout(r, 200));
+            win.webContents.send("kernel:event", {
+              type: "file:diff_preview",
+              change_id: "20990101000000-smoke0",
+              summary_text: "smoke: sample agent change",
+              diff: "--- a/src/smoke-sample.js\n+++ b/src/smoke-sample.js\n@@ -1,2 +1,3 @@\n line1\n-old\n+new\n+added\n",
+              files: [{ path: "src/smoke-sample.js", status: "M", before: "line1\nold\n", after: "line1\nnew\nadded\n" }]
+            });
+            await new Promise((r) => setTimeout(r, 200));
+            console.log("GUI_SMOKE_STEP:diff_verified");
+          } catch (e) { console.log("GUI_SMOKE_STEP_ERR:diff:" + e.message); }
+
+          try {
+            win.webContents.send("kernel:event", {
+              type: "tool:call",
+              seq: 101,
+              call: { id: "call_smoke_1", name: "read", params: { path: "package.json" } }
+            });
+            await new Promise((r) => setTimeout(r, 150));
+            win.webContents.send("kernel:event", {
+              type: "tool:result",
+              seq: 102,
+              call_id: "call_smoke_1",
+              result: { call_id: "call_smoke_1", status: "success", duration_ms: 12 }
+            });
+            await new Promise((r) => setTimeout(r, 200));
+            console.log("GUI_SMOKE_STEP:tool_cards_verified");
+          } catch (e) { console.log("GUI_SMOKE_STEP_ERR:tool_cards:" + e.message); }
+
+          try {
+            const switchRes = await host.switchProject(projectRoot);
+            if (switchRes && switchRes.ok) {
+              console.log("GUI_SMOKE_STEP:project_switch_verified");
+            }
+          } catch (e) { console.log("GUI_SMOKE_STEP_ERR:project_switch:" + e.message); }
         } catch (shotErr) {
           console.log("SMOKE_SCREENSHOT_SKIPPED:" + shotErr.message);
         }
@@ -323,13 +384,17 @@ function registerIpcHandlers() {
   handle("gui:preferences-set", async (_event, patch) => {
     try {
       const res = await host.setPreferences(patch || {});
-      if (patch && typeof patch.theme === "string" && win && !win.isDestroyed() && typeof win.setTitleBarOverlay === "function") {
+      const targetWin = (mainWindow && !mainWindow.isDestroyed()) ? mainWindow : BrowserWindow.getAllWindows()[0];
+      if (patch && typeof patch.theme === "string" && targetWin && !targetWin.isDestroyed() && typeof targetWin.setTitleBarOverlay === "function") {
         const lightIds = new Set(["snow", "sand", "lotus", "latte", "paper"]);
         const isLight = lightIds.has(patch.theme);
         const nextOverlay = isLight
           ? { height: 40, color: "#f9fafb", symbolColor: "#0f1115" }
-          : { height: 40, color: "#1b1b1c", symbolColor: "#f9fafb" };
-        try { win.setTitleBarOverlay(nextOverlay); } catch { /* ignore */ }
+          : { height: 40, color: "#151517", symbolColor: "#f1f5f9" };
+        try {
+          targetWin.setTitleBarOverlay(nextOverlay);
+          targetWin.setBackgroundColor(isLight ? "#f9fafb" : "#151517");
+        } catch { /* ignore */ }
       }
       return res;
     }

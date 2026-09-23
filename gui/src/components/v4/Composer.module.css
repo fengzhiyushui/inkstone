@@ -1,22 +1,30 @@
-/* Composer.module.css — DSH 输入卡 */
+/* Composer.module.css — DSH × Claude Desktop 磨砂输入卡与图 2 底部居中遥测 */
 .wrap {
-  padding: 12px 16px 16px;
+  padding: 10px 16px 14px;
   flex: none;
   --composer-clearance: 16px;
-}
-.card {
   max-width: min(100%, 984px);
   margin: 0 auto;
-  border-radius: 22px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.card {
+  width: 100%;
+  border-radius: 20px;
   background: var(--bg-element);
-  border: 0;
-  box-shadow: var(--shadow-2);
-  padding: 12px 16px 8px;
-  transition: box-shadow .2s var(--ease);
+  border: 1px solid var(--border-l2);
+  box-shadow: 0 4px 20px rgba(0,0,0,.08);
+  padding: 12px 14px 10px;
+  box-sizing: border-box;
+  transition: all var(--dur-fast) var(--ease);
 }
+
 .card:focus-within {
-  box-shadow: var(--shadow-2), 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border-l2));
+  box-shadow: 0 4px 24px rgba(0,0,0,.12), 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
 }
+
 .input {
   width: 100%;
   border: none;
@@ -25,65 +33,351 @@
   box-sizing: border-box;
   padding: 0;
   color: var(--text);
-  font-size: 14px;
-  line-height: 24px;
+  font-size: 13.5px;
+  line-height: 22px;
   min-height: 24px;
   max-height: 180px;
   outline: none;
   font-family: inherit;
 }
+
+.input::placeholder {
+  color: var(--text-faint);
+  opacity: 0.8;
+}
+
 .row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding-top: 8px;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 10px;
 }
-.tool {
+
+.leftGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plusBtn {
   width: 28px;
   height: 28px;
-  border-radius: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border-l2);
+  background: transparent;
+  color: var(--text-mut);
   display: grid;
   place-items: center;
-  color: var(--text-mut);
-  background: transparent;
-  border: none;
   cursor: pointer;
-  font-size: 12px;
-  gap: 4px;
-  padding: 0 6px;
-  width: auto;
-  min-width: 28px;
+  padding: 0;
+  transition: all var(--dur-fast) var(--ease);
 }
-.tool:hover { background: var(--hover); color: var(--text); }
-.mode {
+.plusBtn:hover {
+  background: var(--hover);
+  color: var(--text);
+  border-color: var(--border-l3);
+}
+
+.permissionChip {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-panel));
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border-l2));
+  color: var(--text);
   font-size: 12px;
-  color: var(--text-faint);
-  padding: 2px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease);
+  user-select: none;
+}
+.permissionChip:hover {
+  background: color-mix(in srgb, var(--accent) 15%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border-l2));
+}
+
+.spacer { flex: 1; }
+
+.rightGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.snapshotPill {
+  height: 28px;
+  padding: 0 10px;
   border-radius: 999px;
   background: var(--hover);
+  border: 1px solid var(--border-l1);
+  color: var(--text-mut);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease);
+  user-select: none;
 }
-.spacer { flex: 1; }
-.send {
-  width: 36px;
-  height: 36px;
+.snapshotPill:hover {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  color: var(--text);
+}
+
+.modelMenuWrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.modelPill {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--hover);
+  border: 1px solid var(--border-l1);
+  color: var(--text-mut);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease);
+  user-select: none;
+}
+.modelPill:hover {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  color: var(--text);
+  border-color: var(--border-l2);
+}
+
+.modelPillNeedsKey {
+  border-color: color-mix(in srgb, var(--warn) 35%, var(--border-l1));
+}
+
+.warnDot {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--warn);
+  flex-shrink: 0;
+  box-shadow: 0 0 6px color-mix(in srgb, var(--warn) 60%, transparent);
+}
+
+.apiNoticePill {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--warn) 10%, var(--bg-panel));
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  color: var(--warn);
+  font-size: 12px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease);
+  user-select: none;
+}
+.apiNoticePill:hover {
+  background: color-mix(in srgb, var(--warn) 18%, var(--bg-panel));
+  border-color: var(--warn);
+  color: var(--text);
+}
+
+.modelPillUnconfigured {
+  background: color-mix(in srgb, var(--warn) 10%, var(--bg-panel));
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+  color: var(--warn);
+}
+.modelPillUnconfigured:hover {
+  background: color-mix(in srgb, var(--warn) 18%, var(--bg-panel));
+  border-color: var(--warn);
+  color: var(--text);
+}
+
+.modelMenu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  width: 240px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-l2);
+  border-radius: 12px;
+  box-shadow: 0 12px 36px -8px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--border-l1);
+  padding: 6px;
+  z-index: 50;
+}
+.modelMenuNotice {
+  background: color-mix(in srgb, var(--warn) 8%, var(--bg-panel));
+  border: 1px solid color-mix(in srgb, var(--warn) 25%, transparent);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.noticeHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--warn);
+}
+.noticeBody {
+  font-size: 11px;
+  color: var(--text-mut);
+  line-height: 1.4;
+}
+.noticeBtn {
+  margin-top: 4px;
+  width: 100%;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  background: color-mix(in srgb, var(--warn) 15%, transparent);
+  color: var(--warn);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--dur-fast) var(--ease);
+}
+.noticeBtn:hover {
+  background: var(--warn);
+  color: var(--bg-root);
+  border-color: var(--warn);
+}
+.modelMenuHead {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  padding: 6px 8px 4px;
+}
+.modelMenuItem {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--dur-fast) var(--ease);
+}
+.modelMenuItem:hover {
+  background: var(--hover);
+}
+.modelMenuItem.active, .active {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-weight: 500;
+}
+.modelMenuItemDesc {
+  font-size: 10.5px;
+  color: var(--text-faint);
+  display: block;
+}
+.modelMenuDivider {
+  height: 1px;
+  background: var(--border-l1);
+  margin: 4px 0;
+}
+.modelMenuFooter {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-mut);
+  font-size: 11.5px;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.modelMenuFooter:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.sendBtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--purple-send);
+  color: #ffffff;
   border: none;
   display: grid;
   place-items: center;
   cursor: pointer;
   flex: none;
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--purple-send) 40%, transparent);
+  transition: all var(--dur-fast) var(--ease);
 }
-.send:hover { background: var(--accent-hover); }
+.sendBtn:hover {
+  background: var(--purple-send-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--purple-send) 50%, transparent);
+}
+.sendBtn:active {
+  transform: translateY(0);
+}
 
-.meta {
-  padding-top: 8px;
-  font-size: 12px;
-  line-height: 18px;
+/* 图 2: 对话栏底部居中独立遥测状态条 */
+.bottomStatsBar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 8px;
+  font-size: 11.5px;
+  font-family: var(--font-mono);
   color: var(--text-faint);
+  user-select: none;
 }
+
+.statItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: color var(--dur-fast) var(--ease);
+}
+.statItem:hover {
+  color: var(--text-mut);
+}
+
+.statRing {
+  width: 14px;
+  height: 14px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* 保留旧修饰符防止任何外部依赖报错 */
+.tool { display: inline-flex; }
+.mode { display: inline-flex; }
+.meta { display: block; }
+.send { display: grid; }
 
 @media (prefers-reduced-motion: reduce) {
-  .card { transition: none; }
+  .card, .plusBtn, .permissionChip, .snapshotPill, .sendBtn { transition: none; transform: none; }
 }

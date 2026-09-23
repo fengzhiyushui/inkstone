@@ -94,11 +94,17 @@ function About({ t, settings, version }) {
 }
 
 export default function SettingsPanels({ t, state, kernel, dispatch, version, open, onClose }) {
-  const [active, setActive] = useState("general");
+  const [active, setActive] = useState(state.settingsTab || "general");
   const [settings, setSettings] = useState(null);
   const [draft, setDraft] = useState({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (open && state.settingsTab) {
+      setActive(state.settingsTab);
+    }
+  }, [open, state.settingsTab]);
 
   const reload = useCallback(async () => {
     if (!kernel.available || !kernel.getSettings) { setError(t("settings.noBridge")); return; }
@@ -107,9 +113,12 @@ export default function SettingsPanels({ t, state, kernel, dispatch, version, op
       if (s && s.error) { setError(s.error); return; }
       setSettings(s || null);
       setDraft((s && s.config) || {});
+      if (dispatch && s && s.config) {
+        dispatch({ type: "settings_loaded", config: s.config });
+      }
       setError("");
     } catch (e) { setError(e.message); }
-  }, [kernel, t]);
+  }, [kernel, t, dispatch]);
 
   useEffect(() => { if (open) reload(); }, [open, reload]);
 

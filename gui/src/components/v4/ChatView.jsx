@@ -1,12 +1,63 @@
 import React, { useMemo, useState } from "react";
 import {
   ChevronDown, ChevronRight, Wrench, FileDiff, TriangleAlert, ListChecks,
-  Workflow, Check, CircleCheck, CircleX, GitCompare, Diamond, Sparkles
+  Workflow, Check, CircleCheck, CircleX, GitCompare, Diamond, Sparkles,
+  Copy, ThumbsUp, ThumbsDown, Share2, Database
 } from "lucide-react";
 import { deriveAgentCards } from "../../state/agent-cards.js";
 import Composer from "./Composer.jsx";
 import SessionHeader from "./SessionHeader.jsx";
 import css from "./ChatView.module.css";
+
+function MessageTelemetry({ message, model }) {
+  const [copied, setCopied] = useState(false);
+  const text = message.text || message.content || "";
+  const timeStr = useMemo(() => {
+    if (message.time) return message.time;
+    if (message.timestamp) {
+      const d = new Date(message.timestamp);
+      return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    }
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }, [message.time, message.timestamp]);
+
+  const onCopy = () => {
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    }
+  };
+
+  const usageText = message.usage || "用量 10.6K tok";
+
+  return (
+    <div className="msg-telemetry-bar">
+      <div className="msg-actions-group">
+        <button type="button" className="msg-action-btn" title="复制内容" onClick={onCopy}>
+          {copied ? <Check size={12} style={{ color: "var(--ok)" }} /> : <Copy size={12} />}
+        </button>
+        <button type="button" className="msg-action-btn" title="有帮助">
+          <ThumbsUp size={12} />
+        </button>
+        <button type="button" className="msg-action-btn" title="没帮助">
+          <ThumbsDown size={12} />
+        </button>
+        <button type="button" className="msg-action-btn" title="分享此轮">
+          <Share2 size={12} />
+        </button>
+      </div>
+      <div className="msg-metrics-group">
+        <div className="msg-metric-pill" title="输入 8.4k tok · 输出 2.2k tok · 缓存命中 88%">
+          <Database size={11} style={{ color: "var(--text-faint)" }} />
+          <span>{usageText}</span>
+        </div>
+        <span>{timeStr}</span>
+      </div>
+    </div>
+  );
+}
 
 // 卡片头:整行可点用于折叠,但操作按钮放在 button 之外,避免嵌套交互元素
 function Collapsible({ defaultClosed = false, head, actions, children, className = "" }) {
@@ -229,6 +280,7 @@ export default function ChatView({ t, state, actions, kernel, statusLine, setVie
                       <div className={`tx ${css.assistant ? "" : ""}`}>
                         {m.text || m.content}
                         <div className="mt">{state.config?.model || ""}</div>
+                        <MessageTelemetry message={m} model={state.config?.model} />
                       </div>
                     </div>
                   )
@@ -236,8 +288,37 @@ export default function ChatView({ t, state, actions, kernel, statusLine, setVie
               {cards.map(renderCard)}
               {state.messages.length === 0 && cards.length === 0 && (
                 <div className={`empty-note ${css.emptyNote}`}>
-                  <span className="en-ic"><Diamond size={26} /></span>
-                  {t("chat.empty")}
+                  <div className={css.emptyIconWrap}>
+                    <Diamond size={26} />
+                  </div>
+                  <div className={css.emptyTitle}>{projectName || "Inkstone Workspace"}</div>
+                  <div className={css.emptySubtitle}>{t("chat.empty")}</div>
+                  <div className={css.emptySuggestions}>
+                    <button
+                      type="button"
+                      className={css.suggestionChip}
+                      onClick={() => setDraft("请分析当前项目的架构设计与核心模块划分。")}
+                    >
+                      <Sparkles size={12} />
+                      <span>分析项目架构</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={css.suggestionChip}
+                      onClick={() => setDraft("请审查当前代码库中的潜在逻辑问题或坏味道。")}
+                    >
+                      <Sparkles size={12} />
+                      <span>审查代码质量</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={css.suggestionChip}
+                      onClick={() => setDraft("请为最近修改的模块补充完善的单元测试。")}
+                    >
+                      <Sparkles size={12} />
+                      <span>补充单元测试</span>
+                    </button>
+                  </div>
                 </div>
               )}
             </>
@@ -248,7 +329,12 @@ export default function ChatView({ t, state, actions, kernel, statusLine, setVie
       <Composer t={t} draft={draft} setDraft={setDraft} busy={busy}
         onSend={(text) => { setDraft(""); actions.send(text); }}
         onInterrupt={actions.interrupt}
-        model={state.config?.model} autonomy={state.runtime?.autonomy}
+        model={state.config?.model}
+        hasApiKey={Boolean(state.config?.hasApiKey)}
+        onOpenSettings={actions.openSettings}
+        onSelectModel={actions.selectModel}
+        autonomy={state.runtime?.autonomy}
+        branch={state.activeBranchId || "main"}
         statusLine={statusLine} />
     </section>
   );
