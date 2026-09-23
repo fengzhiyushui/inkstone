@@ -3,9 +3,11 @@ import { X } from "lucide-react";
 import FilesPanel from "./panels/FilesPanel.jsx";
 import ChangesPanel from "./panels/ChangesPanel.jsx";
 import RecoveryPanel from "./panels/RecoveryPanel.jsx";
+import PlanPanel from "./panels/PlanPanel.jsx";
 import css from "./Dock.module.css";
 
 const TABS = [
+  { id: "plan", labelKey: "dock.plan" },
   { id: "files", labelKey: "dock.files" },
   { id: "changes", labelKey: "dock.changes" },
   { id: "recovery", labelKey: "dock.recovery" }
@@ -55,6 +57,7 @@ export default function Dock({
         </button>
       </div>
       <div className={css.body}>
+        {tab === "plan" && <PlanPanel t={t} state={state} />}
         {tab === "files" && <FilesPanel t={t} state={state} kernel={kernel} dispatch={dispatch} />}
         {tab === "changes" && (
           <ChangesPanel t={t} state={state} onOpenChange={onOpenChange} onDismissDiff={onDismissDiff} onReveal={onReveal} />

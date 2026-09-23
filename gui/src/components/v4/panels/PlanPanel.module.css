@@ -1,0 +1,124 @@
+/* PlanPanel.module.css — 计划专属面板样式 */
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 2px;
+}
+
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-l2);
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.title {
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.statusTag {
+  font-size: 11px;
+  color: var(--accent);
+  font-family: var(--font-mono);
+}
+
+.progressBar {
+  height: 5px;
+  background: var(--bg-element);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 240ms var(--ease);
+}
+
+.stepsList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stepCard {
+  padding: 10px;
+  background: var(--bg-element);
+  border-radius: 8px;
+  border: 1px solid var(--border-l2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: border-color var(--dur-fast) var(--ease);
+}
+
+.stepCard.running {
+  border-color: var(--accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.stepCard.done {
+  border-color: var(--border-l1);
+}
+
+.stepHeader {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+  font-size: 12.5px;
+}
+
+.stepHeader.done {
+  color: var(--ok);
+}
+
+.stepHeader.running {
+  color: var(--accent);
+}
+
+.stepHeader.failed {
+  color: var(--err);
+}
+
+.stepHeader.todo {
+  color: var(--text-faint);
+}
+
+.stepMeta {
+  font-size: 11px;
+  color: var(--text-faint);
+  padding-left: 20px;
+}
+
+.emptyState {
+  padding: 28px 12px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-faint);
+}
+
+.emptyTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-mut);
+}
+
+.emptyDesc {
+  font-size: 11.5px;
+  line-height: 1.5;
+}

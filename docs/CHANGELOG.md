@@ -15,6 +15,21 @@
 
 ---
 
+## v1.8.5 — 2026-09-23 · GUI 架构缺陷闭环与烟雾测试 (缺陷报告修复 G1-G9)
+
+> 补丁: 彻底修复评估报告指出的所有 GUI 架构缺陷，打通 Diff 查看、工具卡配对、Plan 计划面板集成与全链路自动化烟雾测试。
+
+- **G1 Diff 变更比对完整闭环**：`ChangesPanel.jsx` 正确挂载 `ChangeDiffView`，修复原本在变更列表中点击文件无法展示 Diff 视图的严重阻断。
+- **G2 工具卡严格配对 (Tool Call Pairing)**：`agent-cards.js` 重构为严格按 `call.id` ↔ `result.call_id` 字典配对，彻底根除跨轮次工具卡乱序错配缺陷。
+- **G3 Dock 计划面板打通集成 (Plan Panel Route)**：`DOCK_TABS` 与 `GUI_DOCK_TABS` 注册 `"plan"`，创建专属 `PlanPanel.jsx` / `PlanPanel.module.css` 选项卡，恢复计划面板可达性。
+- **G4 工具执行结果兼容与耗时遥测**：工具卡状态全面兼容 `ok` 与 `success`，并准确提取 `duration_ms` 耗时遥测指标。
+- **G5 跨项目切换重置闭包状态**：项目切换时清空历史活动流、消息列表与卡片集合，防止残留前一项目数据。
+- **G6 编排事件注册白名单**：`event-contract.js` 将 `orchestration:*` 事件规范注册进 `SESSION_EVENT_TYPES` 与 `GUI_RECEIVE_CHANNELS`。
+- **G7/G8 分支标识与国际化补齐**：`strings.js` 补齐 `dock.branch` 与 Composer 所需的 12 项 i18n 键值，消灭未定义占位。
+- **G9 Electron 全链路真实拉起冒烟测试**：`tests/e2e/gui-smoke.test.js` 真实拉起 Electron 实例，自动覆盖并验证 Plan 面板、Diff 预览、工具卡渲染与项目切换等核心路径。
+
+---
+
 ## v1.8.4 — 2026-09-23 · 内核与数据完整性保障 (缺陷报告修复 K1-K14)
 
 > 补丁: 彻底修复评估报告指出的所有 P0/P1/P2 级内核缺陷，涵盖事务日志、符号链接、补丁保真、进程超时、缓冲安全与防篡改校验。

@@ -50,11 +50,13 @@ export function deriveAgentCards(activity) {
       };
       cards.push(orchCard);
     } else if (type === "tool:call") {
-      const card = { kind: "tool", id: e.id, tool: f.name || "tool", argHint: f.argHint || "", status: "running" };
-      toolIndex.set(e.id, card);
+      const callId = e.call?.id || e.id;
+      const card = { kind: "tool", id: callId, tool: f.name || "tool", argHint: f.argHint || "", status: "running" };
+      if (callId) toolIndex.set(callId, card);
       cards.push(card);
     } else if (type === "tool:result") {
-      const card = toolIndex.get(e.id);
+      const callId = e.result?.call_id || e.result?.callId || e.id;
+      const card = callId ? toolIndex.get(callId) : null;
       if (card) {
         card.status = f.status === "error" ? "error" : "ok";
         card.durationMs = f.durationMs; // v1.8.0 真实耗时(内核 executor 已带)

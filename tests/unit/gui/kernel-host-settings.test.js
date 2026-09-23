@@ -38,6 +38,11 @@ test("api profiles CRUD + activate writes config; getSettings masks keys", async
 
   await host.deleteApiProfile(p.id);
   assert.equal((await host.listApiProfiles()).length, 0);
+  const cfgAfter = JSON.parse(await fs.readFile(path.join(root, ".deepseek-code", "config.json"), "utf8"));
+  assert.equal(cfgAfter.apiKey, "");
+  const sAfter = await host.getSettings();
+  assert.equal(sAfter.config.hasApiKey, false);
+  assert.equal(sAfter.activeProfileId, null);
 });
 
 test("writeFile builds a whole-file diff and applies it via the injected edit service", async () => {

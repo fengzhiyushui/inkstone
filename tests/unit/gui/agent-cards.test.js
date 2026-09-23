@@ -114,3 +114,19 @@ test("v1.8.0:推理摘要卡受门控(有 purpose/reasoningTokens 才出)", () =
   assert.equal(withThought[0].reasoningTokens, 80);
   assert.equal(deriveAgentCards([{ type: "model:response" }]).length, 0);
 });
+
+test("real kernel events: multiple concurrent tool calls paired correctly by call_id", () => {
+  const cards = deriveAgentCards([
+    { type: "tool:call", call: { id: "call_1", name: "read", params: { path: "a.js" } } },
+    { type: "tool:call", call: { id: "call_2", name: "grep", params: { pattern: "foo" } } },
+    { type: "tool:result", result: { call_id: "call_1", status: "success", duration_ms: 25 } },
+    { type: "tool:result", result: { call_id: "call_2", status: "error", duration_ms: 10 } }
+  ]);
+  assert.equal(cards.length, 2);
+  const card1 = cards.find((c) => c.id === "call_1");
+  const card2 = cards.find((c) => c.id === "call_2");
+  assert.ok(card1);
+  assert.ok(card2);
+  assert.equal(card1.status, "ok");
+  assert.equal(card2.status, "error");
+});

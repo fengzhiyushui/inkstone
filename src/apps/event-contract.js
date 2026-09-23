@@ -78,7 +78,9 @@ export function describeEvent(event) {
   if (type === "tool:call") return d("tool-call", src, "info", false, { name: toolName(event), argHint: argHint(event) });
   if (type === "tool:result") {
     const status = str(event.result?.status) || str(event.status);
-    return d("tool-result", src, status === "ok" ? "success" : "warn", false, { status, durationMs: num(event.result?.durationMs) });
+    const isSuccess = status === "ok" || status === "success";
+    const duration = num(event.result?.duration_ms) ?? num(event.result?.durationMs) ?? num(event.duration_ms) ?? num(event.durationMs);
+    return d("tool-result", src, isSuccess ? "success" : "warn", false, { status, durationMs: duration });
   }
   if (type === "permission:decision") return d("permission", src, "info", false, { decision: str(event.permission?.decision) || str(event.decision) });
   if (type === "approval:requested") return d("approval", src, "warn", false, { id: str(event.approval?.id), summary: str(event.approval?.summary) });
