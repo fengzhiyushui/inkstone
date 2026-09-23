@@ -1,143 +1,44 @@
-# V2-14 GUI Workbench Refresh & Branch Rewind UX Design
+# V2-14 GUI 工作台刷新与分支回退 UX
 
-> Status: proposed
-> Date: 2026-05-31
-> Scope: rebuild the Electron GUI as a polished three-column agent workbench and expose branch/rewind workflows
+- 类型：前端 spec
+- 日期：2026-05-31
+- 状态：已完成
+- 关联：[V2 视觉重设计](2026-05-31-v2-frontend-workbench-redesign-design.md) · [V2-15 自然工作台](2026-05-31-v2-15-natural-agent-workbench-design.md)
 
-## 1. Purpose
+## 问题与目标
 
-V2 now has a strong kernel: tool loop, approval resume, repair loop, context cache, transactional edits, branch-aware rewind, and rewind recovery. The GUI still looks like a thin chat shell. V2-14 turns it into a practical local agent workbench.
+V2 内核已有工具循环、审批续跑、修复循环、上下文缓存、事务编辑、分支感知回退与回退恢复。GUI 仍像薄聊天壳。本篇把它做成三栏 agent 工作台，并暴露分支/回退工作流。UI 是重建，保留三栏方向但升级为产品壳。
 
-The work should combine visual refresh and branch/rewind UX. The current GUI is not visually acceptable for the 1.0 V2 experience, so V2-14 is a UI reconstruction, not a light restyle. The existing three-column direction should be preserved, but it must become a deliberate workbench: clear left navigation/status, focused central conversation, and right operational inspector.
+## 决策
 
-## 2. Goals
+| 选了什么 | 否决了什么 | 为什么 |
+|---|---|---|
+| 三栏 workbench：左上下文 / 中会话 / 右 inspector | 三层叠加旧壳 | 主工作流居中，分支与回退可见 |
+| 通过 preload/main IPC 暴露分支与回退 | 渲染层直调 kernel | 走既有 IPC 风格，不扩任意方法面 |
+| 回退先 preview 再 apply，显式确认 | 直接回退 | 风险操作需预览 |
+| 指标用小 stat 行展示 tokens/延迟/缓存 | 独立大面板 | 工作台密度 |
+| UI 文案英文，修复乱码 | 中英混排乱码标签 | 与既有 GUI 测试一致 |
+| 纯逻辑拆出 `workbench-state.js` / `event-adapter.js` | 全堆 `app.js` | Node 可测 |
+| 新依赖尽量不加 | 为样式引框架 | 保持现有 GUI 栈 |
 
-1. Replace the old three-layer overlay GUI with a polished three-column workbench layout.
-2. Fix garbled visible Chinese/UI text and use clear English UI labels for consistency with existing GUI tests.
-3. Keep all user-visible content XSS-safe through `textContent`.
-4. Expose branch, checkpoint, rewind preview, and rewind apply through preload and main IPC.
-5. Add a branch/timeline panel that lists branches and checkpoints.
-6. Add rewind preview/apply UX with explicit confirmation.
-7. Display V2-13 recovery results: `failed_restored`, `failed_unrestorable`, and `conflict_restored`.
-8. Display usage, speed, and cache hit rate as first-class workbench metrics.
-9. Keep GUI usable without a live API key by relying on existing host fallbacks.
-10. Add pure renderer model/adapter tests where possible.
-11. Allow the executing model to use `frontend-design` skill for visual design review and screenshot QA.
-12. Avoid new dependencies unless explicitly justified by the existing GUI stack.
+不做：完整 visual diff、分支图可视化、分支删除/改名、崩溃恢复、Git 分支集成、实时协作、大前端框架迁移、浏览器 dev server 依赖。
 
-## 3. Non-Goals
-
-- No full visual diff viewer.
-- No branch graph visualization beyond a simple list.
-- No branch deletion, pruning, or rename.
-- No durable crash recovery.
-- No Git branch integration.
-- No real-time collaborative UI.
-- No large frontend framework migration.
-- No web browser dev server requirement.
-
-## 4. Current GUI State
-
-Current files:
-
-```text
-gui/main.js
-gui/preload.js
-gui/kernel-host.js
-gui/renderer/index.html
-gui/renderer/style.css
-gui/renderer/app.js
-gui/renderer/event-adapter.js
-tests/unit/gui/kernel-host.test.js
-tests/unit/gui/renderer-event-adapter.test.js
-```
-
-Existing strengths:
-
-- `kernel-host.js` already delegates `listBranches`, `listCheckpoints`, `rewindPreview`, and `rewindApply`.
-- Renderer uses `textContent`, not `innerHTML`.
-- Event adapter has CommonJS tests.
-- GUI already receives kernel events through `kernel:event`.
-
-Current gaps:
-
-- `preload.js` and `main.js` do not expose branch/rewind IPC channels.
-- `index.html` has garbled button labels and placeholder text.
-- `app.js` mixes event buffering, rendering, approval UI, status polling, and overlay logic.
-- There is no branch/checkpoint UI.
-- There is no rewind preview/apply UI.
-- The existing visual style is small and functional, but not yet a product-like workbench.
-
-## 5. Chosen UX Architecture
-
-Use a three-column workbench. The original three-column concept must not be abandoned; V2-14 should refine it into a proper product shell:
+## 设计
 
 ```text
 +----------------------+---------------------------+----------------------+
 | Left Rail            | Conversation              | Inspector            |
-| - Project identity   | - Messages                | - Activity           |
-| - Active branch      | - Approval card           | - Checkpoints        |
-| - Branch list        | - Composer                | - Rewind preview     |
-| - Metrics stack      |                           | - Recovery status    |
+| 项目/分支/指标        | 消息 · 审批 · Composer     | 活动/检查点/回退/恢复 |
 +----------------------+---------------------------+----------------------+
 | Status bar: runtime, channel, tokens, cache, active branch             |
 +-----------------------------------------------------------------------+
 ```
 
-This layout keeps the primary workflow centered on chat while making branch state and rewind actions visible. It should feel like a quiet developer tool, not a marketing page. The visual quality target is closer to a modern IDE/workbench than a chat demo.
+视觉方向：近黑中性底，面板浅一档描边；蓝/青主操作、琥珀警告、红危险；圆角 ≤8px；系统无衬线，无 viewport 字号、无负字距。指标用小 stat 行。避开装饰渐变、光斑、大 hero、卡片套卡片、溢出固定控件的文字、乱码 emoji 图标。
 
-## 6. Visual Direction
-
-Use a restrained dark workbench palette with clear information hierarchy:
-
-- Background: near-black neutral, not purple-dominant and not one-note slate.
-- Panels: subtle borders and slightly lighter surfaces.
-- Accent: one blue/cyan action color, one amber warning color, one red danger color.
-- Cards: max 8px radius.
-- Typography: system sans-serif, no viewport-scaled font sizes, no negative letter spacing.
-- Buttons: compact, predictable, with text labels and small status dots where useful.
-- Density: enough information for repeated developer use, without oversized hero-like panels.
-- Metrics: use small stat tiles or rows for token usage, latency/speed, and cache hit rate.
-
-Avoid:
-
-- Decorative gradients, bokeh/orbs, large hero treatment.
-- Cards inside cards.
-- Oversized headings inside compact panels.
-- Text that can overflow fixed controls.
-- Icons that render as corrupted emoji.
-
-The executing model may use `frontend-design` skill. It should check the UI against these constraints:
-
-- Three columns remain visible on desktop widths.
-- The center conversation is visually primary.
-- Metrics are visible without opening an overlay.
-- No garbled text, emoji fallback boxes, or broken labels.
-- Text does not overflow controls at 900px wide.
-- The UI does not look like a generic purple gradient dashboard.
-
-## 7. Renderer Module Boundaries
-
-Keep the implementation light, but split pure logic out of `app.js`:
+IPC 暴露（`window.deepseek`）：
 
 ```text
-gui/renderer/workbench-state.js
-  Pure state reducer/selectors for branches, checkpoints, preview, activity, status.
-
-gui/renderer/event-adapter.js
-  Event summaries/icons/status extraction. Extend for branch/rewind/recovery events.
-
-gui/renderer/app.js
-  DOM controller only: bind events, call preload API, render state.
-```
-
-`workbench-state.js` should be UMD/CommonJS-friendly like `event-adapter.js` so it can be tested in Node.
-
-## 8. Preload and IPC API
-
-Expose these methods through `window.deepseek`:
-
-```js
 listBranches()
 getActiveBranch()
 listCheckpoints(options)
@@ -146,172 +47,55 @@ rewindApply(options)
 getTimeline(optionsOrCount)
 ```
 
-Main IPC channels:
+主进程通道：`session:branches`、`session:branch-active`、`session:checkpoints`、`session:rewind-preview`、`session:rewind-apply`。既有通道不变。handler 返回数据或 `{ error }`。
 
-```text
-session:branches
-session:branch-active
-session:checkpoints
-session:rewind-preview
-session:rewind-apply
-```
+模块边界：
 
-Existing channels remain unchanged.
+| 文件 | 职责 |
+|---|---|
+| `gui/renderer/workbench-state.js` | 纯 reducer/selectors：分支、检查点、preview、活动、状态 |
+| `gui/renderer/event-adapter.js` | 事件摘要/图标/状态提取，扩展分支/回退/恢复 |
+| `gui/renderer/app.js` | DOM 控制器：绑定、调 preload、渲染状态 |
 
-All IPC handlers should return data or `{ error }` objects, matching existing style.
+分支面板显示 active branch、`listBranches()` 列表、parent branch、fork 点标签。最小分支项含激活点与名称。点分支只查看检查点（`listCheckpoints({ branch_id })`），不自动激活续跑。
 
-## 9. Branch Panel
+检查点时间线：turn 标签、seq/event 短号、累计变更数、`Preview` 按钮。列表紧凑可滚。空态一行 `No checkpoints yet`。
 
-The sidebar should show:
+回退流程：
 
-- Active branch.
-- Branch list from `listBranches()`.
-- Parent branch if present.
-- Fork point label when available.
+1. 点 `Preview` → `rewindPreview({ target })`，结果入 state。
+2. 展示：目标标签、回滚数、文件、计划分支 id、force 勾选、`Apply rewind`。
+3. 无 preview 不 apply；`rewindApply({ target, force })` 后渲染结果并刷新分支/检查点/时间线。
 
-Minimum branch item:
+状态文案：
 
-```text
-● br_main
-  main
+| 状态 | 文案 |
+|---|---|
+| success | Rewind applied. New branch active. |
+| conflict | Rewind blocked by dirty files. |
+| conflict_restored | Rewind blocked; previous changes were restored. |
+| failed_restored | Rewind failed; workspace was restored. |
+| failed_unrestorable | Rewind recovery failed. Manual check required. |
 
-○ br_xxx
-  rewind to turn_...
-```
+活动面板保留最新 kernel 事件与安全摘要。状态栏显示 runtime、channel、total tokens、cache hit rate、active branch。左栏或 inspector 顶部另示 tokens、`avg_latency_ms`（无吞吐时不编造 speed，显示 avg latency）、缓存命中率、请求数。轮询约 2 秒，回退成功后额外刷新。
 
-Clicking a branch in V2-14 should select it for viewing checkpoints if the underlying API supports `listCheckpoints({ branch_id })`. It does not need to activate the branch for continuation unless a future explicit action is added.
+## 边界与不变量
 
-## 10. Checkpoint Timeline
+- 渲染层禁止 `innerHTML`；事件摘要不倾倒原始 payload。
+- 回退预览只显示路径与计数，不显示原始 diff；恢复错误只显示安全类别。
+- 审批传真实 approval id；UI 不显示 `reasoning_content`。
+- IPC 不暴露任意 kernel 方法。
+- 不改 V2 runtime、IPC 既有契约、kernel host。
 
-The inspector should show checkpoints from `listCheckpoints({ branch_id })`:
+## 与现状的差异
 
-- turn label
-- seq/event id short form
-- number of cumulative changes
-- button: `Preview`
+后续 GUI 迁 React 后，分支/回退状态仍在 `gui/src/state/workbench-state.js`，IPC 名保留。文件树布局与组件路径见当前 `gui/src/`。
 
-The checkpoint list should be compact and scrollable. Empty state should be a quiet text line: `No checkpoints yet`.
+## 验收
 
-## 11. Rewind Preview and Apply
-
-When a user selects `Preview`:
-
-1. Call `rewindPreview({ target })`.
-2. Store preview in state.
-3. Show:
-   - target label
-   - rollback count
-   - files
-   - planned branch id
-   - force checkbox
-   - `Apply rewind` button
-
-Apply flow:
-
-1. If no preview exists, do nothing.
-2. Call `rewindApply({ target, force })`.
-3. Render result status.
-4. Refresh branches, checkpoints, and timeline.
-
-Status messages:
-
-- `success`: `Rewind applied. New branch active.`
-- `conflict`: `Rewind blocked by dirty files.`
-- `conflict_restored`: `Rewind blocked; previous changes were restored.`
-- `failed_restored`: `Rewind failed; workspace was restored.`
-- `failed_unrestorable`: `Rewind recovery failed. Manual check required.`
-
-## 12. Activity and Status
-
-The activity panel should keep the latest kernel events with safe summaries from `event-adapter.js`.
-
-Status bar should show:
-
-- runtime state
-- channel
-- total tokens
-- cache hit rate
-- active branch
-
-The left rail or top of the inspector should additionally show:
-
-- total tokens
-- average latency or speed from `avg_latency_ms`
-- cache hit rate
-- request count
-
-If exact speed cannot be computed, show latency as `avg latency` rather than inventing throughput.
-
-Polling can remain simple every two seconds. It should also refresh branch/checkpoint data after rewind apply.
-
-## 13. Safety and Privacy
-
-Required invariants:
-
-- No renderer path uses `innerHTML`.
-- Renderer event summaries must not dump raw payloads.
-- Rewind preview displays file paths and counts only, not raw diffs.
-- Rewind recovery errors display safe categories only.
-- Approval actions still pass real approval IDs.
-- IPC does not expose arbitrary kernel methods.
-- The UI must not display `reasoning_content`.
-
-## 14. Testing Strategy
-
-Unit tests:
-
-- `event-adapter` summarizes branch, rewind, and recovery events.
-- `workbench-state` stores branches, checkpoints, active branch, preview, result, and activity buffer.
-- `workbench-state` caps activity length and never mutates previous state.
-- `kernel-host` already covers delegates; add main/preload coverage only if existing test setup supports it.
-- Metric formatting handles tokens, request count, cache hit rate, and average latency.
-
-Renderer smoke tests:
-
-- Static scan confirms `gui/renderer/app.js` and new renderer modules do not use `innerHTML`.
-- Static scan confirms index labels are not garbled.
-- Static scan confirms required DOM IDs exist.
-- Static scan confirms metric DOM IDs exist for tokens, speed/latency, cache hit rate, and requests.
-- Screenshot or manual visual QA is expected when the executing environment can run Electron.
-
-Integration/manual:
-
-- Launch GUI manually if available.
-- Verify message send still works.
-- Verify branch list/checkpoints load.
-- Verify preview/apply calls are reachable.
-
-Regression:
-
-- Full `npm.cmd test`.
-- Full `npm.cmd run check`.
-- `git diff --check`.
-- No `.deepseek-code/v2` pollution from tests.
-
-## 15. Acceptance Criteria
-
-V2-14 is complete when:
-
-1. GUI loads as a three-column workbench.
-2. Existing chat send/approval/status behavior remains working.
-3. Preload and main IPC expose branch/checkpoint/rewind methods.
-4. Branch list renders from kernel data.
-5. Checkpoint timeline renders from kernel data.
-6. Rewind preview renders rollback count, files, target, and planned branch.
-7. Rewind apply calls kernel API and refreshes branch/checkpoint/timeline state.
-8. V2-13 recovery statuses are shown clearly.
-9. Renderer keeps XSS-safe `textContent` usage.
-10. Tests/checks pass.
-
-## 16. Deferred Work
-
-- Visual branch tree graph.
-- Diff preview viewer.
-- Branch activation UI for browsing old branches.
-- Branch deletion/pruning.
-- Recovery retry UI.
-- Full E2E Electron screenshot testing.
-
-## 17. Final Summary
-
-V2-14 should make the V2 kernel feel usable as a product. The GUI becomes a real agent workbench: conversation in the center, operational context around it, and branch rewind available as a deliberate, preview-first workflow.
+- 三栏加载，聊天/审批/状态行为不回归。
+- 分支列表、检查点、回退 preview/apply 走 kernel 数据并可刷新。
+- V2-13 恢复状态（`failed_restored` / `failed_unrestorable` / `conflict_restored`）清晰展示。
+- 指标 DOM ID 覆盖 tokens、speed/latency、cache hit、requests。
+- 单测覆盖 event-adapter 分支/回退/恢复摘要、workbench-state 缓冲上限与不可变、指标格式化。
+- `npm.cmd test` / `npm.cmd run check` / `git diff --check` 通过，测试不污染 `.deepseek-code/v2`。

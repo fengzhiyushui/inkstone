@@ -1,380 +1,74 @@
-# V2-11 Transactional Edit & Dirty Workspace Safety Design
+# V2-11 事务编辑与脏工作区安全设计
 
-> Status: design approved for implementation plan
-> Date: 2026-05-31
-> Scope: transactional diff apply, stronger change records, dirty rollback conflict detection, and force rollback support
+- 类型：后端 spec
+- 日期：2026-05-31
+- 状态：已实现
+- 关联：[V2-12 分支 rewind](2026-05-31-v2-12-branching-conversation-rewind-design.md)
 
-## 1. Purpose
+---
 
-V2 can now apply diffs through the V2 runtime, verify changes, and repair failures. The weak point is still the edit write path: `applyUnifiedDiff()` writes one file after another, and if a later file fails, earlier files remain modified. Rollback also restores `before` content without checking whether the file has been changed after the original edit.
+## 问题与目标
 
-V2-11 turns edit apply and rollback into a safer base layer for future conversation rewind. The goal is not to implement rewind yet. The goal is to make every file write produce enough durable metadata to be safely committed, automatically restored on apply failure, and conflict-checked on rollback.
+统一 diff 逐文件写入，中途失败会留下半套修改；回滚直接写回 `before`，不检查文件是否已被再次改动。V2-11 把 apply/rollback 变成事务感知的安全底座，为后续对话 rewind 备好精确文件恢复。本轮不做 rewind。
 
-## 2. Goals
+## 决策
 
-1. Make `EditService.apply()` transactional for all files touched by a diff.
-2. Restore all touched files to their pre-apply state if apply fails.
-3. Add before/after hashes to change records.
-4. Detect dirty workspace conflicts during rollback.
-5. Default rollback to safe refusal when conflicts exist.
-6. Support explicit `force: true` rollback that overwrites conflicts.
-7. Keep existing `diff_preview`, `diff_apply`, `edit`, and `diff_rollback` tools compatible.
-8. Publish safe transaction and rollback conflict events without raw diff or file content.
-9. Keep all V2-0 through V2-10 tests passing.
+| 决策点 | 选择 | 否决项 | 理由 |
+|---|---|---|---|
+| 失败恢复 | 事务快照整单回退 | 只报错 | 工作区必须原子化 |
+| 变更记录 | 增加 before/after hash | 只存文本 | 脏检测需要指纹 |
+| 脏回滚 | 默认拒绝 + 冲突报告 | 静默覆盖 | 用户改动优先 |
+| 强制回滚 | 显式 `force: true` | 默认 force | 危险操作可审计 |
+| 伪 create | 目标已存在则拒改 | 当 create 写入 | 避免 rollback 删用户原文件 |
 
-## 3. Non-Goals
+## 设计
 
-- No conversation-level rewind.
-- No session branch/fork model.
-- No GUI rewind panel.
-- No durable approval resume after process restart.
-- No AST-aware merge or conflict resolution.
-- No three-way merge.
-- No binary file edit support.
-- No change to the existing unified diff grammar beyond stricter transaction handling.
+### 事务流
 
-## 4. Current Behavior
-
-`src/edits/edit-service.js` currently applies edits with this flow:
-
-```js
-const plan = await store.capture({ diff: parsed.diff, prompt });
-await applyUnifiedDiff(parsed.diff, projectRoot);
-const record = await store.finalize(plan);
+```
+parse diff → assertDiffPathsSafe → snapshotTouchedFiles
+  → capture change plan → applyDiffTransaction
+  → 失败 restoreSnapshots → safeTransactionError
+  → 成功 enhanceChangeRecord(before_hash/after_hash/transaction_id)
+  → 发安全事件
 ```
 
-The underlying `src/patch.js` function applies patches sequentially:
-
-```js
-for (const patch of patches) {
-  const updated = applyPatchToText(original, patch);
-  await fs.writeFile(target, updated, "utf8");
-}
-```
-
-If patch 1 writes successfully and patch 2 fails, patch 1 remains written. `rollbackChange()` later writes `before` content back without checking whether the current file still matches the recorded `after` content.
-
-## 5. Chosen Approach
-
-Use a focused edit transaction layer under `src/edits/`.
-
-```text
-src/edits/
-  edit-transaction.js     # transactional apply and rollback preflight helpers
-  edit-service.js         # public V2 edit facade, delegates write safety
-  change-store.js         # wraps legacy change persistence
-  rollback-service.js     # wraps legacy rollback, enhanced to accept force
-```
-
-The transaction layer owns write safety:
-
-```text
-parse diff
- -> assert paths safe
- -> build touched file snapshots
- -> capture legacy change plan
- -> apply unified diff
- -> on failure restore snapshots
- -> finalize record with before_hash/after_hash
- -> publish safe events
-```
-
-Rollback becomes:
-
-```text
-load change record
- -> compare current file hash with recorded after_hash
- -> if dirty and force=false: return conflict, write nothing
- -> if clean or force=true: restore before state
- -> publish rollback applied or conflict event
-```
-
-This preserves mature V0 patch parsing and change storage while adding V2 safety guarantees around them.
-
-## 6. Transaction Model
-
-### 6.1 File Snapshot
-
-Each touched file has a snapshot:
-
-```js
-{
-  path: "src/a.js",
-  oldPath: "src/a.js",
-  newPath: "src/a.js",
-  status: "modify",
-  existed_before: true,
-  before_hash: "sha256:...",
-  before_bytes: 120,
-  before_mtime_ms: 1780000000000
-}
-```
-
-For created files:
-
-```js
-{
-  status: "create",
-  existed_before: false,
-  before_hash: null,
-  before_bytes: 0
-}
-```
-
-If a diff claims to create a file (`--- /dev/null`) but the target already exists, V2-11 refuses the edit before applying it. Treating that case as a normal create would make rollback delete a pre-existing user file, so the conservative behavior is the only safe default.
-
-For deleted files, `before_hash` records the deleted file content.
-
-### 6.2 Enhanced Change Record
-
-Existing change records are kept compatible but each `files[]` item gains metadata:
-
-```js
-{
-  path: "a.txt",
-  oldPath: "a.txt",
-  newPath: "a.txt",
-  status: "modify",
-  before: "old\n",
-  after: "new\n",
-  before_hash: "sha256:...",
-  after_hash: "sha256:...",
-  before_bytes: 4,
-  after_bytes: 4,
-  transaction_id: "tx_..."
-}
-```
-
-For legacy records that do not contain hashes, rollback computes hashes from stored `before` and `after` content when available. If `after` is missing, dirty checking is best-effort and should fail safe for modified existing files unless `force: true`.
+实现：`src/edits/edit-transaction.js`（`snapshotTouchedFiles`、`restoreSnapshots`、`applyDiffTransaction`、`enhanceChangeRecord`、`detectRollbackConflicts`、`applyRollbackRecord`、`makeTransactionId`、`pathsFromParsedDiff`、`safeTransactionError`）。门面 `edit-service.js`。
 
-### 6.3 Transaction Result
+### 快照与记录
 
-Successful apply returns:
+文件快照含 path/oldPath/newPath/status/existed_before/before_hash/before_bytes/before_mtime_ms。创建文件 `before_hash: null`；diff 声明 create 但目标已存在则 apply 前拒绝。
 
-```js
-{
-  transaction_id,
-  change_id,
-  files,
-  summary,
-  diff_hash,
-  diff_size,
-  restored_on_failure: false
-}
-```
+变更记录 `files[]` 增加 `before_hash`、`after_hash`、`before_bytes`、`after_bytes`、`transaction_id`。无 hash 的旧记录尽量用存下的 before/after 算；缺 `after` 时脏检测尽力而为，安全侧失败。
 
-Failed apply throws an error after restoring snapshots. The error should expose safe metadata:
-
-```js
-{
-  transaction_id,
-  restored: true,
-  restored_files: ["a.txt"],
-  failed_files: ["b.txt"],
-  reason: "patch context mismatch"
-}
-```
-
-No raw diff or file content is placed in events.
-
-## 7. Apply Failure Semantics
-
-If applying a diff fails:
-
-1. Restore every file in the transaction snapshot to its before state.
-2. For files that did not exist before, delete them.
-3. For files that existed before, recreate parent directories and write the exact `before` content.
-4. Publish `file:transaction_failed` with `transaction_id`, files, restored_files, and a short error message.
-5. Do not publish `file:diff_applied`.
-6. Do not write a successful change record.
-
-If restoration itself fails, return or throw a stronger error that includes `restore_failed: true` and the affected file list. That case should be rare and must not be reported as a successful edit.
-
-## 8. Rollback Dirty Workspace Semantics
+成功结果：`{ transaction_id, change_id, files, summary, diff_hash, diff_size, restored_on_failure: false }`。失败错误含 `restored`、`restored_files`、`failed_files`、短 reason；恢复本身失败则 `restore_failed: true`。
 
-Rollback checks current file state against the change record's `after_hash`.
+### 回滚语义
 
-### 8.1 Default Rollback
+默认：比较当前 hash 与 `after_hash`，有冲突则 `status: "conflict"`，metadata 含 `conflicts[]`（expected_after_hash、current_hash、reason）与 `force_available: true`，不写盘。
 
-Default behavior is safe refusal plus conflict report.
-
-```js
-const result = await service.rollback({ change_id, force: false });
-```
-
-If any conflict exists:
+`force: true`：覆盖脏文件，结果与事件带 `forced: true` 与冲突列表。仍走 `diff_rollback` 的 `write_update` 权限。
 
-```js
-{
-  status: "conflict",
-  content: [{ type: "text", text: "Rollback blocked by dirty files..." }],
-  metadata: {
-    change_id,
-    conflicts: [
-      {
-        path: "a.txt",
-        status: "modify",
-        expected_after_hash: "sha256:...",
-        current_hash: "sha256:...",
-        reason: "dirty"
-      }
-    ],
-    force_available: true
-  }
-}
-```
+### 事件
 
-No file is changed when conflicts exist and `force` is false.
+`file:transaction_started` / `committed` / `failed` / `rolled_back` / `file:rollback_conflict`，保留 `file:diff_applied` / `file:rollback_applied`。载荷可含 transaction_id、change_id、files、summary、diff_hash、diff_size、restored_files、conflicts、forced；不含 raw diff、文件内容、绝对路径、密钥、reasoning。
 
-### 8.2 Force Rollback
+### 工具兼容
 
-Force rollback is explicit:
+`diff_rollback({ change_id, force })` 增加布尔 `force`，缺省 false；`edit` / `diff_apply` 参数不变。
 
-```js
-await service.rollback({ change_id, force: true });
-```
+## 边界与不变量
 
-It overwrites current files with the recorded `before` state even if conflicts exist. The result metadata and event metadata must include:
+1. 写路径全部过 workspace path safety。
+2. 事务失败且恢复成功时不得留下半套文件。
+3. 默认拒绝脏回滚；force 必须显式。
+4. category 来自注册工具元数据，不信模型输入。
+5. 三方合并、二进制编辑、日志压缩不在本轮。
 
-```js
-{
-  forced: true,
-  conflicts: [...]
-}
-```
+## 与现状的差异
 
-Force still goes through the normal tool permission system because `diff_rollback` remains a `write_update` tool.
+rewind 在 [V2-12](2026-05-31-v2-12-branching-conversation-rewind-design.md) 用本层 rollback。事件白名单以 `src/sessions/event-types.js` 为准。
 
-## 9. Events
+## 验收
 
-Register these safe session events:
-
-```text
-file:transaction_started
-file:transaction_committed
-file:transaction_failed
-file:transaction_rolled_back
-file:rollback_conflict
-```
-
-Payloads may include:
-
-```js
-{
-  transaction_id,
-  change_id,
-  files,
-  summary,
-  diff_hash,
-  diff_size,
-  restored_files,
-  conflicts,
-  forced
-}
-```
-
-Payloads must not include:
-
-- raw diff
-- file contents
-- snippets
-- absolute paths
-- API keys
-- model reasoning content
-
-Existing events remain:
-
-- `file:diff_applied`
-- `file:rollback_applied`
-
-`file:transaction_committed` should be published before or near `file:diff_applied`. `file:transaction_rolled_back` should be published before or near `file:rollback_applied`.
-
-## 10. Tool API Changes
-
-`diff_rollback` gains a boolean `force` parameter:
-
-```js
-diff_rollback({
-  change_id: "latest",
-  force: false
-})
-```
-
-Backward compatibility:
-
-- Existing calls with only `change_id` still work.
-- Missing `force` defaults to false.
-- `edit` and `diff_apply` preserve existing params and behavior.
-
-## 11. CLI/TUI/GUI Behavior
-
-V2-11 does not require a UI redesign.
-
-Minimum behavior:
-
-- CLI/tool output for conflict should clearly say rollback was blocked.
-- GUI/TUI can show the existing `tool:result` and `file:rollback_conflict` events through current event adapters.
-- Full conflict resolution UI is deferred to a later GUI phase.
-
-## 12. Security and Privacy
-
-Required invariants:
-
-- All paths still pass through V2 workspace path safety before writing.
-- No rollback writes outside the project root.
-- No raw diff or file content in transaction events.
-- Dirty rollback refuses by default.
-- Force rollback requires explicit `force: true`.
-- Tool executor still decides permission from registered tool metadata, not model-supplied category.
-- Transaction failure must not leave partially applied files when restoration succeeds.
-
-## 13. Testing Strategy
-
-Unit tests:
-
-- Transaction snapshot reads existing, created, deleted files.
-- Multi-file apply failure restores earlier writes.
-- Successful apply records before/after hashes.
-- Dirty rollback returns conflict and writes nothing.
-- Force rollback overwrites dirty files and reports conflicts.
-- Legacy records without hashes remain rollback-compatible where possible.
-
-Integration tests:
-
-- `kernel diff_apply` emits transaction and diff events.
-- `kernel diff_rollback` blocks dirty rollback.
-- `kernel diff_rollback force:true` restores.
-- Events contain no raw diff or file content.
-
-Regression:
-
-- Full `npm.cmd test`.
-- Full `npm.cmd run check`.
-- `git diff --check`.
-- No `.deepseek-code/v2` pollution from tests.
-
-## 14. Acceptance Criteria
-
-V2-11 is complete when:
-
-1. A multi-file diff failure leaves the workspace exactly as it was before apply.
-2. Successful change records contain before/after hashes for every touched file.
-3. Default rollback refuses dirty files and returns a conflict report.
-4. Force rollback can explicitly overwrite dirty files.
-5. Rollback conflict writes no files.
-6. Transaction events are persisted and do not leak file contents.
-7. Existing edit and rollback tools remain backward compatible.
-8. Full tests, syntax check, whitespace check, and pollution checks pass.
-
-## 15. Deferred Work
-
-- Conversation-level rewind.
-- Timeline branch/fork model.
-- GUI conflict resolution panel.
-- Durable approval/repair resume after process restart.
-- Three-way merge.
-- Transaction log compaction.
-
-## 16. Final Summary
-
-V2-11 makes edits trustworthy. It turns a sequential patch writer into a transaction-aware edit layer and makes rollback safe by default. This is the right foundation for future node-level conversation rewind because every later rewind operation will depend on precise, conflict-aware file restoration.
+多文件失败后工作区回到 apply 前；成功记录含 before/after hash；默认脏回滚拒绝且零写盘；force 可覆盖并报告冲突；事件无内容泄漏；旧调用兼容。入口 `npm test`、`npm run check`。

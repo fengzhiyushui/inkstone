@@ -1,815 +1,164 @@
-# DeepSeek Code v2 Clean Runtime Design
+# DeepSeek Code v2 Clean Runtime 设计
 
-> Status: design approved for spec draft  
-> Date: 2026-05-30  
-> Scope: full project architecture, file layout, module boundaries, DeepSeek-native agent runtime
+- 类型：架构 spec
+- 日期：2026-05-30
+- 状态：已实现（后续阶段见 [V3 路线图](2026-06-24-v3-roadmap-design.md)）
+- 关联：[v1 架构](2026-05-29-deepseek-code-v1-design.md) · [approval-resume](../backend/2026-05-30-v2-7-approval-resume-design.md) · [durable recovery](../backend/2026-06-01-v2-18-durable-recovery-resume-hardening-design.md)
 
-## 1. Purpose
+---
 
-DeepSeek Code v2 is a clean-room redesign of the current project into a DeepSeek-native local coding agent, comparable in product intent to Claude Code and Codex while staying optimized for DeepSeek's API behavior, long context, prefix cache, thinking mode, tool calls, and FIM.
+## 问题与目标
 
-The current project has valuable assets but an inconsistent execution path:
+v1 资产里 unified diff 管线与事件/会话/权限模块可用，但没有统一的 agent 执行主干：工具执行、权限检查、diff 应用、验证与修复没有接进同一条 runtime，CLI / TUI / GUI 也各走各的。v2 用一条 runtime 脊柱重做内核，所有界面只做 client。
 
-- The legacy CLI path can really edit files through unified diff, preview, snapshot, apply, and rollback.
-- The v1 kernel has tested modules for events, sessions, permissions, context, tools, model routing, and GUI integration.
-- The v1 kernel runtime is not yet a real agent loop: tool execution, permission checks, diff application, verification, and repair are not wired into `task-orchestrator`.
-- CLI, TUI, and GUI do not share one execution backbone.
+目标：可读可搜可改可测可修可解释的本地编码 agent；DeepSeek 作为一等目标 API（thinking、prefix cache、tool call、FIM）；单一执行路径；保留成熟的 diff 与回滚；安全边界显式（工作区隔离、审批、脱敏、安全 shell、SSRF、可审计日志）；测试覆盖端到端行为。
 
-v2 fixes this by creating one runtime spine and making every interface a client of that runtime.
+非目标：保留两套 agent 实现；让 Electron / TUI / CLI 持有业务逻辑；把 `reasoning_content` 暴露到用户日志；为拆包而拆 monorepo；为了「干净」丢掉可用的 diff/回滚。
 
-## 2. Design Goals
+## 决策
 
-1. Make DeepSeek Code a real local coding agent: read, search, edit, test, verify, repair, and explain.
-2. Use DeepSeek as a first-class target rather than a generic OpenAI-compatible wrapper.
-3. Replace parallel v0/v1 flows with one kernel runtime used by CLI, TUI, and GUI.
-4. Preserve proven local assets, especially unified diff parsing/application and rollback.
-5. Make the project layout obvious, maintainable, and compliant with long-term product engineering norms.
-6. Keep security boundaries explicit: workspace isolation, approvals, permissions, secret redaction, safe shell, SSRF protection, and auditable logs.
-7. Build tests around real end-to-end behavior, not only isolated module expectations.
+| 决策点 | 选择 | 否决项 | 理由 |
+|---|---|---|---|
+| 执行主干 | 单一 `createKernel()` + turn-based runtime | v0/v1 并行双码库 | 调用链、权限、事件只维护一份 |
+| 界面职责 | 全部为 kernel client | 界面内嵌 agent | 单写、可测、跨界面一致 |
+| JSON mode | 仅显式结构化输出 | 默认全程 json_object | 普通对话不该被 JSON 截断 |
+| 模型路由 | Flash-first，Pro 升级 | 固定 Pro | 成本与延迟 |
+| 编辑 | 统一走 EditService（preview/apply/rollback） | 各工具直接改文件 | 每次写都有 change id 与回滚路径 |
+| 布局 | 单仓模块化 `src/*` + 薄 `apps` | 多包 monorepo | 当前无独立发包需求 |
 
-## 3. Non-Goals
+## 设计
 
-- Do not keep two active agent implementations.
-- Do not make Electron, TUI, or CLI own agent business logic.
-- Do not expose DeepSeek reasoning content to normal user-facing logs.
-- Do not introduce a complex package monorepo unless the project later needs independent package publishing.
-- Do not discard mature diff and rollback logic merely because this is a clean-room runtime.
+### 运行时脊柱
 
-## 4. External Reference Principles
-
-The design borrows architectural ideas from CodeWhale, DeepSeek-Reasonix, Claude Code, and Codex-style agents, but adapts them to this project:
-
-- Streaming turn loop with durable state.
-- Tool registry, approval gate, sandbox, and auditable tool results.
-- Verifier gate after edits.
-- Repair loop after failed tests or malformed model output.
-- Stable prompt prefix and cache-aware context assembly for DeepSeek.
-- Flash-first execution with Pro escalation.
-- Structured tool-call repair for model instability.
-- CLI/TUI/GUI as clients of one runtime.
-
-DeepSeek-specific API references:
-
-- Chat Completion and model parameters: https://api-docs.deepseek.com/api/create-chat-completion
-- Tool Calls: https://api-docs.deepseek.com/guides/tool_calls
-- JSON Output: https://api-docs.deepseek.com/zh-cn/guides/json_mode/
-- Context Caching: https://api-docs.deepseek.com/guides/kv_cache
-- FIM Completion: https://api-docs.deepseek.com/guides/fim_completion
-
-## 5. Top-Level Project Layout
-
-The project becomes a modular single repository. It is not a multi-package monorepo in v2, but the layout separates apps, core runtime, domain services, tests, scripts, and docs.
-
-```text
-deepseek-code/
-+-- bin/
-|   `-- deepseek-code.js
-+-- apps/
-|   +-- cli/
-|   +-- tui/
-|   `-- gui/
-+-- src/
-|   +-- core/
-|   +-- deepseek/
-|   +-- context/
-|   +-- workspace/
-|   +-- tools/
-|   +-- edits/
-|   +-- sessions/
-|   +-- config/
-|   +-- security/
-|   +-- observability/
-|   +-- shared/
-|   `-- index.js
-+-- tests/
-|   +-- unit/
-|   +-- integration/
-|   +-- e2e/
-|   `-- fixtures/
-+-- docs/
-|   +-- architecture/
-|   +-- specs/ · plans/
-|   `-- user-guide/
-+-- scripts/
-+-- package.json
-`-- README.md
+```
+User Interface → Kernel API → Agent Runtime
+  → DeepSeek Gateway → Tool Execution Plane
+  → Edit Service / Workspace / Session / Verification
 ```
 
-### Layout Rules
+一轮 turn = 一次用户请求及其全部模型调用、工具调用、审批、编辑、验证、修复、产物与最终答复。
 
-- `apps/*` contains interface code only.
-- `src/core` owns the agent lifecycle and turn loop.
-- `src/deepseek` owns all DeepSeek API adaptation.
-- `src/tools` owns tool schemas, registration, permission checks, and execution.
-- `src/edits` owns diff preview, apply, snapshots, and rollback.
-- `src/sessions` owns durable events, artifacts, timeline, and resume.
-- `src/workspace` owns filesystem safety, project detection, ignore rules, and git metadata.
-- `src/shared` contains generic helpers with no project-specific side effects.
-- `src/index.js` is the public kernel entrypoint used by CLI, TUI, and GUI.
-
-## 6. Dependency Direction
-
-All dependencies must point inward toward reusable runtime modules.
-
-```text
-apps/cli, apps/tui, apps/gui
-  -> src/index.js
-  -> src/core
-  -> src/deepseek, src/context, src/tools, src/edits, src/sessions, src/config
-  -> src/workspace, src/security, src/observability
-  -> src/shared
+```
+user input → classify → cache-aware context → plan → approval gate
+  → act(tool calls) → execute tools → feed results → apply edits
+  → verify → repair if needed → final → persist events/artifacts
 ```
 
-Forbidden dependencies:
+审批点必须可暂停、可恢复，恢复后不丢 turn 状态。生命周期状态见 `src/core/runtime/lifecycle.js` 的 `RUNTIME_STATES`。
 
-- `src/core` must not import from `apps/*`.
-- `src/deepseek` must not import GUI, CLI, TUI, Electron, readline, or terminal renderers.
-- `src/tools` must not import UI code.
-- `src/context` must not execute shell commands.
-- `apps/gui/renderer` must not import Node runtime modules directly.
-- Tool implementations must not bypass `ToolExecutor`, `PermissionEngine`, or `ApprovalGate`.
+### 模块与依赖方向
 
-## 7. Runtime Architecture
-
-```text
-User Interface
-  -> Kernel API
-  -> Agent Runtime
-  -> DeepSeek Gateway
-  -> Tool Execution Plane
-  -> Edit Service / Workspace / Session / Verification
+```
+apps/cli · apps/tui · gui
+  → src/index.js (createKernel)
+  → src/core
+  → src/deepseek · src/context · src/tools · src/edits · src/sessions · src/config.js
+  → src/workspace · src/security · src/shared
 ```
 
-The runtime is turn-based. A turn is one user request plus all model calls, tool calls, approvals, file edits, verification steps, repair loops, artifacts, and final response.
+禁止：`src/core` 依赖 `apps/*`；`src/deepseek` 依赖任何 UI/终端渲染；`src/tools` 依赖 UI；`src/context` 执行 shell；renderer 直接依赖 Node runtime；工具绕过 `ToolExecutor` / `PermissionEngine`。
 
-```text
-user input
- -> classify
- -> build cache-aware context
- -> plan
- -> approval gate
- -> act with tool calls
- -> execute tools
- -> feed tool results back to model
- -> apply edits
- -> verify
- -> repair if needed
- -> final response
- -> persist events and artifacts
-```
+当前目录与设计稿的对应关系：应用层在 `src/apps/{cli,tui}` 与 `gui/`；配置是 `src/config.js`（不是 `src/config/` 目录）；协议在 `src/core/protocol/`；执行与修复在 `src/core/execution/`、`src/core/verification/`。
 
-The loop must be able to stop at approval points and resume without losing the turn state.
-
-## 8. `src/core`
-
-```text
-src/core/
-+-- runtime/
-|   +-- agent-runtime.js
-|   +-- turn-loop.js
-|   +-- approval-flow.js
-|   +-- repair-loop.js
-|   `-- lifecycle.js
-+-- protocol/
-|   +-- agent-turn.js
-|   +-- agent-step.js
-|   +-- tool-call.js
-|   +-- tool-result.js
-|   +-- approval-request.js
-|   `-- artifact.js
-+-- planning/
-|   +-- classifier.js
-|   `-- planner.js
-+-- execution/
-|   +-- executor-loop.js
-|   `-- tool-result-router.js
-+-- verification/
-|   +-- verifier.js
-|   `-- repair-decision.js
-`-- errors/
-    +-- runtime-error.js
-    `-- user-facing-error.js
-```
-
-`core` coordinates modules but does not own low-level implementation details. It asks `deepseek` for model calls, `tools` for execution, `context` for prompt input, `sessions` for logging, and `edits` for code changes.
-
-### Core Protocol
+### Core 协议
 
 ```js
-AgentTurn {
-  id,
-  session_id,
-  user_message,
-  status,
-  autonomy,
-  created_at,
-  updated_at,
-  steps,
-  artifacts,
-  usage
-}
-
-AgentStep {
-  id,
-  turn_id,
-  type,
-  channel,
-  status,
-  input_ref,
-  output_ref,
-  started_at,
-  ended_at
-}
-
-ToolCall {
-  id,
-  name,
-  params,
-  source,
-  requested_by_step_id
-}
-
-ToolResult {
-  id,
-  call_id,
-  status,
-  content,
-  metadata,
-  duration_ms
-}
-
-ApprovalRequest {
-  id,
-  turn_id,
-  kind,
-  risk,
-  summary,
-  details_ref,
-  decisions
-}
-
-Artifact {
-  id,
-  kind,
-  path,
-  hash,
-  size,
-  ttl,
-  metadata
-}
+AgentTurn  { id, session_id, user_message, status, autonomy, created_at, updated_at, steps, artifacts, usage }
+AgentStep  { id, turn_id, type, channel, status, input_ref, output_ref, started_at, ended_at }
+ToolCall   { id, name, params, source, requested_by_step_id }
+ToolResult { id, call_id, status, content, metadata, duration_ms }
+ApprovalRequest { id, turn_id, kind, risk, summary, details_ref, decisions }
+Artifact   { id, kind, path, hash, size, ttl, metadata }
 ```
 
-## 9. `src/deepseek`
+`TURN_STATUSES` = `running` / `awaiting_approval` / `completed` / `failed` / `interrupted`。`STEP_STATUSES` = `started` / `completed` / `failed` / `skipped`。入口 `src/core/protocol/index.js`。
 
-```text
-src/deepseek/
-+-- model-gateway.js
-+-- model-router.js
-+-- prompt-assembler.js
-+-- json-mode.js
-+-- tool-call-repair.js
-+-- fim-client.js
-+-- streaming.js
-+-- usage-tracker.js
-`-- api-errors.js
+成本闸：`createCostBudget` 以 `max_tokens` / `max_model_calls` 计量，超限抛 `code = "BUDGET_EXCEEDED"`（`src/core/runtime/cost-budget.js`）。runtime 默认 `maxToolIterations = 5`、`maxRepairAttempts = 2`；`maxToolCallRepairs` / `modelTimeoutMs` / `maxTurnTokens` / `maxModelCalls` 可经配置或 options 注入。
+
+### DeepSeek 适配
+
+- 快路径：`models.act`（默认 `deepseek-v4-flash`），thinking 关闭，低 temperature。
+- 规划/评审/修复：`models.think`（默认 `deepseek-v4-pro`），thinking 开启，高 reasoning effort。
+- FIM：`models.fim`，局部插入。
+- JSON mode：只在显式要 JSON 时开（`src/deepseek/json-mode.js`）。
+
+Prompt 组装最大化前缀缓存（`src/deepseek/prompt-assembler.js`）：稳定前缀含 system prompt、工具协议、项目规则、紧凑项目索引、记忆摘要；volatile 后缀含当前请求、文件片段、工具结果、验证输出。
+
+每次请求记录 prompt / completion / reasoning tokens、cache hit / miss、latency、model、channel（`usage-tracker.js`）。
+
+`reasoning_content` 策略：不进普通 UI、不进可读 timeline；必要时作脱敏内部产物以支持 resume；tool-call 轮次间按协议保留。
+
+### 工具平面
+
 ```
-
-### DeepSeek Routing
-
-- Fast path: `deepseek-v4-flash`, thinking disabled, low temperature.
-- Planning path: `deepseek-v4-pro`, thinking enabled, high reasoning effort.
-- Review and repair path: `deepseek-v4-pro` when complexity, failed tests, or conflicting tool results justify escalation.
-- FIM path: beta completion endpoint for small localized insertions.
-- JSON mode: enabled only for explicit structured outputs, never as a default for plain conversation.
-
-### Prompt Assembly
-
-Prompt assembly must maximize prefix cache:
-
-```text
-stable prefix:
-  system prompt
-  tool protocol
-  project rules
-  compact project index
-  persistent memory summary
-
-volatile suffix:
-  current user request
-  selected file snippets
-  tool results
-  verification output
-```
-
-DeepSeek cache telemetry is captured for every request:
-
-- prompt tokens
-- completion tokens
-- reasoning tokens
-- prompt cache hit tokens
-- prompt cache miss tokens
-- latency
-- model
-- channel
-
-### Reasoning Content Policy
-
-`reasoning_content` is internal protocol state:
-
-- It is not shown in normal UI.
-- It is not stored in readable timeline events.
-- It may be stored as encrypted or redacted internal artifact if required for resume.
-- It must be preserved across tool-call rounds when DeepSeek protocol requires it.
-
-## 10. `src/tools`
-
-```text
 src/tools/
-+-- registry.js
-+-- executor.js
-+-- schema.js
-+-- builtin/
-|   +-- read.js
-|   +-- grep.js
-|   +-- glob.js
-|   +-- ls.js
-|   +-- edit.js
-|   +-- shell.js
-|   +-- test.js
-|   +-- git.js
-|   +-- web-fetch.js
-|   +-- memory.js
-|   `-- task.js
-`-- permissions/
-    +-- permission-engine.js
-    +-- policy-loader.js
-    `-- approval-cache.js
+  registry.js · executor.js · schema.js
+  builtin/  read ls grep glob shell test git web_fetch memory task ask_user edit-deferred
+  permissions/  permission-engine.js policy-loader.js approval-cache.js
 ```
 
-The execution path is fixed:
+固定执行路径：schema 校验 → 参数标准化 → 权限决策 → 必要时审批 → 执行 → 脱敏 → `tool:result` → 回灌模型。
 
-```text
-ToolCall
- -> schema validation
- -> parameter normalization
- -> permission decision
- -> approval if required
- -> execution
- -> result redaction
- -> ToolResult event
- -> model feedback
+内置工具名以 `src/tools/builtin/` 为准：`read` `ls` `grep` `glob` `shell` `test` `git` `web_fetch` `memory` `task` `ask_user`，以及 `diff_preview` `diff_apply` `diff_rollback` `edit`（`edit-deferred.js` 委托 EditService）。
+
+权限不变量：category 来自注册定义而非模型输入；destructive 不可被信任规则自动放行；密钥必审批且脱敏；shell 只收结构化 argv；网络工具校验协议、主机名、DNS、重定向与输出体积；文件系统工具解析 symlink 并强制 workspace 边界。
+
+编排子集见 `src/core/orchestration/tool-profiles.js`（`readonly` / `edit`）。
+
+### 编辑服务
+
 ```
-
-### Built-In Tools
-
-- `read`: read text files within workspace.
-- `grep`: search file contents.
-- `glob`: find paths by pattern.
-- `ls`: list directories.
-- `edit`: apply unified diff through `EditService`.
-- `diff_preview`: parse and summarize diff without writing.
-- `diff_apply`: apply an approved diff.
-- `diff_rollback`: rollback a change id.
-- `shell`: execute structured argv with `shell:false`.
-- `test`: detect and run project tests.
-- `git`: read status, diff, log; write operations require approval.
-- `web_fetch`: safe fetch with SSRF protections.
-- `memory`: project-scoped memory read/write/list/delete.
-- `task`: delegated subtask with constrained tools and budget.
-- `ask_user`: explicit user clarification.
-
-### Permission Invariants
-
-- Tool category comes from registered tool definition, not model-provided input.
-- Destructive operations cannot be auto-approved by trust rules.
-- Secrets always require approval and redaction.
-- Shell accepts structured argv only.
-- Network tools validate protocol, hostname, DNS result, redirect chain, and output size.
-- Filesystem tools resolve symlinks and enforce workspace boundaries.
-
-## 11. `src/edits`
-
-```text
 src/edits/
-+-- edit-service.js
-+-- diff-parser.js
-+-- diff-preview.js
-+-- diff-apply.js
-+-- rollback-service.js
-`-- change-store.js
+  edit-service.js · diff-parser.js · edit-transaction.js
+  rollback-service.js · change-store.js · sensitive-notice.js
 ```
 
-The mature legacy pipeline is reused here:
-
-- `extractUnifiedDiff`
-- `parseUnifiedDiff`
-- `summarizeDiff`
-- `applyUnifiedDiff`
-- `captureChangePlan`
-- `finalizeChange`
-- `rollbackChange`
-
-The public service contract becomes:
+对外契约：
 
 ```js
-EditService.preview(diff) -> DiffPreview
-EditService.apply({ diff, prompt, approval_id }) -> ChangeRecord
-EditService.rollback(change_id) -> RollbackRecord
-EditService.describe(change_id) -> ChangeRecord
-EditService.list({ limit }) -> ChangeRecord[]
+EditService.preview({ diff })
+EditService.apply({ diff, prompt, approval_id })
+EditService.rollback({ change_id, force })
+EditService.describe(change_id)
+EditService.list({ limit })
 ```
 
-All file edits must produce:
+每次写入产生 diff 摘要、change id、前后快照、会话事件与回滚路径。敏感路径（`secret-file` / `credential-file`）触发 `sensitive-notice`。事务事件：`file:diff_preview`、`file:transaction_started`、`file:transaction_committed`、`file:diff_applied`、`file:transaction_failed`、`file:transaction_rolled_back`、`file:rollback_applied`、`file:rollback_conflict`（见 `SESSION_EVENT_TYPES`）。
 
-- diff artifact
-- preview summary
-- change id
-- before snapshot
-- after snapshot
-- session events
-- rollback path
+### 上下文 / 工作区 / 会话 / 安全
 
-## 12. `src/context`
+- `src/context/`：索引、选择、快照、缓存、token 预算。分层为稳定项目索引、热文件、温文件、冷元数据、项目记忆。只决定模型看见什么，不改文件。
+- `src/workspace/path-safety.js`：realpath 边界、symlink 逃逸防护、二进制/大文件检测、相对路径规范化。
+- `src/sessions/`：唯一会话系统。事件白名单见 `event-types.js`；日志 schema_version 2 + hash chain；分支 `BR_MAIN` / rewind / checkpoint。
+- `src/security/`：`redactor.js`、`ssrf.js`、`shell-policy.js`、`command-policy.js`。可复用 helper，禁止散落 ad-hoc 检查。
+- 持久化恢复（v2-18）：`src/core/recovery/`，项目锁、事务日志、暂停侧车、恢复收件箱。错误码 `RECOVERY_LOCK_*`、`RECOVERY_FAULT`、`RECOVERY_BLOCKED` 等，见 `recovery-errors.js` 与 `project-lock.js`。
 
-```text
-src/context/
-+-- workspace-indexer.js
-+-- context-selector.js
-+-- context-snapshot.js
-+-- cache-policy.js
-+-- memory-selector.js
-`-- token-budget.js
-```
+### 公共 Kernel API
 
-Context is responsible for what the model sees. It does not modify files.
+`src/index.js` 导出 `createKernel(root, options)` / `buildToolPlane`。Kernel 面向界面提供 agent 发送/审批/取消、session 订阅与时间线、context 快照、config 读写，以及 `dispose()` 释放锁与会话资源。CLI / TUI / GUI 只依赖该 API。
 
-Context layers:
+事件渲染契约在 `src/apps/event-contract.js`，三端共用。
 
-- Stable project index: cache-friendly, compact, repeated across turns.
-- Hot files: recently edited, pinned, or directly referenced.
-- Warm files: likely relevant based on search, imports, diagnostics, or git diff.
-- Cold files: indexed metadata only unless selected.
-- Memory: project preference and facts, summarized for stable prefix.
+## 边界与不变量
 
-## 13. `src/workspace`
+1. 一条 agent runtime、一条工具执行路径、一条会话系统、一条编辑管线；界面只是 client。
+2. 危险动作（删除、付款、发消息、改库等）必须人工确认。
+3. 模型只提工具请求，系统执行。
+4. JSON / tool call 做 schema 校验与有界修复；失败进入终态而不是死循环。
+5. `.deepseek-code` 下用户数据不删；既有 change record 保持可读。
+6. `reasoning_content` 不进用户可见日志。
 
-```text
-src/workspace/
-+-- path-safety.js
-+-- file-system.js
-+-- git-info.js
-+-- ignore-rules.js
-`-- project-detector.js
-```
+## 与现状的差异
 
-Workspace owns all local project safety rules:
+| 设计稿 | 当前 |
+|---|---|
+| `bin/deepseek-code.js` | `bin/inkstone.js`（bin 名 `inkstone` / `dsc`） |
+| `apps/gui` | 实际在仓库根 `gui/`（Electron main/preload/renderer） |
+| `src/config/` 目录 | `src/config.js` |
+| `turn-loop.js` / `approval-flow.js` / `errors/` | 合并进 `agent-runtime.js` 与 `core/execution` / `core/recovery` |
+| `diff-preview.js` / `diff-apply.js` | 收敛为 `edit-service.js` + `edit-transaction.js` |
+| 产品名 DeepSeek Code | Inkstone（`package.json` name `inkstone`） |
 
-- realpath-based workspace boundary checks
-- symlink escape prevention
-- binary and large file detection
-- ignore rules
-- project root detection
-- safe relative path normalization
-- git repository metadata
+## 验收
 
-## 14. `src/sessions`
-
-```text
-src/sessions/
-+-- event-log.js
-+-- session-manager.js
-+-- timeline.js
-+-- resume.js
-`-- artifact-store.js
-```
-
-There is only one session system in v2. CLI, TUI, and GUI consume the same event stream.
-
-Events include:
-
-- `session:start`
-- `session:resume`
-- `user:message`
-- `agent:turn_started`
-- `agent:step`
-- `model:request`
-- `model:response`
-- `tool:call`
-- `tool:result`
-- `permission:decision`
-- `approval:requested`
-- `approval:resolved`
-- `file:diff_preview`
-- `file:diff_applied`
-- `verification:result`
-- `agent:final`
-- `agent:error`
-
-Large outputs are stored as artifacts and referenced from events.
-
-## 15. `src/config`
-
-```text
-src/config/
-+-- config-loader.js
-+-- config-schema.js
-+-- model-profiles.js
-+-- env.js
-`-- redaction.js
-```
-
-Config order:
-
-```text
-environment variables
-  > project .deepseek-code/config.json
-  > user ~/.deepseek-code/config.json
-  > defaults
-```
-
-API keys are never written to logs or GUI IPC responses.
-
-## 16. `src/security`
-
-```text
-src/security/
-+-- secret-detector.js
-+-- redactor.js
-+-- ssrf.js
-+-- shell-policy.js
-`-- audit.js
-```
-
-Security is cross-cutting but must have reusable helpers rather than ad hoc checks scattered across modules.
-
-## 17. `src/observability`
-
-```text
-src/observability/
-+-- trace.js
-+-- metrics.js
-+-- token-accounting.js
-`-- diagnostics.js
-```
-
-The UI status bar and logs should be driven by metrics rather than direct module internals:
-
-- current model
-- current channel
-- autonomy level
-- token usage
-- cache hit rate
-- active tool
-- verification state
-- cost estimate when available
-
-## 18. Application Layer
-
-### CLI
-
-```text
-apps/cli/
-+-- main.js
-+-- commands/
-|   +-- ask.js
-|   +-- edit.js
-|   +-- chat.js
-|   +-- test.js
-|   +-- config.js
-|   `-- rollback.js
-`-- renderers/
-    +-- text.js
-    +-- diff.js
-    `-- approval.js
-```
-
-The CLI calls `createKernel()` and renders events. It does not contain agent logic.
-
-### TUI
-
-```text
-apps/tui/
-+-- main.js
-+-- screens/
-+-- components/
-`-- keymap.js
-```
-
-The TUI remains incremental at first. It subscribes to session events and renders status, timeline, input, approvals, and diff previews.
-
-### GUI
-
-```text
-apps/gui/
-+-- package.json
-+-- main/
-|   +-- main.js
-|   +-- ipc.js
-|   `-- kernel-host.js
-+-- preload/
-|   `-- preload.js
-`-- renderer/
-    +-- index.html
-    +-- app.js
-    `-- styles/
-```
-
-Electron security requirements:
-
-- `nodeIntegration:false`
-- `contextIsolation:true`
-- `sandbox:true`
-- strict CSP
-- IPC whitelist
-- renderer uses DOM-safe text rendering
-- approval decisions pass through validated IPC schema
-
-## 19. Public Kernel API
-
-`src/index.js` exports the stable API:
-
-```js
-createKernel(root, options) -> Kernel
-
-Kernel {
-  agent: {
-    send(message, options),
-    approve(approval_id, decision),
-    interrupt(turn_id)
-  },
-  session: {
-    subscribe(handler),
-    getTimeline(options),
-    resume(session_id)
-  },
-  context: {
-    snapshot(options),
-    pin(path),
-    unpin(path)
-  },
-  config: {
-    getPublicConfig(),
-    updateProjectConfig(patch)
-  }
-}
-```
-
-All interfaces use this API.
-
-## 20. Migration Strategy
-
-The migration should be staged so the project remains testable at every step.
-
-### Phase V2-0: Skeleton and Protocol
-
-- Create the new directory structure.
-- Add protocol objects and runtime event schemas.
-- Add tests for turn lifecycle using a mock DeepSeek gateway.
-
-### Phase V2-1: DeepSeek Gateway
-
-- Replace default JSON mode with explicit JSON mode.
-- Add model router, usage tracker, streaming parser, FIM client, and API error handling.
-- Add tests for request bodies, JSON mode guard, SSE parsing, tool-call payload handling, and cache usage extraction.
-
-### Phase V2-2: Tool Plane
-
-- Move permission engine into `src/tools/permissions`.
-- Rebuild tool registry and executor around schema validation and approval.
-- Implement real built-in tools.
-- Verify `tool:call` and `tool:result` events feed back into the agent loop.
-
-### Phase V2-3: Edit Service
-
-- Move or wrap existing diff and change modules into `src/edits`.
-- Implement `diff_preview`, `diff_apply`, and `diff_rollback`.
-- Connect edits to tool execution, artifacts, and session events.
-
-### Phase V2-4: Runtime Loop
-
-- Implement planning, execution, review, verification, and repair loop.
-- Add model-output repair for malformed JSON or invalid tool calls.
-- Add verifier gates for tests, syntax checks, and git diff review.
-
-### Phase V2-5: Interface Migration
-
-- Migrate CLI commands to the v2 kernel.
-- Migrate TUI to event stream rendering.
-- Move GUI from `gui/` to `apps/gui/` and connect it to the v2 kernel host.
-- Keep compatibility commands temporarily, but remove old agent ownership.
-
-### Phase V2-6: Cleanup
-
-- Move old implementation into `src/legacy` only while needed.
-- Delete unused v0/v1 paths after parity tests pass.
-- Rewrite README and user docs for v2.
-- Add end-to-end tests for CLI edit, rollback, GUI basic send, and approval flow.
-
-## 21. Testing Strategy
-
-```text
-tests/unit/
-+-- core/
-+-- deepseek/
-+-- tools/
-+-- edits/
-+-- context/
-+-- workspace/
-`-- sessions/
-
-tests/integration/
-+-- agent-loop.test.js
-+-- tool-execution.test.js
-+-- edit-rollback.test.js
-+-- permission-approval.test.js
-+-- model-tool-feedback.test.js
-`-- session-resume.test.js
-
-tests/e2e/
-+-- cli-edit.test.js
-+-- cli-ask.test.js
-+-- gui-agent.test.js
-`-- tui-basic.test.js
-```
-
-Tests must prove:
-
-- A model tool call reaches the executor.
-- Permission decisions affect execution.
-- Tool results are fed back into the next model step.
-- A diff can be previewed, applied, verified, and rolled back.
-- Plain chat does not enable JSON mode by default.
-- JSON mode is used only for structured prompts that explicitly request json.
-- GUI and CLI share session events.
-- Workspace escape attempts fail.
-- SSRF attempts fail.
-
-## 22. Acceptance Criteria
-
-v2 is accepted only when these are true:
-
-1. `deepseek-code ask "hello"` returns a normal answer without JSON mode errors.
-2. `deepseek-code edit ...` uses the same runtime as GUI and TUI.
-3. GUI can send a prompt, show streamed progress, request approval, preview diff, apply change, and show result.
-4. Tool calls are real: read, grep, edit, shell, test, git, web_fetch, and memory produce actual results or safe denials.
-5. Every write operation has a change id and rollback path.
-6. Test failure triggers repair loop or a clear terminal failure.
-7. Session timeline shows user message, model steps, tool calls, approvals, diffs, verification, and final answer.
-8. API usage shows model, tokens, cache hit rate, and latency.
-9. No interface imports legacy agent logic.
-10. Full test and syntax check pass.
-
-## 23. Compatibility Policy
-
-During migration:
-
-- Existing commands remain available.
-- Old files may be wrapped, moved, or temporarily mirrored.
-- The project should not delete user data under `.deepseek-code`.
-- Existing change records remain readable.
-
-After migration:
-
-- `src/agent.js`, old `src/kernel/task-orchestrator.js`, and stub tool implementations are removed or converted into compatibility shims.
-- `gui/` is replaced by `apps/gui/`.
-- `test/kernel` is migrated into `tests/unit` and `tests/integration`.
-
-## 24. Risk Register
-
-| Risk | Mitigation |
-|------|------------|
-| Clean-room rewrite takes longer than patching v1 | Split into small phases with working tests after each phase |
-| New runtime loses mature diff behavior | Wrap existing diff and rollback code first, then refactor internally |
-| DeepSeek tool-call edge cases cause loops | Add tool-call repair, max loop count, and terminal failure states |
-| JSON mode breaks normal chat | Make JSON mode opt-in per structured call |
-| GUI falls behind runtime | Treat GUI as event-stream client, not owner of business logic |
-| Permissions become inconsistent | Enforce one ToolExecutor path for every tool |
-| Long context becomes expensive | Use cache-aware stable prefix and Flash-first routing |
-
-## 25. Final Architecture Summary
-
-DeepSeek Code v2 becomes:
-
-```text
-Apps
-  CLI / TUI / GUI
-
-Public Kernel API
-  createKernel()
-
-Core Runtime
-  turn loop / planning / execution / review / verification / repair
-
-DeepSeek Adapter
-  Flash / Pro / thinking / JSON / tool calls / FIM / cache / usage
-
-Tool Plane
-  registry / schema / permissions / approval / executor
-
-Domain Services
-  context / workspace / edits / sessions / config / security / observability
-```
-
-The most important architectural invariant is simple:
-
-> There is one agent runtime, one tool execution path, one session system, and one edit pipeline. Every interface is only a client.
+v2 验收线（已达成）：`ask` 不误开 JSON mode；`edit` 与 GUI/TUI 同一 runtime；GUI 可发送、流式展示、审批、预览并应用 diff；工具调用真实或安全拒绝；写操作有 change id 与回滚；测试失败进修复环或明确终态；时间线覆盖消息、步骤、工具、审批、diff、验证与最终答复；用量显示 model / tokens / cache / latency；界面不引入 legacy agent 逻辑。回归入口 `npm test`、`npm run check`。

@@ -15,7 +15,7 @@ import Dock from "./components/v4/Dock.jsx";
 import SettingsPanels from "./components/Settings/Settings.jsx";
 import SensitiveNoticeModal from "./components/v4/SensitiveNoticeModal.jsx";
 
-const VERSION = "1.8.6";
+const VERSION = "1.8.7";
 
 export default function App() {
   const [state, dispatch] = useWorkbench();

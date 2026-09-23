@@ -1,320 +1,72 @@
-# V2-13 Rewind Hardening & Recovery Design
+# V2-13 Rewind 加固与恢复设计
 
-> Status: proposed
-> Date: 2026-05-31
-> Scope: make V2-12 rewind apply recoverable when rollback succeeds but branch finalization fails
+- 类型：后端 spec
+- 日期：2026-05-31
+- 状态：已实现
+- 关联：[V2-12 分支 rewind](2026-05-31-v2-12-branching-conversation-rewind-design.md) · [V2-18 持久化恢复](2026-06-01-v2-18-durable-recovery-resume-hardening-design.md)
 
-## 1. Purpose
+---
 
-V2-12 added branch-aware conversation rewind. Its remaining critical risk is partial completion: `rewind.apply()` can roll back workspace files first, then fail while creating or activating the child branch. That leaves the workspace at the rewound file state while session branch metadata still points at the old branch.
+## 问题与目标
 
-V2-13 hardens rewind as an operation with compensation. If rewind cannot finish, it should either restore the workspace to the state from before the rewind attempt, or return an explicit unrecoverable result with safe audit metadata.
+V2-12 的 `rewind.apply()` 可能先回滚文件、再在创建或激活子分支时失败，工作区已回到目标点而分支元数据仍停在旧分支。V2-13 给 rewind 加补偿：失败时恢复到尝试前状态，或返回明确的不可恢复结果与安全审计元数据。本轮不做跨进程崩溃持久化（归 V2-18）。
 
-## 2. Goals
+## 决策
 
-1. Capture workspace snapshots for all files touched by the rewind rollback plan before applying any rollback.
-2. Restore those snapshots when rewind fails after one or more rollbacks have succeeded.
-3. Cover branch creation failure and branch activation failure.
-4. Cover mid-rollback non-conflict failure after earlier rollbacks succeeded.
-5. Keep dirty conflict behavior unchanged: conflict stops without compensation unless earlier rollbacks already happened.
-6. Publish safe recovery events that do not contain raw diffs or file contents.
-7. Keep successful V2-12 rewind behavior unchanged.
-8. Keep `kernel.session.rewind.preview()` read-only.
-9. Avoid new dependencies.
-10. Avoid `.deepseek-code/v2` pollution in tests.
+| 决策点 | 选择 | 否决项 | 理由 |
+|---|---|---|---|
+| 补偿范围 | rewind 计划触及的全部文件快照 | 只补最后一笔 | 中途失败也要整单回到起点 |
+| 快照位置 | 内存 `rewind-transaction` | 先落盘 | 本轮进程内；持久化归 V2-18 |
+| 错误 | `safeRewindError` 分类 | 原样抛 message | 事件不泄内容 |
+| 分支失败 | 恢复文件即可 | 必须删子分支记录 | 非活跃分支无害，删除不在 branch-store API |
+| 冲突 | 有先前成功回滚则先补偿 | 只停不补 | 不能留半套文件 |
 
-## 3. Non-Goals
+## 设略
 
-- No GUI branch tree or rewind panel.
-- No branch comparison UI.
-- No Git integration.
-- No durable resume of an interrupted recovery after process crash.
-- No mutation of existing JSONL events.
-- No three-way merge.
-- No rewriting V2-11 edit transactions.
-- No automatic retry policy for storage failures.
+### 模块
 
-## 4. Current Risk
+`src/sessions/rewind-transaction.js`：`captureRewindSnapshots`、`restoreRewindSnapshots`、`redactRewindSnapshots`、`safeRewindError`。只关心 projectRoot 与回滚计划，不碰分支与事件。`rewind-service.js` 仍是编排者：
 
-Current V2-12 apply flow is:
-
-1. Preview target and compute rollback change IDs.
-2. Roll back each change through `editService.rollback()`.
-3. Create child branch.
-4. Activate child branch.
-5. Publish success events.
-
-The unsafe window is between the first successful rollback and final branch activation. Any failure in that window can leave files changed without the matching branch state.
-
-The highest priority failure modes are:
-
-- `createBranch()` throws after all rollback calls succeed.
-- `activateBranch()` throws after branch creation succeeds.
-- `rollback()` returns failed for change N after earlier changes were already rolled back.
-
-Dirty conflicts are different. A conflict means rollback refused to write because current files are dirty. If conflict happens before any rollback succeeds, nothing needs restoring. If conflict happens after earlier rollback calls succeeded, V2-13 should restore those earlier file changes before returning the conflict result.
-
-## 5. Chosen Architecture
-
-Add a small rewind transaction helper:
-
-```text
-src/sessions/rewind-transaction.js
+```
+preview → begin snapshot → rollback 循环 → createBranch → activateBranch → commit
+                 ↓ 失败/冲突
+        restore snapshots → 发恢复事件
 ```
 
-This module owns file snapshot and restore for rewind plans. It should not know about branches, event logs, or checkpoints. It only needs a project root and a rollback plan.
-
-`rewind-service.js` remains the orchestrator:
-
-```text
-preview -> begin transaction -> rollback loop -> create branch -> activate branch -> commit
-                                     |
-                                     + failure/conflict -> restore snapshots -> publish recovery event
-```
-
-`src/index.js` injects `projectRoot` into `createRewindService()` so the service can create a rewind transaction.
-
-## 6. Rewind Transaction Model
-
-The transaction captures the current content/state of every file that may be affected by the rollback plan.
-
-Input:
-
-```js
-{
-  projectRoot,
-  files: ["src/a.js", "src/b.js"]
-}
-```
-
-Snapshot record:
-
-```js
-{
-  path: "src/a.js",
-  existed_before: true,
-  before: "...",
-  before_hash: "sha256:...",
-  before_bytes: 123
-}
-```
-
-For missing files:
-
-```js
-{
-  path: "src/new.js",
-  existed_before: false,
-  before: null,
-  before_hash: null,
-  before_bytes: 0
-}
-```
-
-Restore rules:
-
-- Existing files are written back exactly as captured.
-- Missing files are removed if they were created during rewind.
-- Empty parent directories created during rewind may be removed best-effort.
-- All paths must go through existing workspace path safety helpers.
-- Snapshot records are kept in memory only and must not be published to events.
-
-## 7. Rewind Apply State Flow
-
-V2-13 should make apply states explicit in result metadata and events:
-
-```text
-previewed
-started
-rollback_applied
-branch_created
-branch_activated
-committed
-failed_restored
-failed_unrestorable
-conflict_restored
-```
-
-Successful result shape stays compatible:
-
-```js
-{
-  status: "success",
-  previous_branch_id: "br_main",
-  branch_id: "br_child",
-  rollback_change_ids: ["change_2"],
-  applied_rollbacks: ["change_2"],
-  files: ["b.txt"],
-  forced: false,
-  recovery: null
-}
-```
-
-Recovered failure result:
-
-```js
-{
-  status: "failed_restored",
-  current_branch_id: "br_main",
-  attempted_branch_id: "br_child",
-  phase: "create_branch",
-  applied_rollbacks: ["change_2"],
-  restored_files: ["b.txt"],
-  reason: "branch_create_failed"
-}
-```
+### 状态流
 
-Unrecoverable failure result:
+结果元数据与事件区分：`previewed` / `started` / `rollback_applied` / `branch_created` / `branch_activated` / `committed` / `failed_restored` / `failed_unrestorable` / `conflict_restored`。
 
-```js
-{
-  status: "failed_unrestorable",
-  current_branch_id: "br_main",
-  attempted_branch_id: "br_child",
-  phase: "restore",
-  applied_rollbacks: ["change_2"],
-  restored_files: [],
-  restore_error: "restore_failed",
-  reason: "branch_create_failed"
-}
-```
+成功结果保持 V2-12 形状，并带 `recovery: null`。已补偿失败含 `phase`、`applied_rollbacks`、`restored_files`、`reason`。不可恢复失败另含 `restore_error`。
 
-## 8. Error Sanitization
+### 恢复规则
 
-Events must not include raw error messages from patching, file contents, raw diffs, or model output.
+存在的文件按快照写回；rewind 期间新建的文件删除；期间新建的空目录尽力删除；路径全经 workspace path safety。快照仅内存，不进事件。
 
-Add a category helper in `rewind-service.js` or `rewind-transaction.js`:
+覆盖失败模式：全部 rollback 成功后 `createBranch` 抛错；分支已建后 `activateBranch` 抛错；中途 rollback 非冲突失败；中途 rollback 冲突（若前面已有成功回滚则先补偿）。
 
-```js
-safeRewindError(error, phase)
-```
+### 错误与事件
 
-Allowed categories:
+`safeRewindError(error, phase)` 只返回类别：`rollback_failed` / `branch_create_failed` / `branch_activate_failed` / `restore_failed` / `rewind_failed`，不含 `error.message`。
 
-- `rollback_failed`
-- `branch_create_failed`
-- `branch_activate_failed`
-- `restore_failed`
-- `rewind_failed`
+新事件：`session:rewind_restore_started`、`session:rewind_restored`、`session:rewind_recovery_failed`。载荷限 branch id、phase、applied_rollbacks、restored_files、reason、forced。禁止 before/after/snippet/diff/原始异常。原有 `session:rewind_started` / `rewind_applied` / `rewind_conflict` / `rewind_failed` 保留。
 
-The returned string must not include `error.message`.
+### Kernel
 
-## 9. Events
+`createRewindService` 注入 `projectRoot`。`preview()` 仍只读。`branchStore` 不可用时 rewind 不可用。
 
-Register and publish:
+## 边界与不变量
 
-```text
-session:rewind_restore_started
-session:rewind_restored
-session:rewind_recovery_failed
-```
+1. 成功路径行为与 V2-12 一致。
+2. 失败或已补偿 rewind 后活跃分支不变。
+3. 事件无 raw diff、文件内容、snippet、原始异常。
+4. 不做 GUI 分支树、Git 集成、崩溃后自动续跑恢复。
+5. 测试不在仓库根写 `.deepseek-code/v2`。
 
-Event payloads must contain only safe metadata:
+## 与现状的差异
 
-```js
-{
-  current_branch_id,
-  attempted_branch_id,
-  phase,
-  applied_rollbacks,
-  restored_files,
-  reason,
-  forced
-}
-```
+跨进程事务日志与恢复收件箱见 [V2-18](2026-06-01-v2-18-durable-recovery-resume-hardening-design.md)。实现导出以 `src/sessions/rewind-transaction.js` 为准。
 
-They must not contain:
+## 验收
 
-- `before`
-- `after`
-- `snippet`
-- `diff --git`
-- `@@`
-- raw exception text
-
-Existing events stay:
-
-- `session:rewind_started`
-- `session:rewind_applied`
-- `session:rewind_conflict`
-- `session:rewind_failed`
-
-V2-13 may continue publishing `session:rewind_failed`, but recovered failures should also publish `session:rewind_restored`.
-
-## 10. Branch Store Behavior
-
-V2-13 does not need full branch-store transactions.
-
-If `createBranch()` fails, no branch exists and restoring files is enough.
-
-If `activateBranch()` fails after `createBranch()` succeeds, the child branch metadata may exist but active branch remains old. V2-13 should restore files and return `failed_restored`. It does not need to delete the branch record, because branch deletion is not currently part of the branch-store API. The failed child branch should be harmless because it is inactive. A future cleanup phase can add branch pruning.
-
-## 11. Kernel Wiring
-
-`createKernel()` should pass `projectRoot: root` to `createRewindService()`.
-
-If a test injects a custom rewind service or branch store, no behavior changes.
-
-If `branchStore` is unavailable, rewind remains unavailable as in V2-12.
-
-## 12. CLI/GUI Surface
-
-No new active UI is required.
-
-Minimum interface updates:
-
-- CLI event renderer should summarize the three new recovery events.
-- GUI host delegates do not need changes because they already call `rewindPreview()` and `rewindApply()`.
-- GUI renderer can remain unchanged unless tests already cover event summaries through the adapter.
-
-## 13. Testing Strategy
-
-Unit tests:
-
-- `captureRewindSnapshots()` captures existing and missing files.
-- `restoreRewindSnapshots()` restores modified files and removes files created during failed rewind.
-- `rewind.apply()` restores files when `createBranch()` fails after rollback success.
-- `rewind.apply()` restores files when `activateBranch()` fails after branch creation.
-- `rewind.apply()` restores earlier successful rollbacks when a later rollback fails.
-- `rewind.apply()` restores earlier successful rollbacks when a later rollback conflicts.
-- Recovery events contain no raw content.
-
-Integration tests:
-
-- Real kernel: apply two edits, inject branch creation failure, verify files return to pre-rewind state and active branch remains unchanged.
-- Real kernel: inject branch activation failure, verify files return to pre-rewind state and active branch remains unchanged.
-- Timeline includes recovery event metadata and no file content.
-
-Regression:
-
-- Full `npm.cmd test`.
-- Full `npm.cmd run check`.
-- `git diff --check`.
-- No `.deepseek-code/v2` pollution from tests.
-
-## 14. Acceptance Criteria
-
-V2-13 is complete when:
-
-1. Rewind success behavior from V2-12 still passes.
-2. Branch creation failure after rollback restores workspace files.
-3. Branch activation failure after rollback restores workspace files.
-4. Mid-rollback failure after earlier rollback restores workspace files.
-5. Mid-rollback conflict after earlier rollback restores workspace files.
-6. Recovery events are registered and persisted.
-7. Recovery events do not leak raw diffs, file contents, snippets, or raw exception messages.
-8. Active branch remains unchanged on failed or restored rewind.
-9. Tests do not create `.deepseek-code/v2` under repo root.
-10. Full regression passes.
-
-## 15. Deferred Work
-
-- Delete or mark failed inactive child branches after activation failure.
-- Durable recovery resume after process crash during restore.
-- GUI branch/recovery panel.
-- Branch comparison and pruning.
-- Recovery retry UI.
-
-## 16. Final Summary
-
-V2-13 turns rewind apply from a best-effort sequence into a recoverable operation. It does not make branch metadata fully transactional, but it closes the dangerous gap where files could be rewound while the session still points at the old branch.
+V2-12 成功路径不回归；分支创建/激活失败可恢复文件；中途失败或冲突可恢复先前回滚；恢复事件已注册且无泄漏；失败后活跃分支不变。入口 `npm test`、`npm run check`。

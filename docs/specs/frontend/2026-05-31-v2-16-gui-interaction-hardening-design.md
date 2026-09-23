@@ -1,72 +1,29 @@
-# V2-16 GUI Interaction Hardening & Release Polish Design
+# V2-16 GUI 交互加固与发布打磨
 
-## Objective
+- 类型：前端 spec
+- 日期：2026-05-31
+- 状态：已完成
+- 关联：[V2-15 自然工作台](2026-05-31-v2-15-natural-agent-workbench-design.md)
 
-Make the V2-15 Natural Agent Workbench feel reliable in real use, not only in static screenshots. This phase hardens interaction behavior, preference persistence, keyboard accessibility, drawer/inspector lifecycle, and Electron smoke coverage while preserving the V2-15 layout and visual direction.
+## 问题与目标
 
-V2-16 is not a new visual redesign. It is the release-polish layer that makes the existing workbench predictable under real GUI use.
+V2-15 在静态截图上可用，本篇补真实使用所需的可靠交互：偏好持久化、键盘可达、drawer/inspector 生命周期与 Electron smoke。布局与视觉方向不变，属于发布打磨层。
 
-## Current State
+## 决策
 
-V2-15 delivered:
+| 选了什么 | 否决了什么 | 为什么 |
+|---|---|---|
+| GUI 偏好落本地 JSON | 仅会话内存 | 重启后保留主题/面板/rail |
+| 显式 inspector 关闭 + Escape | 只能点风险事件离开 | 用户可退出风险上下文 |
+| 全局快捷键在输入框内忽略（Escape 除外） | 全局抢键 | 不干扰文本输入 |
+| Electron smoke 可跳过 | 强依赖 CI 有 Electron | 无 Electron 环境仍可跑核心测试 |
+| 只做交互加固 | 新视觉/新 runtime | 本片范围 |
 
-- command bar, activity rail, context panel, agent session, contextual inspector, and statusline,
-- Night Workbench and Day Review themes,
-- single traffic-light status cluster,
-- branch/checkpoint/rewind surfaces,
-- renderer static/state tests,
-- headless mock screenshot QA.
+不做：新 runtime、新 agent 行为、新分支/回退后端语义、重型框架迁移、耐久审批/修复续跑、大视觉重设计。
 
-Remaining gaps:
+## 设计
 
-- theme and panel preferences are session-local only,
-- mobile/medium drawer behavior is implicit and has no durable UI contract,
-- inspector opens for risk events but lacks a clear close path and focus management,
-- rail labels are accessible but icon letters are still abstract,
-- real Electron smoke is not covered in tests,
-- renderer controller is growing large and needs clearer helper boundaries before more GUI features are added.
-
-## Scope
-
-### In Scope
-
-- Persist renderer preferences:
-  - theme,
-  - context panel collapsed state,
-  - last rail mode.
-- Add small IPC bridge for GUI preferences backed by a local JSON file under `.deepseek-code/gui-preferences.json`.
-- Add explicit inspector/drawer close control.
-- Add keyboard shortcuts:
-  - `Ctrl+1` Chat,
-  - `Ctrl+2` Context,
-  - `Ctrl+3` Branches,
-  - `Ctrl+4` Timeline,
-  - `Ctrl+5` Settings,
-  - `Ctrl+K` focus composer,
-  - `Escape` close inspector drawer or clear active approval panel focus.
-- Improve live interaction states:
-  - approval opens inspector and can close after resolution,
-  - rewind preview opens inspector,
-  - error opens details,
-  - manual inspector close returns to activity mode.
-- Add an Electron smoke test that launches the GUI with an injected temp project and validates the rendered shell without requiring network access.
-- Keep unsafe rendering protections: no `innerHTML` assignment for dynamic content.
-
-### Out of Scope
-
-- New runtime features.
-- New agent behaviors.
-- New branch/rewind backend semantics.
-- Heavy GUI framework migration.
-- Durable approval/repair resume.
-- Full visual redesign beyond small interaction affordances.
-
-## Preference Storage
-
-Add a small preference layer in the GUI host/main side:
-
-- File path: `<projectRoot>/.deepseek-code/gui-preferences.json`.
-- Schema:
+偏好存储 `<projectRoot>/.deepseek-code/gui-preferences.json`：
 
 ```json
 {
@@ -77,115 +34,43 @@ Add a small preference layer in the GUI host/main side:
 }
 ```
 
-Rules:
+规则：缺失/损坏回默认；未知 theme/rail 忽略；写入尽力原子。偏好不含转录、prompt、工具输出、上下文路径或密钥。IPC：`gui:preferences-get`、`gui:preferences-set`。首屏尽量先加载偏好，失败则默认继续并报告非阻塞降级。theme、rail mode、panel collapsed 变化时写回。
 
-- Missing/corrupt file returns defaults.
-- Unknown theme/rail values are ignored.
-- Writes are best-effort and atomic enough for local desktop use.
-- Preferences must not include transcript content, prompts, tool output, file paths from context snippets, or secrets.
+Inspector 生命周期：
 
-Expose through IPC:
+- 审批、回退预览、错误/冲突/恢复失败自动打开。
+- 可见关闭钮或 `Escape` 关闭，`inspectorMode: "activity"`，中/窄屏关 drawer 覆盖。
+- 选检查点重回 rewind；审批解决后关 approval 模式，除非另有风险结果。
 
-- `gui:preferences-get`
-- `gui:preferences-set`
+Context 面板：rail 选中打开；toggle 折叠；窄屏首载默认折叠（偏好另有则从偏好）；仅当无 inspector drawer 时 `Escape` 关 context drawer。
 
-Renderer behavior:
+键盘：
 
-- Load preferences before first render when possible.
-- If loading fails, continue with defaults and report a non-blocking degraded error.
-- Write preferences when theme, rail mode, or panel collapsed state changes.
+| 键 | 行为 |
+|---|---|
+| Ctrl+1..5 | Chat / Context / Branches / Timeline / Settings |
+| Ctrl+K | 聚焦 `#msg-input` |
+| Escape | 先关 inspector/context drawer |
 
-## Inspector & Drawer Lifecycle
+焦点在 input/textarea/contenteditable 时全局快捷键忽略。rail 快捷键与点击走同一状态路径。inspector 因审批/回退打开时焦点移到关闭钮或首个相关动作；关闭后尽量回 composer。
 
-The right inspector should feel intentional:
+Electron smoke：启动 `gui`，`--project=<temp>` 注入临时项目，断言 `#command-bar`、`#activity-rail`、`#agent-session`、`#statusline` 存在、窗口非空、主题切换存在，然后干净退出。无网络、无真实模型调用。Electron 不可用则明确跳过；本地有 `gui/node_modules/electron` 时应跑。
 
-- Risk events auto-open it:
-  - approval,
-  - rewind preview,
-  - error/conflict/recovery failure.
-- User can close it with a visible close button or `Escape`.
-- Closing sets `inspectorMode: "activity"` and removes drawer overlay on medium/compact widths.
-- Selecting a checkpoint reopens rewind mode.
-- Resolving approval closes approval mode unless another risk result is active.
+## 边界与不变量
 
-The context panel:
+- 主要文件：`gui/kernel-host.js`（偏好读写）、`gui/main.js`（IPC）、`gui/preload.js`（bridge）、`gui/renderer/workbench-state.js`、`app.js`、`index.html`、`style.css`。
+- 测试：`kernel-host`、`renderer-static`、`workbench-state`、交互等价、`tests/e2e/gui-smoke.test.js`。
+- 动态内容仍禁不安全 `innerHTML`。
+- 测试用临时项目根，不在仓库根制造 `.deepseek-code/v2` 污染；真实用户启动 GUI 产生的 `.deepseek-code/v2` 不算测试污染。
+- 焦点管理保持小而状态驱动，避免散落 DOM 焦点补丁。
 
-- Opens when a rail mode is selected.
-- Collapses via the context toggle.
-- On narrow widths, defaults to collapsed on first load unless persisted preference says otherwise.
-- `Escape` closes the context drawer only if no inspector drawer is open.
+## 与现状的差异
 
-## Keyboard Accessibility
+React 化后偏好键演进为 `theme`、`language`、`railCollapsed`、`sidebarWidth`、`rightbarWidth`、`glass`、`lastDark`/`lastLight` 等，见 `gui/src/state/workbench-state.js` 与 `useKernel.setPreferences`。本篇的 preference 文件模式与键位精神延续。
 
-Keyboard controls must not fight normal text input:
+## 验收
 
-- Global shortcuts are ignored when the active element is an input, textarea, or contenteditable element, except `Escape`.
-- `Ctrl+K` focuses `#msg-input`.
-- `Escape` closes inspector/context drawers before doing anything else.
-- Rail shortcut actions update the same state path as clicking rail buttons.
-
-Focus requirements:
-
-- Visible focus remains in CSS.
-- When inspector opens because of approval or rewind, focus moves to the inspector close button or first relevant action.
-- When inspector closes, focus returns to the composer if possible.
-
-## Electron Smoke
-
-Add a lightweight smoke test that:
-
-- starts Electron from `gui`,
-- passes a temp project path via `--project=<temp>`,
-- waits until `#command-bar`, `#activity-rail`, `#agent-session`, and `#statusline` exist,
-- confirms no blank window,
-- confirms theme toggle exists,
-- exits cleanly.
-
-The smoke test should avoid real model calls and network access. It only validates shell boot and bridge readiness. If direct Electron automation is too brittle on CI, make the test skip with a clear reason when Electron is unavailable, but run locally when `gui/node_modules/electron` exists.
-
-## File Boundaries
-
-Primary files:
-
-- `gui/kernel-host.js`: preference load/save helpers or delegates.
-- `gui/main.js`: preference IPC handlers.
-- `gui/preload.js`: expose preference bridge.
-- `gui/renderer/workbench-state.js`: state actions/selectors.
-- `gui/renderer/app.js`: preference loading, keyboard shortcuts, drawer close/focus behavior.
-- `gui/renderer/index.html`: close button and stable IDs.
-- `gui/renderer/style.css`: close button and drawer interaction states.
-
-Tests:
-
-- `tests/unit/gui/kernel-host.test.js`
-- `tests/unit/gui/renderer-static.test.js`
-- `tests/unit/gui/workbench-state.test.js`
-- `tests/unit/gui/renderer-interactions.test.js` or static/state equivalent
-- `tests/e2e/gui-smoke.test.js`
-
-## Verification
-
-Automated:
-
-- Focused GUI tests.
-- Electron smoke test when Electron is available.
-- `npm.cmd test`
-- `npm.cmd run check`
-- `git diff --check`
-
-Visual:
-
-- Re-run mock screenshots at desktop and compact widths after adding controls.
-- Confirm no overlap, no hidden composer, close button visible, traffic label visible.
-
-Pollution checks:
-
-- Tests must use temp project roots.
-- No test should create `.deepseek-code/v2` in the repository root.
-- Real user-started GUI may create `.deepseek-code/v2`; that is not test pollution.
-
-## Risks
-
-- Electron smoke can be flaky on headless systems. Keep it defensive and skippable only when Electron is truly unavailable.
-- Preference writes could create local files in the user project. This is intentional for real GUI use but tests must isolate it.
-- Focus management in plain JavaScript can become tangled; keep it small and state-driven.
+- 焦点 GUI 测试与（可用时）Electron smoke 通过。
+- `npm.cmd test` / `npm.cmd run check` / `git diff --check`。
+- 截图确认关闭钮可见、composer 不隐藏、traffic 文案可见、无重叠。
+- 偏好读写失败降级不崩。

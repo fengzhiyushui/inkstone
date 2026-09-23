@@ -1,99 +1,62 @@
-# V2 Frontend Workbench Redesign Design
+# V2 前端工作台视觉重设计
 
-## Objective
+- 类型：前端 spec
+- 日期：2026-05-31
+- 状态：已完成
+- 关联：[V2-14 分支回退 UX](2026-05-31-v2-14-gui-workbench-branch-rewind-design.md) · [V2-15 自然工作台](2026-05-31-v2-15-natural-agent-workbench-design.md)
 
-Refresh the Electron GUI from a basic three-column shell into a mature local-agent workbench. The design must preserve the existing three-pane mental model while improving visual quality, information density, runtime status, branch/rewind usability, and screenshot-verifiable responsiveness.
+## 问题与目标
 
-## Research Basis
+Electron GUI 此前只是基础三栏壳，视觉与信息密度达不到本地 agent 工作台水准。本篇在保留三栏心智模型的前提下，重做观感、运行状态、分支/回退可用性与响应式断点，目标是安静、精确、工具向的界面。
 
-The design is grounded in:
+## 决策
 
-- NN/g usability heuristics: visible system status, user control/recovery, consistency, error prevention, recognition over recall, minimalist operational interfaces.
-- WCAG 2.2 and WAI-ARIA APG: visible focus, keyboard operability, adequate contrast, non-color-only meaning, accessible labels.
-- Carbon, Fluent, Polaris, Atlassian, Material, and web.dev guidance: tokenized spacing/color, predictable interaction states, stable layout, responsive content priority, reduced layout shift.
-- Local skills: `ui-ux-pro-max` and `frontend-workbench-design`.
+| 选了什么 | 否决了什么 | 为什么 |
+|---|---|---|
+| 深色开发者工具色板，中性分层表面 | 装饰渐变、大标题、嵌套卡片 | 工作台需要高信息密度与长时间注视舒适度 |
+| token 化间距/颜色，写在 `:root` | 散落裸色值 | 便于主题与后续换肤 |
+| 三灯状态只覆盖全局健康与关键生命周期 | 每事件彩虹指示 | 避免噪音 |
+| 响应式分档折叠 inspector / sidebar | 单一固定布局 | 保证 1020 / 720 断点可用 |
 
-## Product Frame
+视觉基准参考 NN/g 启发式、WCAG 2.2 与 WAI-ARIA APG，以及 Carbon / Fluent / Polaris / Atlassian / Material 的 token 与布局建议。
 
-This UI is not a landing page. It is an IDE-like control surface for a local coding agent:
+## 设计
 
-- Left pane: session/branch context, status, usage, quick navigation.
-- Center pane: conversation and current turn, with useful empty state and persistent composer.
-- Right pane: activity, approvals, checkpoints, rewind preview and recovery.
-- Bottom status: autonomy, channel, runtime, active branch, degraded/offline hints.
+布局契约（桌面）：
 
-The workbench should feel quiet, precise, and tool-like. Avoid decorative gradients, blobs, large hero type, and nested card stacks.
+| 区 | 宽 | 内容 |
+|---|---|---|
+| Sidebar | 260px | 品牌/会话条、分支列表、用量状态 |
+| Conversation | 弹性 | topbar、空态/当前回合、消息、审批、composer |
+| Inspector | 340px | 活动、审批、检查点、回退预览 |
+| Status bar | 固定底 | autonomy、channel、runtime、active branch、降级提示 |
 
-## Visual System
+响应式：`≤1020px` 收起 inspector 为抽屉或显式开关；`≤720px` 侧栏折成顶部上下文条，保持对话与 composer 可用。
 
-Use a dark developer-tool palette with neutral layers:
+色板规则：近黑 ink 底、3–4 层 slate 表面；绿=运行/成功/缓存，蓝=中性主操作，琥珀=审批/警告，红=危险。UI 用系统无衬线，等宽仅用于 ID、分支名、数值与类代码值。圆角 4–8px，间距 4px 基数（8/12/16/20/24）。
 
-- Base: near-black ink.
-- Surfaces: 3-4 slate layers for panes, rows, controls, and elevated alerts.
-- Borders: subtle default, stronger selected/focus.
-- Accent: green for running/success/cache, blue for primary neutral action, amber for approval/warning, red for danger/error.
-- Typography: system sans for UI, system mono only for IDs, branch names, numeric metrics, and code-like values.
-- Radius: 4-8px.
-- Spacing: 4px base scale with 8/12/16/20/24px steps.
+功能 UX 要点：
 
-CSS should define tokens in `:root` and reuse them instead of scattering raw colors.
+1. 空态解释当前工作区状态并给起步动作，留白不空转。
+2. tokens、缓存命中、延迟、请求数、runtime、channel、分支、降级态不只靠状态栏展示。
+3. 分支/检查点行有 active/selected 标记与稳定 hover/focus。
+4. 活动时间线按类型、摘要、分支、时间扫读。
+5. 审批/回退等风险操作进 inspector，结果态清晰，危险样式独立。
+6. 错误条融入常态工作，不霸占主视野。
+7. 可见焦点、键盘可达、语义 role，状态不单靠颜色。
 
-## Layout
+## 边界与不变量
 
-Preserve three panes on desktop:
+- 不改 V2 runtime、IPC 契约、kernel host，改动落在 renderer；必要时仅加薄 preload/host 委托。
+- 主要文件：`gui/renderer/index.html`、`gui/renderer/style.css`、`gui/renderer/app.js`、`gui/renderer/workbench-state.js`、`tests/unit/gui/*`。
+- 动态内容一律 `textContent`，禁止不安全 `innerHTML`。
 
-- Sidebar: 260px. Contains brand/session strip, branch list, usage/status block.
-- Conversation: flexible center. Contains topbar, empty/current-turn area, messages, approval box, composer.
-- Inspector: 340px. Contains tabs or grouped panels for activity, approvals, checkpoints, and rewind.
-- Status bar: fixed bottom row with compact runtime facts.
+## 与现状的差异
 
-Responsive:
+本篇描述的是 V2 时期原生 renderer。后续 V3 D-1 起 GUI 迁到 React 渲染层（`gui/src/`），布局与 token 由 [v1.4.0](2026-07-28-v1.4.0-frontend-redesign-design.md) 与 [v1.8.1](2026-09-20-v1.8.1-dsh-shell-design.md) 接管。本文的三栏心智与安全不变量仍有效，具体文件路径以当前 `gui/src/` 为准。
 
-- At <= 1020px, keep sidebar + conversation and hide inspector behind an explicit inspector toggle or convert inspector content into a lower drawer.
-- At <= 720px, collapse sidebar into a top context strip and keep the conversation/composer usable.
+## 验收
 
-## Functional UX Changes
-
-1. Empty state: Center pane should explain current workspace state with compact starter actions/status, not a blank canvas.
-2. Usage/status: Show tokens, cache hit, latency, requests, runtime, channel, branch, and degraded state without requiring the status bar only.
-3. Branch/checkpoint rows: Add active/selected/current markers, metadata, and stable hover/focus states.
-4. Activity timeline: Make event rows easier to scan with type, summary, branch, and time/sequence metadata.
-5. Approval/rewind: Risky controls should live in the inspector with clear preview/result state and distinct danger styling.
-6. Error/degraded state: Top error strip remains, but it should look integrated and not dominate normal work.
-7. Accessibility: Add labels, focus-visible styles, role-appropriate controls, and avoid color-only status.
-8. Traffic-light status: Add a restrained traffic-light mechanism for global agent health and key lifecycle states only. Use green for ready/complete, yellow for working/awaiting approval/warning, red for error/conflict, and neutral gray for offline/unknown. Do not add per-event rainbow indicators.
-
-## Implementation Boundaries
-
-Do not rewrite the V2 runtime, IPC contract, or kernel host. Work in the renderer layer unless a small preload/host delegate is required for UI data already exposed by V2.
-
-Primary files:
-
-- `gui/renderer/index.html`
-- `gui/renderer/style.css`
-- `gui/renderer/app.js`
-- `gui/renderer/workbench-state.js`
-- `tests/unit/gui/*`
-
-## Verification
-
-Automated:
-
-- Unit/static tests for required DOM IDs/classes/tokens.
-- State model tests for selected/loading/error/empty/status fields.
-- `npm.cmd test`
-- `npm.cmd run check`
-- `git diff --check`
-
-Visual:
-
-- Headless screenshot at 1440x900 desktop with mock data.
-- Headless screenshot at 1020x760 breakpoint.
-- Headless screenshot at 720x760 compact layout.
-- Manual inspection for blank areas, overlap, clipped controls, unreadable text, broken inspector access, and excessive decoration.
-
-## Risks
-
-- The existing renderer is plain HTML/CSS/JS. Keep the redesign disciplined; do not introduce a framework just for styling.
-- Electron visual QA may require local Chrome/Electron availability.
-- Some richer UI behavior, such as drawers or tabs, must be implemented without creating unsafe `innerHTML`.
+- DOM ID/类/token 与状态模型单测通过。
+- `npm.cmd test`、`npm.cmd run check`、`git diff --check` 全绿。
+- 截图核对 1440×900、1020×760、720×760：无空白区、重叠、截断控件、不可读文本。

@@ -1,358 +1,101 @@
-# V2-7 Approval Resume Design
+# V2-7 审批续跑设计
 
-> Status: design approved for implementation plan  
-> Date: 2026-05-30  
-> Scope: in-memory approval resume for the V2 runtime, CLI, TUI, and GUI
+- 类型：后端 spec
+- 日期：2026-05-30
+- 状态：已实现
+- 关联：[v2 Clean Runtime](../architecture/2026-05-30-deepseek-code-v2-clean-runtime-design.md) · [V2-8 修复环](2026-05-31-v2-8-verifier-repair-loop-design.md)
 
-## 1. Purpose
+---
 
-V2 can already ask for approval, but approval is currently a terminal pause. `agent.send()` returns `awaiting_approval`, and `agent.approve()` only publishes `approval:resolved`; it does not continue the original tool loop.
+## 问题与目标
 
-V2-7 closes that interactive control-flow gap:
+审批在 V2 里曾是终态暂停：`agent.send()` 返回 `awaiting_approval` 后，`approve()` 只发 `approval:resolved`，不继续原工具环。V2-7 让同一 turn 在用户批准或拒绝后续跑或取消，审批卡片在 CLI / TUI / GUI 上真正可用。本轮只做进程内续跑，不做跨进程持久化恢复。
 
-```text
-model requests tool
- -> permission engine returns ask
- -> approval:requested event is published
- -> runtime stores the paused turn
- -> user approves or denies
- -> runtime resumes or cancels the same turn
- -> tool result feeds back to the model
- -> final answer is published
+## 决策
+
+| 决策点 | 选择 | 否决项 | 理由 |
+|---|---|---|---|
+| 暂停态存放 | 进程内 `PausedTurnStore` | 先序列化到会话日志 | 避免把模型消息与工具态写进日志 |
+| 续跑安全 | 批准写入 `approvalCache`，再走原 `executeTool` | 续跑旁路权限 | 单一 ToolExecutor 路径不破 |
+| 并发策略 | 同时只允许一个暂停 turn | 多审批队列 | 控制流清晰，重复 `send` 直接拒绝 |
+| 决策词 | allow：`approve`/`allow`；deny：`deny`/`reject` | 单一布尔 | 与 UI 文案对齐 |
+
+## 设计
+
+### 流程
+
+```
+模型请求工具 → 权限 ask → approval:requested
+  → runtime 存 resume_state → 用户决策
+  → approve：写 approvalCache → resumeExecutorLoop → 结果回灌 → 验证/终态
+  → deny：agent:final(cancelled) → idle
 ```
 
-This phase makes approval cards useful in GUI/TUI/CLI without attempting durable cross-process resume.
+### `paused-turn-store`
 
-## 2. Goals
-
-1. Resume the same in-memory turn after a user approval.
-2. Preserve the single ToolExecutor path: approval must not bypass schema validation, permission checks, execution, redaction, or tool events.
-3. Support both approve and deny decisions.
-4. Keep repeated approval calls safe and deterministic.
-5. Keep interruption safe: interrupt clears active and paused state.
-6. Update CLI, TUI, and GUI so approval controls continue the pending turn.
-7. Persist `approval:requested`, `approval:resolved`, `tool:result`, and `agent:final` through the existing V2 session manager.
-8. Maintain all existing V2-0 through V2-6 tests.
-
-## 3. Non-Goals
-
-- No resume after process restart.
-- No multi-turn or multi-approval queue.
-- No durable paused-state serialization.
-- No full repair loop.
-- No context engine work.
-- No usage stats or observability work.
-- No broad rewrite of TUI/README mojibake unless required by approval controls.
-
-## 4. Current Behavior
-
-The current runtime path:
-
-```text
-createAgentRuntime.send()
- -> runExecutorLoop()
- -> executeTool()
- -> ToolExecutor returns ToolResult(status: "approval_required")
- -> runExecutorLoop returns { status: "awaiting_approval", approval }
- -> send() returns awaiting_approval and releases currentTurnId
-```
-
-The current approve path:
+`src/core/approval/paused-turn-store.js`：
 
 ```js
-function approve(approvalId, decision) {
-  publish(eventBus, "approval:resolved", { approval_id: approvalId, decision });
-}
+createPausedTurnStore() -> { save, get, take, deleteForTurn, clear, size }
 ```
 
-There is no stored paused state. The executor loop loses its messages, pending tool call, iteration count, and accumulated tool results when it returns.
+记录：`{ approval_id, turn_id, approval, turn, resume_state, created_at }`。`take()` 只成功一次，天然拒绝重复审批。拒绝重复 `approval_id`。
 
-## 5. Chosen Approach
+### Executor 环
 
-Use an in-memory paused turn store plus approval-cache based resume.
-
-When a tool returns `approval_required`, executor loop returns a resumable snapshot:
+`runExecutorLoop` 暂停时返回可续跑快照：
 
 ```js
 {
   status: "awaiting_approval",
   approval,
   resume_state: {
-    turn_id,
-    message,
-    classification,
-    messages,
-    model_result,
-    raw_tool_calls,
-    pending_tool_call,
-    remaining_tool_calls,
-    iteration,
-    tool_results,
-    tool_schemas,
-    max_iterations,
-    options
+    turn_id, message, classification, messages, model_result,
+    raw_tool_calls, pending_tool_call, remaining_tool_calls,
+    iteration, tool_results, tool_schemas, max_iterations, options
   }
 }
 ```
 
-Runtime stores this under `approval.id`. On approve:
+`resumeExecutorLoop(resumeState, deps)` 先执行 `pending_tool_call`，再按序执行 `remaining_tool_calls`，继续模型调用至终态或 `maxIterations`。它必须调用 `executeTool()`，不得直接调工具实现。
 
-1. Runtime takes the paused record from `PausedTurnStore`.
-2. Runtime publishes `approval:resolved`.
-3. Runtime grants the matching fingerprint into `approvalCache`.
-4. Runtime calls `resumeExecutorLoop(resume_state, dependencies)`.
-5. ToolExecutor runs normally. Permission now returns allow from approval cache.
-6. Runtime runs the same verification/finalization gate used by the normal tool loop.
+### 审批缓存授予
 
-On deny:
+续跑仍走权限重评估。`grantApprovalForToolCall` 用 `secureToolCall` 得到规范调用，算指纹后 `approvalCache.grant(fp, { decision: "allow" })`。`ToolRegistry.secureToolCall` 与 `ToolExecutor` 共用同一 category 推导。缓存只存 allow，TTL 默认 300000ms。
 
-1. Runtime takes the paused record.
-2. Runtime publishes `approval:resolved`.
-3. Runtime publishes `agent:final` with a cancelled/denied message.
-4. Runtime returns `{ status: "cancelled", state: "idle" }`.
+### Runtime / Kernel
 
-## 6. New Module: `paused-turn-store`
+- 暂停时 `send()` 落库后释放 `currentTurnId`；已有暂停记录时新 `send()` 抛 `AWAITING_APPROVAL`。
+- `approve(approvalId, decision)` 为 async；未知 id 视为已消费或不存在；重复审批失败。
+- deny 发 `agent:final`，状态 `cancelled`。
+- `interrupt()` 清 abort 与暂停记录，不发残留 final。
+- Kernel API 仍为 `kernel.agent.approve(approvalId, decision)`。GUI host 改为 async；CLI 进程内提示后调用；TUI 最小确认提示。
 
-File:
+### 错误
 
-```text
-src/core/approval/paused-turn-store.js
-```
+| 情形 | 行为 |
+|---|---|
+| 未知 approval id | `APPROVAL_NOT_FOUND` |
+| 重复审批 | 同未知（已被 `take`） |
+| 执行中再批 | `BUSY` |
+| 暂停中再 `send` | `AWAITING_APPROVAL` |
+| 拒绝 | 确定性 cancelled，不抛 |
+| 续跑中再次 ask | 新暂停记录，返回 `awaiting_approval` |
 
-Responsibilities:
+会话侧持久化 `approval:requested` / `approval:resolved` / `tool:result` / `agent:final`（见 `SESSION_EVENT_TYPES`）。
 
-- Save a paused approval record.
-- Get a paused record by approval id.
-- Take a paused record exactly once.
-- Delete all records for a turn.
-- Clear all records.
-- Reject duplicate approval ids.
+## 边界与不变量
 
-Public API:
+1. 审批不绕过 schema 校验、权限、执行、脱敏、工具事件。
+2. 一次只暂停一个 turn。
+3. `take()` 保证不双写。
+4. 中断与续跑竞态靠 generation/abort 与清空暂停库处理。
+5. 本轮不做进程重启后续跑、不做多审批队列。
 
-```js
-createPausedTurnStore() -> {
-  save(record),
-  get(approvalId),
-  take(approvalId),
-  deleteForTurn(turnId),
-  clear(),
-  size()
-}
-```
+## 与现状的差异
 
-Record shape:
+持久化恢复后来由 [V2-18](2026-06-01-v2-18-durable-recovery-resume-hardening-design.md) 覆盖；暂停侧车路径见 `.deepseek-code/v2/sessions/<project>/paused/`。错误与生命周期常量以 `src/core/recovery/`、`src/core/runtime/lifecycle.js` 为准。
 
-```js
-{
-  approval_id,
-  turn_id,
-  approval,
-  turn,
-  resume_state,
-  created_at
-}
-```
+## 验收
 
-The store is intentionally in-memory. This keeps V2-7 small and avoids serializing model messages or tool call state into session logs before the session replay design exists.
-
-## 7. Executor Loop Changes
-
-`runExecutorLoop()` keeps its current role but returns `resume_state` when it pauses.
-
-`resumeExecutorLoop()` is added:
-
-```js
-resumeExecutorLoop({
-  resumeState,
-  modelGateway,
-  executeTool,
-  createPolicyContext,
-  eventBus,
-  signal
-}) -> LoopResult
-```
-
-Resume algorithm:
-
-1. Execute `pending_tool_call`.
-2. If it still returns `approval_required`, stop again with a new `resume_state`.
-3. Execute each `remaining_tool_call` in order.
-4. Append assistant tool-call message and tool result messages.
-5. Continue model calls until final answer or `maxIterations`.
-
-Important invariant:
-
-`resumeExecutorLoop()` must not directly call tool implementations. It must call `executeTool()` so all existing security and audit behavior remains intact.
-
-## 8. Approval Cache Grant
-
-The cleanest way to resume without bypassing security is to let permission re-evaluate and pass through `approvalCache`.
-
-The runtime needs a dependency:
-
-```js
-grantApprovalForToolCall(toolCall, policyInput)
-```
-
-`src/index.js` implements it using existing components:
-
-```js
-const policyContext = createPolicyContext(...)
-const securedCall = toolRegistry.secureToolCall(toolCall)
-const fp = permissionEngine.fingerprint(securedCall, policyContext)
-approvalCache.grant(fp, { decision: "allow" })
-```
-
-To support this without duplicating executor internals, `ToolRegistry` should expose a safe helper:
-
-```js
-secureToolCall(toolCall) -> {
-  id,
-  name,
-  params,
-  category,
-  risk_level,
-  side_effect,
-  requested_by_step_id
-}
-```
-
-`ToolExecutor` should use the same helper internally. That keeps category derivation consistent.
-
-## 9. Runtime Changes
-
-`createAgentRuntime()` receives new dependencies:
-
-```js
-pausedTurnStore = createPausedTurnStore()
-grantApprovalForToolCall = null
-```
-
-`send()` behavior:
-
-- If executor loop pauses, runtime saves the paused record before returning.
-- Runtime state becomes `awaiting_approval`.
-- `currentTurnId` is released so the UI can call `approve()` without BUSY.
-- Starting a new `send()` while a paused turn exists should fail with a clear `AWAITING_APPROVAL` error. This avoids confusing two active control flows.
-
-`approve(approvalId, decision)` behavior:
-
-- `approve` becomes async.
-- Unknown approval id returns or throws a clear error.
-- `"approve"` and `"allow"` are accepted as allow decisions.
-- `"deny"` and `"reject"` are accepted as deny decisions.
-- Duplicate approval fails because `take()` removes the record.
-- During resume, runtime sets lifecycle to `execute`.
-- On final completion, runtime runs verifier when edited files were produced, then publishes `agent:final`.
-- On denial, runtime publishes `agent:final` with status `cancelled`.
-
-`interrupt()` behavior:
-
-- Clears active abort controller.
-- Clears paused records.
-- Publishes no stale final events.
-
-## 10. Kernel API and UI Changes
-
-Public Kernel API remains stable:
-
-```js
-kernel.agent.approve(approvalId, decision) -> Promise<Result>
-```
-
-GUI:
-
-- `gui/kernel-host.js` changes `approve()` to async and returns `{ ok: true }` after scheduling/resolving runtime approval.
-- Approval final results continue to arrive through `kernel:event`.
-- Renderer can keep calling `window.deepseek.approve(id, "allow" | "deny")`.
-
-CLI:
-
-- `runKernelAgentCommand()` handles `awaiting_approval` by prompting in-process.
-- On `y`/`yes`/`approve`, call `kernel.agent.approve(approval.id, "approve")`.
-- On anything else, call `kernel.agent.approve(approval.id, "deny")`.
-- Tests inject a prompt function so CLI approval can be tested without TTY.
-
-TUI:
-
-- `sendKernelPrompt()` handles `awaiting_approval` with a minimal prompt.
-- If user approves, call `kernel.agent.approve()`.
-- If user denies, return a cancelled message.
-- Full multi-panel approval UI remains out of scope.
-
-## 11. Error Handling
-
-Required error cases:
-
-- Unknown approval id: `APPROVAL_NOT_FOUND`.
-- Duplicate approval: same as unknown after first take.
-- Approval while another turn is executing: `BUSY`.
-- New send while paused approval exists: `AWAITING_APPROVAL`.
-- Denied approval: deterministic cancelled result, not thrown.
-- Resume tool asks for approval again: store the new approval and return `awaiting_approval`.
-
-## 12. Tests
-
-Unit tests:
-
-- PausedTurnStore save/get/take/delete/duplicate.
-- Executor loop returns resume_state on approval.
-- Resume executor loop executes pending tool after approval.
-- Resume handles remaining tool calls in order.
-- Runtime approve publishes `approval:resolved` and completes.
-- Runtime deny cancels without tool execution.
-- Runtime approval resume runs verifier after edit results.
-- Runtime rejects duplicate approvals.
-- Runtime rejects new send while paused.
-- Interrupt clears paused approvals.
-
-Integration tests:
-
-- `createKernel()` supervised edit pauses, approve applies file, verifier runs, final event publishes.
-- Deny leaves file unchanged and publishes cancelled final.
-- GUI host approve delegates async and emits final once.
-- CLI runner prompts approval and resumes in-process.
-
-Regression tests:
-
-- Query fast path remains unchanged.
-- `approval_required` still returns without writing before approval.
-- Session timeline records requested/resolved/tool/final events.
-- No tests create `.deepseek-code/v2` in the repository root.
-
-## 13. Acceptance Criteria
-
-V2-7 is accepted when:
-
-1. `kernel.agent.send(edit, { autonomy: "supervised" })` returns `awaiting_approval` and does not write.
-2. `kernel.agent.approve(approval.id, "approve")` resumes the same turn and writes through the original tool.
-3. `kernel.agent.approve(approval.id, "deny")` leaves files unchanged and returns cancelled.
-4. Approval resume emits `approval:resolved`, `tool:result`, optional `verification:result`, and `agent:final`.
-5. Duplicate approval is rejected.
-6. New `send()` while a paused approval exists is rejected with `AWAITING_APPROVAL`.
-7. `interrupt()` clears paused approvals.
-8. CLI can approve once in-process and print the final result.
-9. GUI host approval no longer only publishes an event; it resumes runtime.
-10. Full test, syntax check, and whitespace check pass.
-
-## 14. Risks and Mitigations
-
-| Risk | Mitigation |
-|------|------------|
-| Resume bypasses permission checks | Use approval cache and call ToolExecutor again |
-| Paused state grows too complex | Keep V2-7 to one active paused turn; no durable resume |
-| Duplicate approval causes double writes | `take()` removes record before execution |
-| New send interleaves with paused turn | Reject new send while paused approvals exist |
-| Interrupt races with resume | Use existing generation/abort checks and clear paused store |
-| CLI prompt blocks tests | Inject prompt function in CLI runner |
-
-## 15. Future Work
-
-After V2-7:
-
-- Durable approval resume through session replay.
-- Multi-approval queues.
-- Rich diff preview in GUI approval card.
-- Context engine with cache-aware prompt assembly.
-- Usage/observability surfaced in GUI/TUI.
+监督编辑 `send` 返回 `awaiting_approval` 且未写文件；`approve` 续跑同一 turn 并经原工具写入；`deny` 文件不变；事件序列含 resolved / tool / final；重复审批拒绝；暂停中 `send` 拒绝；`interrupt` 清暂停；CLI 可进程内批一次并打印终态。回归入口 `npm test`、`npm run check`。

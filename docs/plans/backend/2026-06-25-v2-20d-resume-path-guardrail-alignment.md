@@ -1,177 +1,54 @@
 # V2-20d resume 路径护栏对齐 Implementation Plan
 
-> 完成状态以 [CHANGELOG](../../CHANGELOG.md) 为准。
+- 类型：实施计划
+- 日期：2026-06-25
+- 状态：已完成
+- 关联：[V2-20a](2026-06-24-v2-20a-runtime-cost-timeout-guardrails.md)、[V2-20b](2026-06-25-v2-20b-guardrail-injection-graceful-stop.md)、[V2-20c](2026-06-25-v2-20c-malformed-toolcall-retry.md)、[V2-20e](2026-06-25-v2-20e-repair-path-model-timeout.md)、[CHANGELOG](../../CHANGELOG.md)
 
-> 承接 V2-20a/b/c;约定沿用(ESM、`node:test`、默认关闭零回归）。
+## 目标
 
-**Goal:** 让审批后续(`approve()` → `resumeExecutorLoop`)与正常工具循环**享有同一套护栏**:成本预算、模型调用超时、畸形 tool-call 重试。当前 `runToolLoopPath` 全部透传,但 `approve()` 的 resume 调用一个都没传,导致审批恢复后的那段执行**裸跑**。
+让审批后续（`approve()` → `resumeExecutorLoop`）与正常工具循环享有同一套护栏：成本预算、模型调用超时、畸形 tool-call 重试。此前 `runToolLoopPath` 全部透传，但 `approve()` 的 resume 调用一个都没传，导致审批恢复后的那段执行裸跑。
 
-**Architecture:** 在 `approve()` 里(`resumeExecutorLoop` 前)新建一个成本预算(取 `resume_state.options` 覆盖 + 工厂配置),把 `budget` / `modelTimeoutMs` / `maxToolCallRepairs` 传入 `resumeExecutorLoop`;并在其后补一个 `status:"stopped"` 终态处理(镜像 `send()`),否则预算停止会错误流入 verify/repair。预算为该 resume 段**新建**(审批暂停是天然边界)。
+## 结果
 
-**Tech Stack:** 现有 `src/core/runtime/agent-runtime.js`、`createCostBudget`(已导入)、`resumeExecutorLoop`(已支持三参与 `stopped` 返回)。
+`approve()` 在 `resumeExecutorLoop` 前新建成本预算（审批暂停是天然边界，故该 resume 段新建而非继承暂停前已花费的 token），并把三参数传入：
 
-## Global Constraints
-
-- 默认关闭:`maxTurnTokens`/`maxModelCalls`/`modelTimeoutMs` 默认 `null`、`maxToolCallRepairs` 默认 `0` → resume 行为不变。
-- 不改 `resumeExecutorLoop`(已具备能力);只改 `approve()` 的调用与终态处理。
-
----
-
-### Task 1: approve() resume 透传护栏 + stopped 终态
-
-**Files:**
-- Modify: `src/core/runtime/agent-runtime.js`
-- Test: `tests/unit/core/runtime/agent-runtime-resume-guardrails.test.js`
-
-**Interfaces:**
-- Consumes:`createCostBudget`(已导入)、工厂级 `maxTurnTokens/maxModelCalls/modelTimeoutMs/maxToolCallRepairs`、`record.resume_state.options`。
-- Produces:`approve()` 在 resume 段创建并传入 `budget`、`modelTimeoutMs`、`maxToolCallRepairs`;`resumeExecutorLoop` 返回 `status:"stopped"` 时,`approve()` 作为 turn 终态返回 `{ status:"stopped", state:"idle", content, turn, budget }` 并发 `agent:final` status=`stopped`。
-
-- [ ] **Step 1: 写失败测试**
-
-创建 `tests/unit/core/runtime/agent-runtime-resume-guardrails.test.js`:
-
-```js
-import test from "node:test";
-import assert from "node:assert/strict";
-import { createAgentRuntime } from "../../../../src/core/runtime/agent-runtime.js";
-
-// 模型每次都要求再调一次工具,以驱动多轮;send 阶段工具需审批,approve 后成功
-function buildRuntime(overrides = {}) {
-  let invokeCount = 0;
-  let approvalConsumed = false;
-  const modelGateway = {
-    invoke: async () => {
-      invokeCount += 1;
-      return {
-        content: "",
-        tool_calls: [{ id: `c${invokeCount}`, type: "function", function: { name: "noop", arguments: "{}" } }],
-        usage: { total_tokens: 1 }
-      };
-    }
-  };
-  const executeTool = async (toolCall) => {
-    if (!approvalConsumed) {
-      approvalConsumed = true;
-      return { call_id: toolCall.id, status: "approval_required", content: [{ type: "text", text: "need ok" }], metadata: { approval: { id: "appr_1" } } };
-    }
-    return { call_id: toolCall.id, status: "success", content: [] };
-  };
-  const runtime = createAgentRuntime({
-    sessionId: "s1",
-    modelGateway,
-    executeTool,
-    toolSchemas: () => [{ type: "function", function: { name: "noop" } }],
-    createPolicyContext: () => ({}),
-    grantApprovalForToolCall: async () => {},
-    ...overrides
-  });
-  return { runtime, invokes: () => invokeCount };
-}
-
-test("approve() resume enforces cost budget and stops the turn", async () => {
-  const { runtime } = buildRuntime({ maxModelCalls: 1 });
-  const paused = await runtime.send("go", { autonomy: "gated" });
-  assert.equal(paused.status, "awaiting_approval");
-
-  const resumed = await runtime.approve("appr_1", "approve");
-  assert.equal(resumed.status, "stopped"); // 预算在 resume 段生效 → 干净停止(而非裸跑/抛错)
+```text
+const resumeOptions = record.resume_state.options || {};
+const budget = createCostBudget({
+  maxTokens: resumeOptions.maxTurnTokens ?? maxTurnTokens,
+  maxModelCalls: resumeOptions.maxModelCalls ?? maxModelCalls
+});
+const loop = await resumeExecutorLoop({
+  resumeState: record.resume_state,
+  modelGateway, executeTool, createPolicyContext, eventBus,
+  signal: currentAbortController.signal,
+  budget,
+  modelTimeoutMs: resumeOptions.modelTimeoutMs ?? modelTimeoutMs,
+  maxToolCallRepairs: resumeOptions.maxToolCallRepairs ?? maxToolCallRepairs
 });
 ```
 
-- [ ] **Step 2: 运行测试,确认失败**
+补 stopped 终态处理（镜像 send，插在 `awaiting_approval` 分支之后、repair-phase approval 之前）：
 
-Run: `node --test tests/unit/core/runtime/agent-runtime-resume-guardrails.test.js`
-Expected: FAIL —— 当前 resume 不带 budget,会一路 invoke 到 `maximum tool iterations exceeded` 抛错,而非返回 `stopped`。
-
-- [ ] **Step 3: 实现 —— 在 approve() 创建预算并透传**
-
-在 `src/core/runtime/agent-runtime.js` 的 `approve()` 里,把:
-
-```js
-      const loop = await resumeExecutorLoop({
-        resumeState: record.resume_state,
-        modelGateway,
-        executeTool,
-        createPolicyContext: ({ turnId, toolCall, phase }) => createPolicyContext({
-          ...(record.resume_state.options || {}),
-          autonomy: record.turn.autonomy,
-          turnId,
-          toolCall,
-          phase
-        }),
-        eventBus,
-        signal: currentAbortController.signal
-      });
+```text
+if (loop.status === "stopped") {
+  const stoppedTurn = setTurnStatus(record.turn, "completed");
+  publish(eventBus, "agent:final", { turn_id: record.turn_id, content: loop.content, status: "stopped" });
+  lifecycle = transitionLifecycle(lifecycle, { to: "idle", reason: "cost budget stop", channel: null });
+  currentTurnId = null; currentAbortController = null;
+  return { status: "stopped", state: "idle", content: loop.content, turn: stoppedTurn, budget: loop.reason || null };
+}
 ```
 
-替换为:
+## 关键决策 / 遗留约束
 
-```js
-      const resumeOptions = record.resume_state.options || {};
-      const budget = createCostBudget({
-        maxTokens: resumeOptions.maxTurnTokens ?? maxTurnTokens,
-        maxModelCalls: resumeOptions.maxModelCalls ?? maxModelCalls
-      });
-      const loop = await resumeExecutorLoop({
-        resumeState: record.resume_state,
-        modelGateway,
-        executeTool,
-        createPolicyContext: ({ turnId, toolCall, phase }) => createPolicyContext({
-          ...resumeOptions,
-          autonomy: record.turn.autonomy,
-          turnId,
-          toolCall,
-          phase
-        }),
-        eventBus,
-        signal: currentAbortController.signal,
-        budget,
-        modelTimeoutMs: resumeOptions.modelTimeoutMs ?? modelTimeoutMs,
-        maxToolCallRepairs: resumeOptions.maxToolCallRepairs ?? maxToolCallRepairs
-      });
-```
+- 预算为 resume 段新建，不继承暂停前已花费的 token。审批暂停是天然边界，够用。若日后要严格累计，可在 pause 时把 `budget.snapshot()` 写进 `resume_state` 并在此恢复，单列后续。
+- 默认关闭（`maxTurnTokens` / `maxModelCalls` / `modelTimeoutMs` 为 `null`、`maxToolCallRepairs` 默认 0）时 resume 行为不变。
+- 不改 `resumeExecutorLoop` 本身（已支持三参与 `stopped` 返回）；只改 `approve()` 调用与终态处理。
+- `resume_state.options` 可覆盖工厂级配置，与 `createPolicyContext` 的展开语义一致。
+- 至此正常路径与审批 resume 路径护栏一致。repair-context 子路径（`runRepairLoop`）的预算透传仍未覆盖，由 v1.6.1 补齐；超时透传由 V2-20e 补齐。
 
-- [ ] **Step 4: 实现 —— 补 stopped 终态处理**
+## 验证
 
-紧接 `approve()` 里 `if (loop.status === "awaiting_approval") { ... }` 块之后(在 `// Repair-phase approval:` 注释之前)插入:
-
-```js
-      if (loop.status === "stopped") {
-        const stoppedTurn = setTurnStatus(record.turn, "completed");
-        publish(eventBus, "agent:final", { turn_id: record.turn_id, content: loop.content, status: "stopped" });
-        lifecycle = transitionLifecycle(lifecycle, { to: "idle", reason: "cost budget stop", channel: null });
-        currentTurnId = null;
-        currentAbortController = null;
-        return { status: "stopped", state: "idle", content: loop.content, turn: stoppedTurn, budget: loop.reason || null };
-      }
-```
-
-- [ ] **Step 5: 运行测试 + 回归 + 语法检查**
-
-Run: `node --test tests/unit/core/runtime/agent-runtime-resume-guardrails.test.js`
-Expected: PASS。
-Run: `node --test tests/unit/core/runtime/*.test.js tests/unit/core/execution/*.test.js`
-Expected: PASS(无回归;既有审批 resume 测试仍绿)。
-Run: `npm test`
-Expected: 全绿。
-Run: `npm run check`
-Expected: 退出码 0。
-
-- [ ] **Step 6: 提交**
-
-```bash
-git add src/core/runtime/agent-runtime.js tests/unit/core/runtime/agent-runtime-resume-guardrails.test.js
-git commit -m "feat(runtime): apply cost/timeout/tool-repair guardrails to approval resume
-
-```
-
----
-
-## 范围说明与后续
-
-- 预算为 resume 段**新建**(不继承暂停前已花费的 token);审批暂停是天然边界,够用。若日后要严格累计,可在 pause 时把 `budget.snapshot()` 写进 `resume_state` 并在此处恢复 —— 单列后续。
-- 至此正常路径与审批 resume 路径**护栏一致**。repair-context 子路径(`runRepairLoop`)的预算透传仍未覆盖,可单列「V2-20e:repair-loop 预算对齐」。
-- 仍属 Phase A 的较大项:**V2-19**(删 V1 legacy)、**V2-18 收口**(worktree 合并 + `/recovery` CLI)。
-
-> 依据:[V3 路线图 §5](../../specs/architecture/2026-06-24-v3-roadmap-design.md);承接 V2-20a/b/c。
+`tests/unit/core/runtime/agent-runtime-resume-guardrails.test.js` 断言 `maxModelCalls: 1` 时 approve 返回 `stopped`（而非一路 invoke 到 `maximum tool iterations exceeded` 抛错）。测试构造：模型每次要求再调工具驱动多轮，send 阶段工具需审批，approve 后成功；fake gateway 记 invoke 次数，fake executeTool 第一次返回 `approval_required` 带 `metadata.approval.id`，之后 success。`tests/unit/core/runtime/*.test.js`、`tests/unit/core/execution/*.test.js` 无回归，既有审批 resume 测试仍绿。`npm test` + `npm run check`。当前实现在 `src/core/runtime/agent-runtime.js` 的 `approve()`。

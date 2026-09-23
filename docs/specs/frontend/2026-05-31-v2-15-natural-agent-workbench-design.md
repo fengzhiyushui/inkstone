@@ -1,216 +1,77 @@
-# V2-15 Natural Agent Workbench Design
+# V2-15 自然 Agent 工作台
 
-## Objective
+- 类型：前端 spec
+- 日期：2026-05-31
+- 状态：已完成
+- 关联：[V2-14 工作台刷新](2026-05-31-v2-14-gui-workbench-branch-rewind-design.md) · [V2-16 交互加固](2026-05-31-v2-16-gui-interaction-hardening-design.md)
 
-Redesign the Electron GUI into a natural local-agent workbench rather than a dressed-up three-column dashboard. The UI should feel closer to modern AI coding tools: Codex/Claude Code for readable agent execution, Cursor/Trae for IDE-like side context, and Kiro for structured engineering artifacts such as specs, checkpoints, branches, and recovery.
+## 问题与目标
 
-The existing three-region mental model remains, but it becomes a more natural workbench contract:
+把 Electron GUI 从三栏仪表盘感改成更接近现代 AI 编程工具的本地 agent 工作台。保留分区心智，形态改为窄 activity rail、可折叠上下文栏、中央 agent 会话、右侧上下文 inspector、底部 statusline。首屏即可用，用户始终知道 agent 在做什么、是否要审批、在哪个分支/检查点、缓存与用量、能否回退、kernel 健康与否。
 
-- a narrow activity rail for mode switching,
-- a collapsible context panel for branch/context/usage,
-- a primary agent session in the center,
-- a contextual inspector on the right,
-- a bottom statusline for runtime facts.
+## 决策
 
-## Research Basis
+| 选了什么 | 否决了什么 | 为什么 |
+|---|---|---|
+| 顶栏 command/status + 左 rail + 可折叠 context + 中央会话 + 右 inspector + 底 statusline | 旧的大号 per-pane 标题 | 朝向 IDE/agent 工具密度 |
+| 双主题（Night Workbench / Day Review）共用语义 token | 组件绑裸色 | 主题可换、对比可测 |
+| 单一 traffic-light 状态簇 + 旁路文字 | 散布多灯 | 状态一眼定位，不靠颜色单独表意 |
+| 事件按选中对象切换 inspector | 固定 inspector | 风险操作自动聚焦 |
+| 首屏即工作台 | landing/hero | 本地工具 |
 
-This design uses current UI research and official design-system guidance:
+设计参考 Carbon / Atlassian color、VS Code theme-color、Material color roles、WCAG 对比度（正文 4.5:1，图形 3:1）。
 
-- Carbon Design System color guidance (https://carbondesignsystem.com/elements/color/overview/): tokens make color reusable at scale, dark themes should use layer-aware surfaces, and dark layers become lighter as they rise.
-- Atlassian color foundations (https://atlassian.design/foundations/color/): token names should reflect UI intent, and light/dark values should be theme-compliant behind the same semantic token.
-- VS Code theme color reference (https://code.visualstudio.com/api/references/theme-color): IDE workbenches need layer-specific colors for activity bars, side bars, editors, panels, lists, focus, selection, badges, input, and diff states.
-- Material color role guidance (https://m3.material.io/styles/color/roles): separate accent roles, surface roles, outline roles, and error roles instead of binding components to raw colors.
-- WCAG contrast guidance (https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html): normal text contrast should meet 4.5:1, large text and graphical indicators should meet 3:1, and state must not rely on color alone.
-- Local skills: `frontend-workbench-design`, `ui-ux-pro-max`, and the new `color-system-design` skill.
+## 设计
 
-## Product Frame
+顶栏：左侧产品/会话身份与工作区，中部当前任务或检查点摘要，右侧模型/autonomy、traffic 簇、刷新。
 
-This is an agentic IDE surface. The first screen should be usable immediately, not a landing page. Users should always know:
+Activity rail（图标优先，均有可访问名）：Chat、Context、Branches、Timeline、Settings。点击切换 context 面板模式。rail 不做第二指标列。
 
-- what the agent is doing,
-- whether it needs approval,
-- which branch/checkpoint they are on,
-- what context/cache/usage looks like,
-- what changed and whether it can be rewound,
-- whether the kernel is healthy, degraded, or offline.
+Context 面板默认 280px，可折叠为 rail；窄屏变抽屉。Chat 模式显示 active branch、紧凑指标、审批摘要；Context 显示索引/缓存健康；Branches 列分支与激活标记；Timeline 列近期事件；Settings 管主题与运行偏好。
 
-The UI should feel calm, technical, and durable. Avoid decorative hero sections, marketing composition, animated blobs, heavy gradients, and card piles.
+主会话区：紧凑空态、消息转录、按回合分组的工具事件、审批提示、验证/修复摘要、常驻 composer。转录读作执行日志加对话，工具/diff/验证/修复可扫读。
 
-## Layout Contract
+Inspector 随选中变化：事件详情、检查点回退预览、审批风险详情、分支祖先/检查点、无选中时近期活动与健康。审批与回退自动聚焦 inspector。
 
-### Top Command Bar
+Statusline：runtime、active branch、autonomy、审批态、tokens、cache hit、平均延迟、请求数、dirty/degraded/offline。只放持久事实。
 
-The top row is a compact command/status bar:
+双主题 token 组：
 
-- left: product/session identity and current workspace label,
-- center: current task or selected checkpoint summary,
-- right: model/autonomy, one traffic-light status cluster, and quick refresh.
+| 组 | 槽 |
+|---|---|
+| 背景 | app / rail / panel / main / elevated / inset |
+| 文字 | primary / secondary / muted / inverse |
+| 描边 | subtle / strong / focus / selection |
+| accent | primary / hover / soft |
+| 语义 | success / warning / danger / info / offline |
+| agent | traffic-ready / traffic-working / traffic-error / traffic-offline |
+| code/diff | code 背景、增删背景与描边 |
 
-This replaces the old large per-pane headers as the primary orientation surface.
+Night 默认深色（ink/slate 表面，蓝/青 accent）；Day 为截图与日光审查用浅色。组件只引用 token，裸 hex 只在主题声明里。
 
-### Activity Rail
+Traffic 状态映射：绿=ready/complete/clean/connected；黄=working/awaiting approval/verifying/degraded；红=error/denied/rollback conflict/unsafe；灰=idle/offline/unavailable。灯旁总有文字。
 
-A narrow rail sits on the far left, similar to IDE activity bars:
+交互：rail 切模式；context 可折叠并会话内记忆；选分支载检查点；选检查点开回退预览；审批/错误切 inspector；主题切 `data-theme`；动态内容 `textContent`。
 
-- Chat,
-- Context,
-- Branches,
-- Timeline,
-- Settings.
+响应式：`≥1200` 四区全开；`900–1199` inspector 变 slide-over；`≤760` rail 变顶部分段导航，context/inspector 变抽屉。任何断点不得藏 composer、traffic 文字、runtime/branch 事实。
 
-It is icon-first but every button must have an accessible label. The rail should not become another metrics column.
+可访问性：全控件可见焦点；图标按钮 `aria-label`；状态灯旁有文字；双主题对比可查；风险操作有标签与确认/预览。
 
-### Collapsible Context Panel
+## 边界与不变量
 
-The panel next to the rail shows the active rail mode:
+- 不改 V2 runtime、审批语义、回退语义、上下文缓存、会话存储。
+- 主要改动文件：`gui/renderer/index.html`、`style.css`、`app.js`、`workbench-state.js`、`tests/unit/gui/*`。
+- 动态渲染禁止不安全 `innerHTML`。
+- 旧 V2-14/V2-frontend 假设由本布局契约整体替换，不只是抛光。
 
-- Chat mode: active branch, compact metrics, approval summary.
-- Context mode: indexed context/cache health.
-- Branches mode: branch list and active marker.
-- Timeline mode: recent events.
-- Settings mode: theme and runtime preferences.
+## 与现状的差异
 
-Desktop default width: 280px. It can collapse to rail-only. At narrow widths it becomes a drawer.
+V3 起 GUI 迁 React，本篇的分区契约被 [D-1](2026-06-27-v3-phase-d1-gui-react-shell-design.md) 与 [v1.4.0](2026-07-28-v1.4.0-frontend-redesign-design.md) 继承改造。双主题 token 与 traffic 语义在后续演进为主题 id 与 status 簇。
 
-### Primary Agent Session
+## 验收
 
-The center is the main work surface:
-
-- compact empty state,
-- message transcript,
-- grouped tool events per turn,
-- approval prompt when needed,
-- verification/repair summaries,
-- persistent composer.
-
-The transcript should read like an execution log plus conversation, not like a generic chat app. Tool output, diffs, verification, and repair should be visually grouped and scannable.
-
-### Contextual Inspector
-
-The right inspector changes with selection:
-
-- selected event: event details,
-- selected checkpoint: preview and rewind actions,
-- approval needed: approval details and risk,
-- branch selected: branch ancestry/checkpoints,
-- no selection: recent activity and health.
-
-Approval and rewind actions should autofocus this inspector because they are risk-bearing.
-
-### Bottom Statusline
-
-The bottom line is Claude Code / IDE-like:
-
-- runtime,
-- active branch,
-- autonomy,
-- approval state,
-- tokens,
-- cache hit,
-- average latency,
-- request count,
-- dirty/clean or degraded/offline.
-
-This statusline is for persistent facts, not verbose help text.
-
-## Two-Theme Color System
-
-The GUI must support two complete themes via semantic tokens:
-
-1. **Night Workbench**: default dark theme for long coding sessions.
-2. **Day Review**: light theme for screenshots, daylight use, and review.
-
-Both themes use identical token names. Components only reference tokens; raw hex values belong in theme declarations.
-
-Required token groups:
-
-- backgrounds: app, rail, panel, main, elevated, inset,
-- text: primary, secondary, muted, inverse,
-- borders: subtle, strong, focus, selection,
-- accent: primary, hover, soft,
-- semantic: success, warning, danger, info, offline,
-- agent: traffic-ready, traffic-working, traffic-error, traffic-offline,
-- code/diff: code background, diff add/remove backgrounds and borders.
-
-The default palette direction:
-
-- Night Workbench: ink/slate surfaces, blue/cyan accent, restrained green/yellow/red status.
-- Day Review: cool off-white base, white panels, slate text, same accent family, darker status colors for contrast.
-
-## Traffic-Light Mechanism
-
-Use one primary traffic-light status cluster, placed in the top command bar and echoed textually in the statusline. Do not add many scattered lights.
-
-State mapping:
-
-- Green: ready, complete, clean, connected.
-- Yellow: working, awaiting approval, verifying, degraded.
-- Red: error, denied, rollback conflict, unsafe.
-- Gray: idle without active session, offline, unavailable.
-
-The light always has adjacent text such as `Ready`, `Working`, `Approval`, `Error`, or `Offline`. Color is never the only cue.
-
-## Interaction Model
-
-- Rail button click changes the context panel mode.
-- Context panel can collapse and persist in memory for the session.
-- Selecting a branch loads branch checkpoints.
-- Selecting a checkpoint opens the inspector rewind preview.
-- Approval events switch inspector mode to approval.
-- Error/conflict events switch inspector mode to details.
-- Theme toggle changes `data-theme` on the root and updates persisted renderer preference if the bridge supports it; otherwise it remains session-local.
-- All dynamic model/user content uses `textContent`, not `innerHTML`.
-
-## Responsive Behavior
-
-- Desktop >= 1200px: rail + context panel + agent session + inspector.
-- Medium 900-1199px: inspector becomes a slide-over/drawer, context panel remains.
-- Compact <= 760px: rail becomes top segmented navigation, context and inspector are drawers, center transcript/composer stay primary.
-
-No breakpoint may hide the composer, traffic-light label, or current runtime/branch facts.
-
-## Accessibility
-
-- Keyboard focus must be visible on every rail item, tab, branch, checkpoint, approval, rewind, theme, and composer control.
-- Icon-only controls require `aria-label`.
-- Status lights require adjacent visible text.
-- Theme contrast must be checked for both themes.
-- Risk actions use labels and confirmation/preview, not color alone.
-
-## Implementation Boundaries
-
-Do not change V2 runtime behavior, approval semantics, rewind semantics, context cache, or session storage. Work primarily in:
-
-- `gui/renderer/index.html`
-- `gui/renderer/style.css`
-- `gui/renderer/app.js`
-- `gui/renderer/workbench-state.js`
-- `tests/unit/gui/*`
-
-Only touch preload/host if the renderer needs a small already-supported delegate or preference hook.
-
-## Verification
-
-Automated:
-
-- Static tests for required layout regions, rail, command bar, statusline, theme tokens, and traffic-light label.
-- State tests for rail mode, panel collapse, inspector context, theme switching, and traffic tone.
-- Tests forbidding unsafe `innerHTML` rendering.
-- `npm.cmd test`
-- `npm.cmd run check`
-- `git diff --check`
-
-Visual:
-
-- Screenshot 1440x900 Night Workbench with mock transcript, metrics, branches, and rewind.
-- Screenshot 1440x900 Day Review with same data.
-- Screenshot 1020x760 medium layout.
-- Screenshot 720x760 compact layout.
-- Inspect for blank regions, overlap, hidden composer, unreadable text, noisy color, and broken status visibility.
-
-## Known Risks
-
-- The current renderer is plain HTML/CSS/JS; keep the refactor modular without introducing a framework.
-- Visual QA depends on local Chrome/Electron availability.
-- The old V2-14/V2-frontend redesign files may contain partial three-column assumptions; implementation must replace them with this layout contract rather than merely polishing them.
-- Theme preference persistence may need a later small IPC addition if local renderer-only preference is not enough.
+- 静态测试覆盖布局区、rail、command bar、statusline、主题 token、traffic 文案。
+- 状态测试覆盖 rail 模式、面板折叠、inspector 上下文、主题切换、traffic tone。
+- 禁止不安全 `innerHTML`。
+- 截图 1440×900 Night/Day、1020×760、720×760：composer 不隐藏，状态可读，无空白区/重叠/噪色。
+- `npm.cmd test` / `npm.cmd run check` / `git diff --check` 通过。

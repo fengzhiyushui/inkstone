@@ -1,17 +1,28 @@
 # Changelog
 
-本文件记录 Inkstone 的版本演进。**自 v1.0.0 起采用[语义化版本](https://semver.org/lang/zh-CN/)** `major.minor.patch`,命名规则与升级判定见 [`docs/README.md` 版本命名规则](README.md#版本命名规则)。
+本文件记录 Inkstone 的版本演进。自 **v1.0.0** 起采用[语义化版本](https://semver.org/lang/zh-CN/) `major.minor.patch`，判定规则见 [`docs/README.md` 版本命名规则](README.md#版本命名规则)。
 
-维护约定:
-- **每个大版本(major)**给出该版本交付能力的**总结**;其下每个**小版本(minor)/ 补丁(patch)**各追加一条**简要日志**。
-- **大版本收官后仅保留其能力总结**,不保留内部里程碑级细节——细节见 [`docs/specs/`](specs/) · [`docs/plans/`](plans/) 与 git 历史。
-- 文档更新顺序见 [`docs/README.md` 文档维护规范](README.md#文档维护规范与更新顺序):代码 → specs/plans → project-overview → **本文件** → README(中+英)→ 索引。
+维护约定：大版本（major）写能力总结；其下 minor / patch 各一条简要日志。大版本收官后只保留能力总结，细节看 [`docs/specs/`](specs/)、[`docs/plans/`](plans/) 与 git 历史。文档更新顺序见 [`docs/README.md`](README.md#文档维护顺序)：代码 → specs/plans → project-overview → 本文件 → 索引。
+
+发布版本号以 [`package.json`](../package.json) 为准；`package.json` / `package-lock.json` / `src/theme.js` / `gui/src/App.jsx` 四处应一致。
 
 ---
 
 ## [Unreleased]
 
-> 下一个补丁 / 小版本的变更在此累积;发布时按[版本命名规则](README.md#版本命名规则)定级、移入带版本号的小节。
+下一个补丁 / 小版本的变更在此累积；发布时按版本规则定级并移入带版本号小节。
+
+---
+
+## v1.8.7 — 2026-09-23 · 文档全量重写与原型存档清理
+
+> 补丁：对照当前代码重写 `docs/` 全部 Markdown，压缩历史实施计划，删除 `docs/prototypes/`；版本号四处对齐 1.8.7。不改功能面。
+
+- **docs 全量重写**（约 2.7MB → 0.58MB）：顶层 `README` / `DEPLOYMENT_AND_USAGE` / `project-overview` / 本文件结构与事实校准；`specs/**` 40 篇统一元信息头与「问题/决策/设计/边界/验收」骨架；`plans/**` 历史计划收成「目标/结果/关键决策/验证」摘要。配置默认值、15 个内置工具、约 65 类会话事件对齐 `src/`。
+- **去 AI 腔与压缩**：清理翻案腔、空转冒号、起手式等；历史 plan 去掉逐步 checkbox 流水。
+- **清理 `docs/prototypes/`**：删除 v1.4 设计稿、v1.8 截图基线、`DeepSeekCodeIDE.jsx`、`preview-deepseek-code/`（含依赖残留）；文档引用改为「已清理」。
+- **删除过时计划**：`future-gui-deepseek-code-ide-redesign`、`gui-frontend-optimization-plan`（被 v1.8 现役壳层取代）。
+- **版本四处同步**：`package.json` / `package-lock.json` / `src/theme.js` / `gui/src/App.jsx` → `1.8.7`。
 
 ---
 
@@ -117,14 +128,8 @@
 - **壳层视觉层(P1)**:新增主题中枢 `theme-hub.js`(同组轮换 / 跨模式切换 / 退役 id 归一);标题栏去硬编码色(4 处 `#8884` → `color-mix`、关闭键 → `--err`、下拉阴影令牌化);composer 聚焦柔光;浮层玻璃态(`glass` 偏好 + `[glass="on"]`,冒烟经 `?smoke=1` 强制关);`.sn-*` 模糊 2px → 6px 并补通用模态壳。
 - **卡片两段式与推理摘要卡(P2)**:卡片头由 `div` 改 `<button type="button">`(a11y 欠账);工具卡显示真实耗时(`event-contract` 的 `tool-result` 新增 `durationMs`);审批卡按决策染色(`data-decision`);新增推理摘要卡(`model:response` → quiet 的 `thought` 描述符,门控:仅 `purpose`/`reasoningTokens` 存在时出卡)。
 - **设置 › 外观 ThemeHub(P2)**:四段分组网格 + 选中卡下方运行时实测色板(5 槽 hex、点击复制、正文对比度)+ 玻璃开关。
-- **收口(P3)**:冒烟截图基线入库 `docs/prototypes/v1.8.0-ergo-restyle/screenshots/`(`sumi-*` / `paper-*` 各 9 张);版本同步为 `1.8.0`;死钩子清扫(`.seg.click`、`.c-src.man`、`.mv-card .demo .t/.cs`、`settings.theme.night|day`、冒烟中设置页静默失败的 Rail 点击)。
+- **收口(P3)**:冒烟截图基线曾入库 `docs/prototypes/v1.8.0-ergo-restyle/screenshots/`(`sumi-*` / `paper-*` 各 9 张；现已清理);版本同步为 `1.8.0`;死钩子清扫(`.seg.click`、`.c-src.man`、`.mv-card .demo .t/.cs`、`settings.theme.night|day`、冒烟中设置页静默失败的 Rail 点击)。
 - 全量回归 **1107 单测** + `npm run check` + renderer build + gui-smoke(`GUI_SMOKE_READY`)通过。
-
----
-
-## [Unreleased]
-
-> 下一个补丁 / 小版本的变更在此累积;发布时按[版本命名规则](README.md#版本命名规则)定级、移入带版本号的小节。
 
 ---
 
@@ -135,7 +140,7 @@
 - **agent 回复从不进消息流**:`workbench-state` 的 `event_received` 不处理 `agent:final`,`messages` 只在用户发送时写入,`ChatView` 的 `.a-msg` 分支自 v1.4.6 起从未渲染过。现 `agent:final` 追加 `{ role:"assistant", text }`(空 content 不追加;stopped 也入流)。
 - **状态行数据首屏一次永不刷新**:`getUsage` / `listCheckpoints` 只在挂载时拉一次。现新增纯函数 `refreshLoadsFor(eventType)`,在 `agent:final / agent:error / turn:cancelled / file:rollback_applied` 后重拉两项(不在 model:*/tool:* 上刷,避免每回合十几次 IPC)。
 - **敏感文件模态引用 7 个不存在的 CSS 变量**(v1.7.0 引入):`--bg/--bg-1/--bg-2/--bg-3/--fg-1/--mut/--bdr` 在任何样式表中均无定义,红色提醒模态在所有主题下底色透明、文字无色。按语义映射到 `tokens.css` 18 槽修正;新增 `css-vars.test.js` 通用守卫——`shell.css`/`theme.css` 里任何 `var(--x)` 引用未定义槽位即红。实测守卫列出 10 处 `var()` 引用(覆盖 8 个行号;719 行含 `--bdr/--bg-2/--fg-1` 三处),全部落在方案映射表内,无表外同类 bug。
-- **v1.7.0 承诺的模态冒烟截图补上**:smoke 链新增 `shell-sensitive-notice` 一景(主进程 push 构造事件,走与内核相同的 `kernel:event` 通道),截图入库 `docs/prototypes/v1.8.0-ergo-restyle/screenshots/`。
+- **v1.7.0 承诺的模态冒烟截图补上**:smoke 链新增 `shell-sensitive-notice` 一景(主进程 push 构造事件,走与内核相同的 `kernel:event` 通道),截图曾入库 `docs/prototypes/v1.8.0-ergo-restyle/screenshots/`(现已清理)。
 - 版本同步为 `1.7.2`(四处);全量回归 **1089 单测** + `npm run check` + renderer build + gui-smoke 通过。
 
 ---
@@ -190,12 +195,12 @@
 
 > v1.6 挂账清零第三片。#10(agent-runtime 可维护性)的**阶段 1–2 only** —— 按维护者 2026-08-09 决定,**本轮不改任何实现**,只补行为刻画与边界分析,供定级再议。
 
-- **阶段 1 · 行为刻画测试(characterization)**:新增 [`tests/unit/core/runtime/agent-runtime-characterization.test.js`](../../tests/unit/core/runtime/agent-runtime-characterization.test.js) 共 7 条,锁住:
+- **阶段 1 · 行为刻画测试(characterization)**:新增 [`tests/unit/core/runtime/agent-runtime-characterization.test.js`](../tests/unit/core/runtime/agent-runtime-characterization.test.js) 共 7 条,锁住:
   - 完整回合的**精确事件发布顺序**(此前测试全是 `events.some(...)` 集合式断言,无顺序断言);
   - 四条审批恢复分支(普通工具 / 主验证器 / 修复期工具 / 修复期验证器)各自的暂停-续跑事件序列与终态;
   - 错误语义的**精确 `code` 与 `message`**(`APPROVAL_NOT_FOUND` / `AWAITING_APPROVAL`)。
   - **变异验证已实际执行**(验收标准,非走过场):改错误码 → 错误语义用例红;交换两个事件发布顺序 → 5 条顺序用例全红。两次变异后均已还原。
-- **阶段 2 · 职责/依赖边界分析**:交付 [`docs/specs/backend/2026-08-09-v1.6.3-agent-runtime-refactor-design.md`](../../docs/specs/backend/2026-08-09-v1.6.3-agent-runtime-refactor-design.md) —— 当前 1160 行结构的功能分区表、四条恢复分支「暂停-保存-清理」样板的重复点(带行号)、纯函数 vs 副作用分离清单、阶段 3–4 候选方案与风险。
+- **阶段 2 · 职责/依赖边界分析**:交付 [`specs/backend/2026-08-09-v1.6.3-agent-runtime-refactor-design.md`](specs/backend/2026-08-09-v1.6.3-agent-runtime-refactor-design.md) —— 当前 1160 行结构的功能分区表、四条恢复分支「暂停-保存-清理」样板的重复点(带行号)、纯函数 vs 副作用分离清单、阶段 3–4 候选方案与风险。
 - **定级再议**:阶段 3–4(真正的重构)未开工,是否立项、按补丁还是大版本、范围多大,由维护者在读完边界分析后决定。
 - 版本同步为 `1.6.3`(四处);全量回归 **1035 单测** + `npm run check` + renderer build 通过。
 
@@ -267,7 +272,7 @@
   **TUI 对齐**:启动首页菱形品牌行(版本/模型/档位/shell/主题 meta)+ 最近会话列表,状态行加 `th:` 主题标签。
   全量回归 1006 单测 + e2e ×4 通过;GUI 冒烟截图随 smoke 落 `gui/__screenshots__/`。
 - **v1.4.7 前端收口(feat/v1.4 分支)**:侧栏可收放 —— Rail 272px⇄52px 图标轨,`Ctrl/⌘+B` 切换、偏好 `railCollapsed` 持久化,折叠态仅保留功能区图标与页脚「展开/设置」两钮;恢复 `DiffView.jsx` 修复 renderer 构建断裂;补齐 `Ctrl/⌘+N` 新建会话;修复 Rail 分区折叠、首页 busy 中断键、标题栏明暗主题图标(改按 `themes.js` group 判定)三处交互问题;设置页全窗化(不再与 Rail 并列,顶部新增「返回/关闭」按钮,返回原视图),窄窗口菜单栏消失修复(≤900px 时 Rail 改为强制 52px 图标轨而非隐藏);构建与测试加固(renderer-dist 门控、Electron 冒烟截图预算兜底),截图复核 8 视图全绿(修复 smoke 设置截图选错按钮、窄屏折叠偏好残留 52px 空列、改动时间原始 ISO 显示),全量回归 1012 单测 + `npm run check` + renderer build + Electron 冒烟通过。
-- **v1.4.0 前端界面重设计(已实现,`feat/v1.4` 分支)**:GUI/TUI 界面全部重做,按 [`plans/frontend/2026-07-31-v1.4.0-frontend-redesign-plan.md`](plans/frontend/2026-07-31-v1.4.0-frontend-redesign-plan.md) 的 P0–P4 落地。**设计定稿**(五轮 HTML 稿,终稿 = [`prototypes/v1.4.0-redesign/v4/`](prototypes/v1.4.0-redesign/v4/)):**10 套主题**(3 浅 7 深,色值取自 Flexoki/Rosé Pine/Catppuccin/Kanagawa/Tokyo Night/Nord/Everforest/Gruvbox Material 官方定义源,WCAG 110 项校验全过,默认 `sumi` 墨)——GUI `tokens.css` 单源 + 设置页外观 10 主题网格,TUI 经 `gen-tui-theme` 生成 xterm-256 调色板 + `/theme`。**GUI 会话优先布局**:rail 功能区(主页/项目/改动/MCP/插件)+ 每项目独立分区(内挂该项目会话,新建会话继承项目目录)+ 独立对话;七视图路由;`.cz-meta` 指标 5 形态(文字/数值/进度条/点阵/关闭)+ 全中文「状态显示」设置组;全局项目 MRU + 会话枚举(kernel 零改动)。**TUI**:opencode 式启动首页(垂直居中/单行 meta/最近会话)+ `/theme` + `/shell`(pwsh/powershell/cmd/git-bash)。
+- **v1.4.0 前端界面重设计(已实现,`feat/v1.4` 分支)**:GUI/TUI 界面全部重做,按 [`plans/frontend/2026-07-31-v1.4.0-frontend-redesign-plan.md`](plans/frontend/2026-07-31-v1.4.0-frontend-redesign-plan.md) 的 P0–P4 落地。**设计定稿**(五轮 HTML 稿,终稿曾存 `prototypes/v1.4.0-redesign/v4/`,现已清理;结论见 [spec](specs/frontend/2026-07-28-v1.4.0-frontend-redesign-design.md)):**10 套主题**(3 浅 7 深,色值取自 Flexoki/Rosé Pine/Catppuccin/Kanagawa/Tokyo Night/Nord/Everforest/Gruvbox Material 官方定义源,WCAG 110 项校验全过,默认 `sumi` 墨)——GUI `tokens.css` 单源 + 设置页外观 10 主题网格,TUI 经 `gen-tui-theme` 生成 xterm-256 调色板 + `/theme`。**GUI 会话优先布局**:rail 功能区(主页/项目/改动/MCP/插件)+ 每项目独立分区(内挂该项目会话,新建会话继承项目目录)+ 独立对话;七视图路由;`.cz-meta` 指标 5 形态(文字/数值/进度条/点阵/关闭)+ 全中文「状态显示」设置组;全局项目 MRU + 会话枚举(kernel 零改动)。**TUI**:opencode 式启动首页(垂直居中/单行 meta/最近会话)+ `/theme` + `/shell`(pwsh/powershell/cmd/git-bash)。
 
 **已挂账(待立项,方案见 [`specs/backend/2026-07-12-agent-findings-remediation.md`](specs/backend/2026-07-12-agent-findings-remediation.md)):** 明文变更记录脱敏方案(#9.3,需独立 design)、`agent-runtime.js` 可维护性重构(#10)。
 

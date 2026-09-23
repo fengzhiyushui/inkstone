@@ -1,388 +1,80 @@
-# V2-12 Branching Conversation Rewind Design
+# V2-12 分支对话 Rewind 设计
 
-> Status: heavy-route design selected
-> Date: 2026-05-31
-> Scope: branch-aware session timeline, checkpoint manifest, rewind preview/apply, and active-branch continuation
+- 类型：后端 spec
+- 日期：2026-05-31
+- 状态：已实现
+- 关联：[V2-11 事务编辑](2026-05-31-v2-11-transactional-edit-dirty-workspace-design.md) · [V2-13 rewind 加固](2026-05-31-v2-13-rewind-hardening-recovery-design.md)
 
-## 1. Purpose
+---
 
-V2-11 made file edits safe enough to use as a foundation for conversation-level rewind. V2-12 adds the missing session semantics: selecting an earlier timeline node should not merely undo files. It should create a new conversation branch, restore the workspace to the selected node, and make all future turns continue on that new branch while the old branch remains inspectable.
+## 问题与目标
 
-This is the heavy route. The project should model rewind as a branch/fork operation, not as destructive timeline deletion.
+选中更早时间线节点不能只回滚文件，还要开出新对话分支、把工作区恢复到该节点，后续 turn 在新分支继续，旧分支仍可查看。V2-12 采用分支/fork 模型，不做破坏性时间线删除。
 
-## 2. Goals
+## 决策
 
-1. Add durable branch metadata for V2 sessions.
-2. Mark every new event with a `branch_id`.
-3. Track an active branch for each session.
-4. Build checkpoints from the append-only event log.
-5. Support rewind preview to a target event, sequence, or turn.
-6. Support rewind apply that creates a new branch.
-7. Restore files by rolling back V2-11 change records in reverse order.
-8. Refuse dirty conflicts by default and return a conflict report.
-9. Support explicit `force: true` rewind that forwards force to rollback.
-10. Keep old branches and events intact.
-11. Keep existing `session.getTimeline(count)` compatible.
-12. Expose branch-aware APIs through `kernel.session`.
+| 决策点 | 选择 | 否决项 | 理由 |
+|---|---|---|---|
+| 模型 | 分支 + 激活分支 | 改写/截断 JSONL | 审计链不破，旧线可查 |
+| 文件恢复 | 复用 V2-11 rollback 逆序 | 直接写盘 | 冲突检测与 force 语义已就绪 |
+| 检查点 | 从事件日志推导 | 另存权威副本 | 单一事实来源 |
+| 冲突 | 默认拒绝 + 部分进度如实报告 | 假装已切换分支 | 不制造“已回退”错觉 |
+| 交付 | 分阶段（分支库→索引→apply→界面钩子） | 一次大爆炸 | 数据模型仍是 branch-first |
 
-## 3. Non-Goals
+## 设计
 
-- No GUI branch tree panel in V2-12.
-- No visual diff UI for branch comparison.
-- No automatic model context replay across branches beyond event filtering.
-- No deletion of old timeline events.
-- No mutation of existing JSONL event rows.
-- No three-way merge.
-- No Git branch integration.
-- No durable approval/repair resume across restart; this remains a later phase.
+### 模块
 
-## 4. Current State
-
-The current session layer is append-only JSONL:
-
-```text
-src/sessions/event-log.js       # hash-chain JSONL storage
-src/sessions/session-manager.js # EventBus -> EventLog bridge, subscribe, getTimeline
-src/index.js                    # exposes kernel.session
+```
+src/sessions/
+  branch-store.js       # 分支元数据与激活分支
+  checkpoint-index.js   # buildCheckpointIndex / resolveRewindTarget / computeRollbackPlan
+  rewind-service.js     # preview / apply / rollback 编排
+  session-manager.js    # 事件盖 branch_id
 ```
 
-Events are durable but linear. `session.getTimeline(count)` returns the last events in the session log. There is no `branch_id`, no active branch state, and no checkpoint index.
+### 分支模型
 
-Edit events already carry the data needed for file rewind:
+`BR_MAIN = "br_main"`，`BRANCH_SCHEMA_VERSION = 1`，分支 id 形如 `br_[a-zA-Z0-9._-]+`。记录含 `branch_id`、`parent_branch_id`、`forked_from_event_id`、`forked_from_seq`、`forked_from_turn_id`、`created_at`、`label`。无分支文件的旧会话惰性建 `br_main`，缺 `branch_id` 的事件视作主分支。
 
-- `file:diff_applied`
-- `file:transaction_committed`
-- `file:rollback_applied`
-- `file:transaction_rolled_back`
-- `file:rollback_conflict`
+运行时事件盖当前 `branch_id`；分支控制事件可同时带 `parent_branch_id`。
 
-V2-11 rollback refuses dirty files by default and supports explicit force. V2-12 must call that path instead of writing files directly.
+### 检查点
 
-## 5. Chosen Architecture
+从时间线推导：`checkpoint_id`、`branch_id`、`event_id`、`seq`、`turn_id`、`type`、`label`、`change_ids`、`cumulative_change_ids`。支持按 event_id / seq / turn_id 定位，并计算目标之后要回滚的 change 列表。
 
-Add branch-aware session services under `src/sessions/`:
+### Rewind
 
-```text
-src/sessions/branch-store.js       # durable active branch and branch metadata
-src/sessions/checkpoint-index.js   # derive checkpoints and change ranges from timeline
-src/sessions/rewind-service.js     # preview/apply rewind using editService.rollback()
-src/sessions/session-manager.js    # stamp events with active branch_id
-src/index.js                       # expose kernel.session.branches/rewind APIs
-```
+**preview**（只读）：解析目标、给出 `planned_branch_id`、`rollback_change_ids`、`files`、`force_required`，发 `session:rewind_preview`。不写文件、不切分支。
 
-The event log stays append-only. Rewind creates new events:
+**apply**：冲刷事件 → 解析检查点 → 逆序 `editService.rollback({ change_id, force })` → 任一冲突则停、发 `session:rewind_conflict` 并如实报告已回滚/剩余 change → 全部成功则 `createBranch` + `activateBranch` → 发 `session:rewind_started`、`branch_created`、`branch_activated`、`rewind_applied`。之后的新 turn 落入子分支。
 
-```text
-session:branch_created
-session:branch_activated
-session:rewind_preview
-session:rewind_started
-session:rewind_applied
-session:rewind_conflict
-session:rewind_failed
-```
+**force**：向每笔 rollback 传 `force: true`，事件记 `forced` 与冲突元数据；仍不绕过路径安全。
 
-Existing events are never edited. Existing event hashes remain valid.
+### 查询与 API
 
-## 5.1 Phased Delivery
-
-The architecture is the heavy branch/fork route, but implementation should be staged so each phase is independently testable:
-
-| Phase | Name | Deliverable |
-|---|---|---|
-| V2-12A | Branch Foundation | Durable branch store, active branch, event stamping, branch-aware timeline filtering |
-| V2-12B | Checkpoint Index | Checkpoint derivation from timeline, target resolution, change range planning |
-| V2-12C | Rewind Apply | Preview/apply rewind, reverse rollback, conflict handling, child branch activation |
-| V2-12D | Interface Hooks | Kernel facade completion, GUI host IPC-ready methods, CLI/TUI event summaries |
-
-This still counts as the heavy route because the data model is branch-first from the beginning. The phases only reduce implementation risk.
-
-## 6. Branch Model
-
-### 6.1 Branch Record
-
-Each branch is stored in a metadata JSON file:
+`kernel.session.getTimeline(50)` 保持兼容（默认活跃分支）。可选 `{ count, branch_id }` 返回该分支及祖先继承事件；`{ all_branches: true }` 返回全部。
 
 ```js
-{
-  schema_version: 1,
-  session_id: "sess_...",
-  active_branch_id: "br_main",
-  branches: [
-    {
-      branch_id: "br_main",
-      parent_branch_id: null,
-      forked_from_event_id: null,
-      forked_from_seq: 0,
-      forked_from_turn_id: null,
-      created_at: "2026-05-31T00:00:00.000Z",
-      label: "main"
-    },
-    {
-      branch_id: "br_abc123",
-      parent_branch_id: "br_main",
-      forked_from_event_id: "evt_...",
-      forked_from_seq: 42,
-      forked_from_turn_id: "turn_...",
-      created_at: "2026-05-31T00:01:00.000Z",
-      label: "rewind to turn_..."
-    }
-  ]
-}
+kernel.session.branches.list/getActive/activate
+kernel.session.checkpoints.list
+kernel.session.rewind.preview/apply
 ```
 
-The default branch is `br_main`. If a V2-11 or older session has no branch file, V2-12 creates `br_main` lazily and treats events without `branch_id` as belonging to `br_main`.
+`activate()` 只改元数据，不写文件。
 
-### 6.2 Event Branch Stamping
+## 边界与不变量
 
-`SessionManager` receives a `getActiveBranchId()` callback. When it persists or forwards an event, it adds:
+1. 事件日志 append-only，hash 链保持有效。
+2. Rewind 只经 V2-11 rollback 写文件。
+3. 冲突默认停；部分回滚必须明说。
+4. 事件与分支元数据不含 raw diff / 文件内容 / reasoning。
+5. 测试不在仓库根制造 `.deepseek-code/v2`。
 
-```js
-{
-  branch_id: "br_main"
-}
-```
+## 与现状的差异
 
-If the event already includes a `branch_id`, the active branch still wins for normal runtime events. Reserved event fields such as `type` must remain protected exactly as they are today.
+加固与故障注入见 [V2-13](2026-05-31-v2-13-rewind-hardening-recovery-design.md)。存储路径与 `session:rewind_*` 事件名以 `event-types.js`、`rewind-service.js` 为准。GUI 分支树属后续前端里程碑。
 
-Branch control events may include both:
+## 验收
 
-```js
-{
-  branch_id: "br_new",
-  parent_branch_id: "br_main"
-}
-```
-
-## 7. Checkpoint Model
-
-V2-12 derives checkpoints from the timeline instead of creating a separate source of truth.
-
-Checkpoint shape:
-
-```js
-{
-  checkpoint_id: "cp_...",
-  branch_id: "br_main",
-  event_id: "evt_...",
-  seq: 42,
-  turn_id: "turn_...",
-  type: "turn" | "event",
-  label: "after turn turn_...",
-  change_ids: ["20260531120000"],
-  cumulative_change_ids: ["20260531115900", "20260531120000"]
-}
-```
-
-The checkpoint index must support:
-
-- find target by `event_id`
-- find target by `seq`
-- find target by `turn_id`
-- list branch checkpoints
-- compute changes after target on a branch
-
-For legacy events without branch ids, `branch_id` is normalized to `br_main`.
-
-## 8. Rewind Semantics
-
-### 8.1 Preview
-
-Preview is read-only:
-
-```js
-await kernel.session.rewind.preview({
-  target: { turn_id: "turn_1" }
-});
-```
-
-Returns:
-
-```js
-{
-  status: "success",
-  target,
-  current_branch_id: "br_main",
-  planned_branch_id: "br_...",
-  rollback_change_ids: ["change_3", "change_2"],
-  rollback_count: 2,
-  files: ["src/a.js"],
-  force_required: false
-}
-```
-
-Preview publishes `session:rewind_preview` with safe metadata only. It must not write files or change active branch.
-
-### 8.2 Apply
-
-Apply creates a new branch and rolls back changes after the target:
-
-```js
-await kernel.session.rewind.apply({
-  target: { turn_id: "turn_1" },
-  force: false
-});
-```
-
-Flow:
-
-1. Flush pending session events.
-2. Load timeline and active branch.
-3. Resolve target checkpoint.
-4. Compute change IDs after target on the active branch.
-5. Publish `session:rewind_started`.
-6. Roll back changes in reverse chronological order through `editService.rollback({ change_id, force })`.
-7. If any rollback returns conflict, stop immediately.
-8. Publish `session:rewind_conflict` and keep active branch unchanged.
-9. If all rollbacks succeed, create a new child branch.
-10. Activate the new branch.
-11. Publish `session:branch_created`, `session:branch_activated`, and `session:rewind_applied`.
-
-New turns after a successful rewind belong to the new branch.
-
-### 8.3 Conflict
-
-Default rewind refuses dirty conflicts:
-
-```js
-{
-  status: "conflict",
-  current_branch_id: "br_main",
-  attempted_branch_id: "br_new",
-  failed_change_id: "change_2",
-  applied_rollbacks: ["change_3"],
-  remaining_change_ids: ["change_2"],
-  conflicts: [...]
-}
-```
-
-Because rollbacks happen one by one, a conflict can occur after earlier rollbacks have succeeded. In that case V2-12 must report partial progress clearly. It must not pretend the branch was activated.
-
-### 8.4 Force
-
-Force rewind forwards `force: true` into each V2-11 rollback call. Events must include `forced: true` and conflict metadata returned by forced rollbacks.
-
-Force still must not bypass workspace path safety.
-
-## 9. Branch Timeline Query
-
-Keep the existing API compatible:
-
-```js
-await kernel.session.getTimeline(50);
-```
-
-This continues to return the latest events, but V2-12 should prefer the active branch by default.
-
-Add branch-aware options:
-
-```js
-await kernel.session.getTimeline({ count: 50, branch_id: "br_main" });
-await kernel.session.getTimeline({ count: 50, all_branches: true });
-```
-
-Rules:
-
-- Numeric argument keeps old behavior: active branch, `count = n`.
-- `all_branches: true` returns all events.
-- `branch_id` returns events from that branch plus inherited ancestor events up to the fork point.
-- Events without `branch_id` are treated as `br_main`.
-
-## 10. Kernel API
-
-Expose:
-
-```js
-kernel.session.branches.list()
-kernel.session.branches.getActive()
-kernel.session.branches.activate(branch_id)
-kernel.session.checkpoints.list({ branch_id })
-kernel.session.rewind.preview({ target, branch_id })
-kernel.session.rewind.apply({ target, branch_id, force })
-```
-
-`activate()` only changes active branch metadata. It does not change files. It is for viewing/continuing an already-valid branch, not for rewind.
-
-## 11. CLI/TUI/GUI Minimum Surface
-
-V2-12 is primarily kernel-level.
-
-Minimum interface changes:
-
-- CLI helper functions may be added for tests, but no full CLI command is required.
-- GUI host should expose `rewindPreview`, `rewindApply`, `listBranches`, and `listCheckpoints` for future renderer work.
-- TUI may continue rendering events as plain event summaries.
-
-Full GUI branch tree belongs to V2-13.
-
-## 12. Privacy and Security
-
-Required invariants:
-
-- Rewind events must not include raw diffs or file contents.
-- Branch metadata must not include snippets or model reasoning.
-- Rewind file writes must only happen through V2-11 rollback.
-- Dirty conflict refuses by default.
-- Force must be explicit.
-- Branch activation must not write files.
-- Existing event hash chain remains append-only and valid.
-- Tests must not create `.deepseek-code/v2` under the repository root.
-
-## 13. Testing Strategy
-
-Unit tests:
-
-- Branch store creates `br_main` lazily.
-- Branch store persists active branch and child branch records.
-- Session manager stamps active `branch_id` onto events.
-- Timeline filtering returns active branch plus inherited ancestors.
-- Checkpoint index resolves target by event, seq, and turn.
-- Rewind planner computes reverse change order.
-- Rewind service preview is read-only.
-- Rewind service apply creates and activates a new branch.
-- Rewind conflict stops and does not activate the new branch.
-
-Integration tests:
-
-- Apply two edits, rewind to first turn, verify second edit is rolled back.
-- Rewind creates child branch and future agent turns use child branch id.
-- Dirty conflict blocks rewind and leaves active branch unchanged.
-- Force rewind succeeds and records forced metadata.
-- Reopened kernel keeps active branch metadata.
-
-Regression:
-
-- Full `npm.cmd test`.
-- Full `npm.cmd run check`.
-- `git diff --check`.
-- No `.deepseek-code/v2` pollution from tests.
-
-## 14. Acceptance Criteria
-
-V2-12 is complete when:
-
-1. A session has durable branch metadata and an active branch.
-2. New persisted events include the active `branch_id`.
-3. Existing branch-less sessions remain readable as `br_main`.
-4. Rewind preview reports the exact change IDs that would be rolled back.
-5. Rewind apply rolls back target-after changes in reverse order.
-6. Successful rewind creates and activates a child branch.
-7. Future turns after rewind are written to the child branch.
-8. Dirty conflicts stop rewind and leave active branch unchanged.
-9. Force rewind is explicit and records forced metadata.
-10. Old branch events remain present and queryable.
-11. Events and branch metadata do not leak file content.
-12. Full verification passes.
-
-## 15. Deferred Work
-
-- GUI branch tree and rewind panel.
-- Branch comparison UI.
-- Conversation context replay tuned per branch.
-- Durable approval/repair resume across process restart.
-- Branch pruning or compaction.
-- Git branch integration.
-
-## 16. Final Summary
-
-V2-12 turns rewind into a real conversation fork. It preserves the append-only audit log, uses V2-11 rollback for file safety, and gives the runtime a durable active branch so future turns continue from the selected node rather than pretending the old linear timeline was erased.
+分支元数据持久；新事件带 branch_id；旧会话可读；preview 列出将回滚 change；apply 逆序回滚并建子分支；后续 turn 落子分支；脏冲突停且活跃分支不变；force 显式；旧事件仍可查。入口 `npm test`、`npm run check`。
