@@ -10,6 +10,9 @@ export const SLASH_COMMANDS = [
   { name: "shell", descKey: "slash.shell.desc" },
   { name: "clear", descKey: "slash.clear.desc" },
   { name: "recovery", descKey: "slash.recovery.desc" },
+  { name: "branch", descKey: "slash.branch.desc" },
+  { name: "rewind", descKey: "slash.rewind.desc" },
+  { name: "fim", descKey: "slash.fim.desc" },
   { name: "quit", descKey: "slash.quit.desc" }
 ];
 

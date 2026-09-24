@@ -12,6 +12,11 @@
 
 下一个补丁 / 小版本的变更在此累积；发布时按版本规则定级并移入带版本号小节。
 
+- **v1.9.0 M3 TUI 对齐 + FIM 双端落地**（版本仍为 1.8.7；八目录 diff 为空——全部落在 `src/apps` 与组合根；测试 1232 → **1277**）:
+  - **A6 TUI 分支/检查点/回退对齐**：新增 `/branch`（list / `switch <id>` / `new <label>`，走 `kernel.session.branches`）与 `/rewind`（检查点 list / `preview <id>` / `apply <id>`，走 `session.checkpoints` + `session.rewind`）slash 命令；激活/回退经内核事件入时间线，与 CLI/GUI 三端同一事件卡。解析与格式化为纯函数 `src/apps/tui/session-actions.js`（`t` 函数 DI，零 I/O）+ 13 项单测；执行器循 recovery  handler 优雅降级模式 + 17 项 handler 测试。
+  - **A3 FIM 双端落地**（Q3/D3 拍板：不进编辑器）：组合根新增 `kernel.fim.complete` 门面（转调 `modelGateway.fimComplete`）；CLI `inkstone fim --prefix <text> [--suffix] [--file <path>] [--max-tokens ≤4096] [--model <id>]`——正文 stdout + 用量摘要行、失败静默一行 stderr 且非零退出；TUI `/fim <前缀>` quiet 卡片语义（不打断输入流）。超时/取消沿既有 `signal`/`withTimeout`，用量计入遥测；防抖/缓存对显式命令形态不适用（已记录）。
+  - i18n：TUI 双文字典对称新增 slash/message 键，parity 测试通过。
+
 - **v1.9.0 M2 GUI Agent Inspector + 轨迹 + 遥测分列**（里程碑提交，版本仍为 1.8.7）:
   - 右栏 Dock 第 5 tab「检查器」（D2：独立 tab，不动 PlanPanel）：纯派生五区视图（优先条 / 计划 / 工具 call↔result 配对 / 审批 / 时间线），`inspector-state.js` + 单测。
   - Q5：会话头「轨迹」tab 接真实 `session:timeline`（与 Inspector 同源 `TimelineView` 虚拟列表），删除空态占位。

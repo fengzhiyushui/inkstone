@@ -131,6 +131,7 @@ docs/
 
 ### plans/architecture
 - [inkstone-rebrand](plans/architecture/2026-07-31-inkstone-rebrand.md) — DeepSeek Code → Inkstone
+- [v1.9.0 contract-freeze-and-visualization](plans/architecture/2026-09-23-v1.9.0-contract-freeze-and-visualization.md) — 契约冻结 + Inspector + 模型适配（M1-P0/M1/M2 已完工，M3–M5 进行中）
 
 ### plans/backend
 历史计划已收成摘要（目标 / 结果 / 关键决策 / 验证）。全目录见 [`plans/backend/`](plans/backend/)。

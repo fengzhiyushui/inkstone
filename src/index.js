@@ -474,6 +474,17 @@ export async function createKernel(root, options = {}) {
         const snap = await contextEngine.snapshot(input);
         return redactSnapshot(snap);
       }
+    },
+    // v1.9.0 M3 A3:FIM 门面(组合根附加,八目录零改动)。转调 modelGateway.fimComplete
+    //(src/deepseek/model-gateway.js:113——已处理 models.fim 解析、timeoutMs→signal、
+    //recordUsage 遥测)。端点与参数约束(/beta、4K cap、betaBase 可配)在 src/deepseek 客户端侧。
+    fim: {
+      async complete(prefix, suffix = "", options = {}) {
+        if (!modelGateway || typeof modelGateway.fimComplete !== "function") {
+          throw new Error("FIM unavailable: model gateway is not configured");
+        }
+        return modelGateway.fimComplete(prefix, suffix, options);
+      }
     }
   };
 }

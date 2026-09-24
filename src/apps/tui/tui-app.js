@@ -14,6 +14,7 @@ import { QUIET, eventToLines } from "./event-cards.js";
 import { computeBottom, createPainter } from "./paint.js";
 import { loadTuiPrefs, saveTuiPrefs } from "./prefs.js";
 import { SLASH_COMMANDS, filterCommands, parseSlash } from "./slash.js";
+import { parseBranchArgs, formatBranchLines, parseRewindArgs, formatCheckpointLines, parseFimArgs } from "./session-actions.js";
 import { setTuiTheme, tuiThemeId, tuiThemeList } from "./theme.js";
 import { createSessionIndex } from "../session-index.js";
 import { showDiff } from "../../git.js";
@@ -431,6 +432,75 @@ export function createTuiApp({
           pushLines([` ${color.dim("/recovery [resume|cancel|clear] <id>")}`, ""]);
         }
       } catch (e) { pushLines([` ${color.red(T("ev.error"))}: ${e?.message || e}`, ""]); }
+    },
+    // v1.9.0 M3 A6/A3:/branch /rewind /fim 执行器。解析与格式化在 session-actions.js(纯逻辑),
+    // 此处只做 kernel 门面调用 + pushLines,循 recovery 的「缺面降级 + try/catch 兜底」结构。
+    branch: async (arg) => {
+      if (!kernel?.session?.branches) { pushLines([` ${color.yellow(T("banner.offline"))}`, ""]); return; }
+      const parsed = parseBranchArgs(arg);
+      try {
+        if (parsed.action === "list") {
+          const [list, active] = await Promise.all([kernel.session.branches.list(), kernel.session.branches.getActive()]);
+          pushLines([...formatBranchLines(list, active?.branch_id, T), ""]);
+        } else if (parsed.action === "switch" && parsed.id) {
+          // 内核自发 session:branch_activated 事件卡(三端同一分支卡),这里只补一行确认
+          const branch = await kernel.session.branches.activate(parsed.id);
+          pushLines([` ${T("msg.branchSwitched", { id: branch?.branch_id || parsed.id, label: branch?.label || "" })}`, ""]);
+        } else if (parsed.action === "new" && parsed.label) {
+          const branch = await kernel.session.branches.create({ label: parsed.label });
+          pushLines([` ${T("msg.branchCreated", { id: branch?.branch_id || "", label: branch?.label || parsed.label })}`, ""]);
+        } else {
+          pushLines([` ${color.dim(T("msg.branchUsage"))}`, ""]);
+        }
+      } catch (e) { pushLines([` ${color.red(T("ev.error"))}: ${e?.message || e}`, ""]); }
+    },
+    rewind: async (arg) => {
+      if (!kernel?.session?.rewind) { pushLines([` ${color.yellow(T("banner.offline"))}`, ""]); return; }
+      const parsed = parseRewindArgs(arg);
+      try {
+        if (parsed.action === "list") {
+          const items = (await kernel.session.checkpoints?.list?.()) || [];
+          pushLines([...formatCheckpointLines(items, T), ""]);
+        } else if ((parsed.action === "preview" || parsed.action === "apply") && parsed.checkpointId) {
+          // checkpoint_id → rewind target:列表行展示的是 cp id,内核 target 只认 event_id/turn_id/seq
+          const items = (await kernel.session.checkpoints?.list?.()) || [];
+          const cp = items.find((item) => item?.checkpoint_id === parsed.checkpointId);
+          if (!cp) { pushLines([` ${color.red(T("msg.rewindUnknown", { id: parsed.checkpointId }))}`, ""]); return; }
+          const target = {};
+          if (cp.event_id) target.event_id = cp.event_id;
+          if (cp.turn_id) target.turn_id = cp.turn_id;
+          if (cp.seq != null) target.seq = cp.seq;
+          if (parsed.action === "preview") {
+            const res = await kernel.session.rewind.preview({ target });
+            pushLines([` ${T("msg.rewindPreview", {
+              count: res?.rollback_count ?? res?.rollback_change_ids?.length ?? 0,
+              files: res?.files?.length ?? 0,
+              branch: res?.planned_branch_id || res?.target?.branch_id || "-"
+            })}`, ""]);
+          } else {
+            const res = await kernel.session.rewind.apply({ target });
+            pushLines([` ${T("msg.rewindApplied", {
+              status: res?.status || "?",
+              count: res?.applied_rollbacks?.length ?? 0,
+              branch: res?.branch_id || res?.attempted_branch_id || "-"
+            })}`, ""]);
+          }
+        } else {
+          pushLines([` ${color.dim(T("msg.rewindUsage"))}`, ""]);
+        }
+      } catch (e) { pushLines([` ${color.red(T("ev.error"))}: ${e?.message || e}`, ""]); }
+    },
+    fim: async (arg) => {
+      if (!kernel?.fim?.complete) { pushLines([` ${color.yellow(T("banner.offline"))}`, ""]); return; }
+      const { prefix } = parseFimArgs(arg);
+      if (!prefix) { pushLines([` ${color.dim(T("msg.fimUsage"))}`, ""]); return; }
+      try {
+        const result = await kernel.fim.complete(prefix);
+        const content = String(result?.content ?? "");
+        if (!content) { pushLines([` ${color.dim(T("msg.fimEmpty"))}`, ""]); return; }
+        const meta = [result?.model, result?.usage?.total_tokens != null ? `tokens ${result.usage.total_tokens}` : ""].filter(Boolean).join(" · ");
+        pushLines([` ${color.dim(`· fim${meta ? ` ${meta}` : ""}`)}`, ...content.split("\n").map((l) => ` ${l}`), ""]);
+      } catch (e) { pushLines([` ${color.dim(T("msg.fimFailed", { err: e?.message || e }))}`, ""]); } // D-0:失败静默一行,不阻塞输入
     },
     quit: async () => { dispatch({ type: "exit" }); }
   };

@@ -76,7 +76,22 @@ export const STRINGS = {
     "cfg.testFail": "连接测试失败:{err}",
     "cfg.modelsTitle": "选择模型(Enter 选定,Esc 返回)",
     "cfg.modelsFail": "模型拉取失败:{err}",
-    "cfg.modelsEmpty": "接口未返回任何模型"
+    "cfg.modelsEmpty": "接口未返回任何模型",
+    "slash.branch.desc": "会话分支:列表 / 切换 / 新建",
+    "slash.rewind.desc": "回退检查点:列表 / 预览 / 执行",
+    "slash.fim.desc": "FIM 代码补全:/fim <代码前缀>",
+    "msg.branchEmpty": "当前会话还没有分支记录",
+    "msg.branchSwitched": "已切换分支:{id}({label})",
+    "msg.branchCreated": "已创建分支:{id}({label})",
+    "msg.branchUsage": "用法:/branch [switch <id>|new <label>]",
+    "msg.checkpointEmpty": "当前分支没有检查点",
+    "msg.rewindPreview": "回退预览:回退 {count} 项变更 · 涉及 {files} 个文件 · 目标分支 {branch}",
+    "msg.rewindApplied": "回退完成:{status} · 已回退 {count} 项变更 · 当前分支 {branch}",
+    "msg.rewindUsage": "用法:/rewind [preview <检查点 id>|apply <检查点 id>]",
+    "msg.rewindUnknown": "未找到检查点:{id}",
+    "msg.fimEmpty": "FIM 未返回补全内容",
+    "msg.fimUsage": "用法:/fim <代码前缀>",
+    "msg.fimFailed": "FIM 补全失败:{err}"
   },
   en: {
     "input.placeholder": "Type a message, / for commands",
@@ -154,7 +169,22 @@ export const STRINGS = {
     "cfg.testFail": "Connection test failed: {err}",
     "cfg.modelsTitle": "Pick a model (Enter select, Esc back)",
     "cfg.modelsFail": "Model fetch failed: {err}",
-    "cfg.modelsEmpty": "Endpoint returned no models"
+    "cfg.modelsEmpty": "Endpoint returned no models",
+    "slash.branch.desc": "session branches: list / switch / new",
+    "slash.rewind.desc": "rewind to checkpoint: list / preview / apply",
+    "slash.fim.desc": "FIM code completion: /fim <code prefix>",
+    "msg.branchEmpty": "no branch records for this session yet",
+    "msg.branchSwitched": "switched to branch: {id} ({label})",
+    "msg.branchCreated": "created branch: {id} ({label})",
+    "msg.branchUsage": "usage: /branch [switch <id>|new <label>]",
+    "msg.checkpointEmpty": "no checkpoints on the current branch",
+    "msg.rewindPreview": "rewind preview: {count} changes to roll back · {files} files · target branch {branch}",
+    "msg.rewindApplied": "rewind {status}: rolled back {count} changes · now on branch {branch}",
+    "msg.rewindUsage": "usage: /rewind [preview <checkpoint id>|apply <checkpoint id>]",
+    "msg.rewindUnknown": "checkpoint not found: {id}",
+    "msg.fimEmpty": "FIM returned no completion",
+    "msg.fimUsage": "usage: /fim <code prefix>",
+    "msg.fimFailed": "FIM completion failed: {err}"
   }
 };
 

@@ -4,11 +4,12 @@ import { describeChange, formatChange, listChanges, rollbackChange } from "./cha
 import { configureProject, DEFAULT_CONFIG, loadConfig } from "./config.js";
 import { buildProjectContext } from "./context.js";
 import { showDiff } from "./git.js";
+import { createKernel } from "./index.js";
 import { testDeepSeekConnection } from "./provider.js";
 import { searchProject } from "./search.js";
 import { runTui } from "./tui.js";
-import { banner, commandLine, section, statusLine } from "./theme.js";
-import { buildEditPrompt, runKernelAgentCommand, runKernelChatCommand, runKernelTestCommand } from "./apps/cli/kernel-runner.js";
+import { banner, color, commandLine, section, statusLine } from "./theme.js";
+import { buildEditPrompt, buildKernelOptions, runKernelAgentCommand, runKernelChatCommand, runKernelTestCommand } from "./apps/cli/kernel-runner.js";
 
 export async function runCli(argv) {
   const root = process.cwd();
@@ -38,6 +39,9 @@ export async function runCli(argv) {
       return;
     case "search":
       await runSearch(root, args, flags);
+      return;
+    case "fim":
+      await runFim(root, args, flags);
       return;
     case "test":
       await runTest(root, args);
@@ -179,6 +183,140 @@ async function runSearch(root, args, flags) {
   for (const match of matches) {
     console.log(`${match.path}:${match.line}:${match.column}: ${match.text}`);
   }
+}
+
+// v1.9.0 M3 A3:`inkstone fim` —— FIM 补全的 CLI 落点。D3 拍板:prefix 取
+// --prefix 文本或 --file 文件全文(两者互斥),不支持光标内联。转调组合根门面
+// kernel.fim.complete → modelGateway.fimComplete(models.fim 解析、timeoutMs→
+// signal、recordUsage 均在内核侧完成)。补全正文原样写 stdout,随后一行 dim
+// 用量摘要(缺项即省);失败只往 stderr 打一行错误 message,退出码非零,stdout
+// 不漏错误文本。loadConfig 无密钥的报错循现有风格直接上抛(bin 统一处理)。
+// deps 为测试注入点(循 kernel-runner 的 *Impl DI 模式),生产路径全走默认值。
+export async function runFim(root, args, flags, deps = {}) {
+  const {
+    write = console.log,
+    writeError = (line) => console.error(line),
+    loadConfigImpl = loadConfig,
+    buildKernelOptionsImpl = buildKernelOptions,
+    createKernelImpl = createKernel,
+    readFileImpl = (file) => fs.readFile(file, "utf8"),
+    now = () => Date.now()
+  } = deps;
+
+  const prefixFlag = stringFlag(flags, "prefix");
+  const fileFlag = stringFlag(flags, "file");
+  if (prefixFlag !== undefined && fileFlag !== undefined) {
+    process.exitCode = 1;
+    writeError("--prefix 与 --file 互斥，请只提供一个 prefix 来源。");
+    return;
+  }
+
+  let prefix;
+  if (fileFlag !== undefined) {
+    try {
+      prefix = String(await readFileImpl(path.resolve(root, fileFlag)));
+    } catch (error) {
+      process.exitCode = 1;
+      writeError(`读取 --file 文件失败：${error.message}`);
+      return;
+    }
+  } else if (prefixFlag !== undefined) {
+    prefix = prefixFlag;
+  } else {
+    prefix = args.join(" ").trim();
+  }
+
+  if (!prefix) {
+    process.exitCode = 1;
+    writeError("用法：inkstone fim --prefix <text> [--suffix <text>] [--file <path>] [--max-tokens <n>] [--model <id>]");
+    return;
+  }
+
+  // 语法期先解析(非数字即抛,循 numberFlag 既有约定);默认值在 loadConfig 之后与 config 合并。
+  const requestedMaxTokens = numberFlag(flags, "max-tokens", undefined);
+  const model = stringFlag(flags, "model");
+  const suffix = stringFlag(flags, "suffix") ?? "";
+  // 无密钥时报错循现有风格:loadConfig(allowMissingKey:false)直接抛
+  // 「缺少 DeepSeek API 密钥…」,由 bin/inkstone.js 顶层 catch 统一落 stderr + 退出码 1。
+  const config = await loadConfigImpl(root, { allowMissingKey: false });
+
+  let maxTokens = requestedMaxTokens ?? config.maxTokens ?? FIM_MAX_TOKENS;
+  if (maxTokens > FIM_MAX_TOKENS) {
+    writeError(`--max-tokens ${maxTokens} 超过 ${FIM_MAX_TOKENS} 上限，已钳制为 ${FIM_MAX_TOKENS}。`);
+    maxTokens = FIM_MAX_TOKENS;
+  }
+
+  const kernel = await createKernelImpl(root, await buildKernelOptionsImpl(root));
+  const usageBefore = readFimUsage(kernel);
+  const startedAt = now();
+  try {
+    const completion = await kernel.fim.complete(prefix, suffix, {
+      model,
+      maxTokens,
+      timeoutMs: config.limits?.modelTimeoutMs
+    });
+    const usageSummary = formatFimUsageSummary(kernel, usageBefore, model, now() - startedAt);
+    write(String(completion ?? ""));
+    if (usageSummary) write(color.dim(usageSummary));
+  } catch (error) {
+    // 失败静默一行:错误 message 原样进 stderr(不加前缀),非零退出码。
+    process.exitCode = 1;
+    writeError(String(error?.message || error));
+  } finally {
+    kernel.dispose?.();
+  }
+}
+
+// FIM_MAX_TOKENS 与 src/deepseek/fim-client.js 的同名常量同值(beta/completions
+// 的 4K 上限)。CLI 侧先钳制并提示,客户端侧仍会再钳一次(双保险,行为不变)。
+const FIM_MAX_TOKENS = 4096;
+
+// kernel.metrics.getUsage() 的安全读取(遥测不可读不当失败)。
+function readFimUsage(kernel) {
+  try {
+    return kernel?.metrics?.getUsage?.() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// 用量摘要文案(不含 dim,由调用方着色)。取 kernel.metrics.getUsage() 的 fim
+// 通道增量:before 在 complete 前取,after 在 complete 后取;进程内此前无 fim
+// 调用时增量即本次。网关注销用量(usage 为 null 不入账)时该通道缺失,
+// completion tokens / model 段即省("若有")。latency 由 CLI 侧计时;tps 循
+// src/core/execution/executor-loop.js:148 约定:completion tokens/(latency/1000)
+// 保留 1 位小数,tokens 或 latency 缺失/为 0 时不附段。
+function formatFimUsageSummary(kernel, before, model, latencyMs) {
+  let completionTokens = null;
+  let resolvedModel = model || null;
+  try {
+    const after = readFimUsage(kernel);
+    const afterChannel = after?.by_channel?.fim;
+    if (afterChannel && afterChannel.requests > (before?.by_channel?.fim?.requests ?? 0)) {
+      completionTokens = afterChannel.completion_tokens - (before?.by_channel?.fim?.completion_tokens ?? 0);
+      resolvedModel = resolvedModel || firstGrownModel(after.by_model, before?.by_model);
+    }
+  } catch {
+    // 遥测不可读不阻断补全输出("若有"语义)。
+  }
+
+  const parts = [];
+  if (resolvedModel) parts.push(resolvedModel);
+  if (Number.isFinite(completionTokens)) parts.push(`${completionTokens} completion tokens`);
+  parts.push(`${latencyMs} ms`);
+  if (Number.isFinite(completionTokens) && completionTokens > 0 && latencyMs > 0) {
+    parts.push(`${Math.round((completionTokens / (latencyMs / 1000)) * 10) / 10} tps`);
+  }
+  return parts.join(" · ");
+}
+
+// by_model 里 requests 增长的键即本次调用所用模型(delta 视角,取首个)。
+function firstGrownModel(afterModels, beforeModels) {
+  for (const [model, stats] of Object.entries(afterModels || {})) {
+    const previous = beforeModels?.[model];
+    if (!previous || stats.requests > previous.requests) return model;
+  }
+  return null;
 }
 
 async function runTest(root, args) {
@@ -341,6 +479,7 @@ ${commandLine("inkstone ask \"问题\" --semantic-context", "启用符号级语�
 ${commandLine("inkstone ask \"问题\" --include-method-hints", "语义上下文 + 方法调用提示(probable)")}
 ${commandLine("inkstone edit \"需求\" --file src/a.js", "生成补丁，确认后修改文件")}
 ${commandLine("inkstone search \"TODO\"", "搜索项目代码")}
+${commandLine("inkstone fim --prefix <text>", "FIM 代码补全，支持 --suffix / --file")}
 ${commandLine("inkstone scan", "扫描并打印项目上下文")}
 ${commandLine("inkstone test [命令...]", "运行测试")}
 ${commandLine("inkstone diff", "查看 Git 差异")}
