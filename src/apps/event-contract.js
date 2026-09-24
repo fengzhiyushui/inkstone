@@ -9,6 +9,17 @@ const ARG_HINT_LIMIT = 120;
 
 function num(v) { return Number.isFinite(v) ? v : null; }
 function str(v) { return typeof v === "string" && v.length ? v : null; }
+// 与 publisher(executor-loop/repair-executor 的 modelResponseExtras)同口径:
+// reasoning 500 字符封顶、超长结尾补「…」;tps 保留 1 位小数。对 publisher 已
+// 归一过的值幂等(再截断/再舍入结果不变),此处兜底防御未归一来源。
+function clipReasoning(v) {
+  const text = str(v);
+  return text === null ? null : (text.length > 500 ? `${text.slice(0, 500)}…` : text);
+}
+function roundTps(v) {
+  const n = num(v);
+  return n === null ? null : Math.round(n * 10) / 10;
+}
 
 function toolName(event) {
   return str(event.call?.name) || str(event.tool?.name) || str(event.tool) || null;
@@ -57,14 +68,31 @@ export function describeEvent(event) {
   const src = type;
 
   // v1.8.0 推理摘要卡:model:response 仍为 quiet(两端静默语义不变),但给出可展示的用量描述符。
+  // v1.9.0 M1 契约冻结:既有七字段(purpose/model/channel/toolCallCount/completionTokens/
+  // reasoningTokens)逐字节不动,下方新增七字段同样只做归一(缺字段即 null,不抛错)。
+  // cache hit/miss 回退链参照 src/deepseek/usage-tracker.js:9-11:
+  //   hit  = prompt_cache_hit_tokens ?? prompt_tokens_details.cached_tokens
+  //   miss = prompt_cache_miss_tokens(缺省且 hit/prompt 均可知时,按 prompt-hit 推导)
   if (type === "model:response") {
+    const usage = event.usage || null;
+    const promptTokens = num(usage?.prompt_tokens);
+    const cacheHitTokens = num(usage?.prompt_cache_hit_tokens) ?? num(usage?.prompt_tokens_details?.cached_tokens);
+    const cacheMissTokens = num(usage?.prompt_cache_miss_tokens)
+      ?? (promptTokens !== null && cacheHitTokens !== null ? Math.max(0, promptTokens - cacheHitTokens) : null);
     return d("thought", src, "info", true, {
       purpose: str(event.purpose),
       model: str(event.model),
       channel: str(event.channel),
       toolCallCount: num(event.tool_call_count),
       completionTokens: num(event.usage?.completion_tokens),
-      reasoningTokens: num(event.usage?.completion_tokens_details?.reasoning_tokens)
+      reasoningTokens: num(event.usage?.completion_tokens_details?.reasoning_tokens),
+      promptTokens,
+      cacheHitTokens,
+      cacheMissTokens,
+      latencyMs: num(event.latency_ms),
+      tps: roundTps(event.tps),
+      reasoning: clipReasoning(event.reasoning),
+      sessionId: str(event.session_id)
     });
   }
   if (NOISY.has(type)) return d("other", src, "info", true, {});

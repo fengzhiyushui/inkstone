@@ -52,3 +52,20 @@ test("buildKernelOptions forwards config models into deepseek options", async ()
   }));
   assert.deepEqual(options.deepseek.models, { act: "deepseek-flash", think: "deepseek-v4-pro", fim: "deepseek-flash" });
 });
+
+test("buildKernelOptions forwards config events (strictSchema) to the kernel", async () => {
+  const options = await buildKernelOptions("/repo", {}, async () => ({
+    apiKey: "sk-test",
+    baseUrl: "https://example.invalid",
+    events: { strictSchema: true }
+  }));
+  assert.deepEqual(options.events, { strictSchema: true });
+});
+
+test("buildKernelOptions omits events when config has none (default off stays default)", async () => {
+  const options = await buildKernelOptions("/repo", {}, async () => ({
+    apiKey: "sk-test",
+    baseUrl: "https://example.invalid"
+  }));
+  assert.equal("events" in options, false);
+});

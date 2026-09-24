@@ -96,7 +96,9 @@ export async function createKernel(root, options = {}) {
             sessionRoot,
             projectId,
             sessionId,
-            meta: { root, runtime: "v2" }
+            meta: { root, runtime: "v2" },
+            // M1 A1a:config.events.strictSchema 默认关闭;开启时也只告警不阻断(见 event-log.js)。
+            strictSchema: options.events?.strictSchema === true
           })
         : null);
   const branchStore = options.branchStore !== undefined

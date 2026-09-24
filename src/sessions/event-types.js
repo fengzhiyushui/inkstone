@@ -62,7 +62,13 @@ export const SESSION_EVENT_TYPES = Object.freeze([
   "orchestration:completed",
   "orchestration:routed",
   "agent:final",
-  "agent:error"
+  "agent:error",
+  // 跨任务经验记忆(C4)事件族:v1.9.0 M1 登记闭环——四类此前有生产者却未登记
+  // (schema/回放守卫发现)。生产者:orchestrator.js:28/:123、index.js:245/:453。
+  "experience:retrieved",
+  "experience:consolidated",
+  "experience:pending_approval",
+  "experience:pending_resolved"
 ]);
 
 export function isSessionEventType(type) {

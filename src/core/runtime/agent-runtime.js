@@ -168,6 +168,7 @@ export function createAgentRuntime({
       message,
       classification,
       turnId: turn.id,
+      sessionId,
       context,
       permissionContext,
       modelGateway,
@@ -263,7 +264,8 @@ export function createAgentRuntime({
         options,
         permissionContext,
         context,
-        budget
+        budget,
+        sessionId
       });
       return repairLoop;
     }
@@ -346,7 +348,8 @@ export function createAgentRuntime({
         signal: currentAbortController.signal,
         budget,
         modelTimeoutMs: resumeOptions.modelTimeoutMs ?? modelTimeoutMs,
-        maxToolCallRepairs: resumeOptions.maxToolCallRepairs ?? maxToolCallRepairs
+        maxToolCallRepairs: resumeOptions.maxToolCallRepairs ?? maxToolCallRepairs,
+        sessionId
       }));
       if (loop.status === "awaiting_approval") {
         const resumeState = preserveRepairContextOnRePause(record.resume_state, loop.resume_state);
@@ -408,7 +411,8 @@ export function createAgentRuntime({
             attempts: ctx.attempts,
             skip_to_verification: true
           },
-          budget
+          budget,
+          sessionId
         }));
 
         if (repairResult.status === "awaiting_approval") {
@@ -633,7 +637,8 @@ export function createAgentRuntime({
         options: record.resume_state.options || {},
         permissionContext,
         context: record.resume_state.context || ctx.context || null,
-        budget
+        budget,
+        sessionId
       }));
 
       if (repairLoop.status === "awaiting_approval" && repairLoop.approval?.id && repairLoop.resume_state) {
@@ -795,7 +800,8 @@ export function createAgentRuntime({
           attempts,
           skip_to_verification: false
         },
-        budget
+        budget,
+        sessionId
       }));
       if (repairLoop.status === "awaiting_approval" && repairLoop.approval?.id && repairLoop.resume_state) {
         await savePausedRecord({

@@ -13,13 +13,17 @@ export async function runRepairExecutor({
   modelTimeoutMs = null,
   permissionContext = null,
   options = {},
-  budget = null
+  budget = null,
+  sessionId = null
 } = {}) {
   if (!modelGateway || typeof modelGateway.invoke !== "function") {
     throw new Error("modelGateway.invoke is required for repair executor");
   }
   if (typeof executeTool !== "function") throw new Error("executeTool is required");
   if (typeof createPolicyContext !== "function") throw new Error("createPolicyContext is required");
+
+  // sessionId 直接参数优先,options.sessionId 兜底(repair-loop 透传/续跑链路可取)。
+  const effectiveSessionId = sessionId ?? options.sessionId ?? null;
 
   eventBus?.publish?.("model:request", { turn_id: turnId, purpose: "repair", iteration: 0 });
   const modelResult = await modelGateway.invoke(messages, {
@@ -40,7 +44,8 @@ export async function runRepairExecutor({
     tool_call_count: modelResult.tool_calls?.length || 0,
     usage: modelResult.usage || null,
     model: modelResult.model,
-    channel: modelResult.channel
+    channel: modelResult.channel,
+    ...repairResponseExtras(modelResult, effectiveSessionId)
   });
 
   const rawToolCalls = modelResult.tool_calls || [];
@@ -87,6 +92,33 @@ export async function runRepairExecutor({
     toolResults,
     messages: [...messages, assistantToolCallMessage(modelResult, rawToolCalls), ...toolResultsToMessages(toolResults)]
   };
+}
+
+// 与 executor-loop.js 的 modelResponseExtras 等价——v1.9.0 M1 明确本文件保留
+// 重复实现、不抽共享模块。model:response 四个新键一律「仅非 null 时附键」:
+//   reasoning  : reasoning_content 截断 500 字符(超长结尾补「…」);
+//   tps        : completion_tokens / (latency_ms/1000),1 位小数,缺项即不附;
+//   session_id : sessionId 非空才附;
+//   latency_ms : latency_ms 为有限数才附。
+// cache hit/miss 与 reasoning tokens 不加顶层键,继续走 usage 子对象。
+function repairResponseExtras(modelResult, sessionId) {
+  const extras = {};
+  const reasoning = modelResult?.reasoning_content;
+  if (typeof reasoning === "string" && reasoning.length > 0) {
+    extras.reasoning = reasoning.length > 500 ? `${reasoning.slice(0, 500)}…` : reasoning;
+  }
+  const completionTokens = modelResult?.usage?.completion_tokens;
+  const latencyMs = modelResult?.latency_ms;
+  if (Number.isFinite(completionTokens) && Number.isFinite(latencyMs) && latencyMs > 0) {
+    extras.tps = Math.round((completionTokens / (latencyMs / 1000)) * 10) / 10;
+  }
+  if (typeof sessionId === "string" && sessionId.length > 0) {
+    extras.session_id = sessionId;
+  }
+  if (Number.isFinite(latencyMs)) {
+    extras.latency_ms = latencyMs;
+  }
+  return extras;
 }
 
 function assistantToolCallMessage(modelResult, rawToolCalls) {

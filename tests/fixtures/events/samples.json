@@ -1,0 +1,580 @@
+{
+  "session:start": {
+    "root": "/workspace/inkstone",
+    "runtime": "v2"
+  },
+  "session:resume": {
+    "session_id": "sess_7f3a1c",
+    "root": "/workspace/inkstone"
+  },
+  "session:branch_created": {
+    "branch_id": "br_9k2m",
+    "parent_branch_id": "br_main",
+    "forked_from_event_id": "evt_1024",
+    "forked_from_seq": 1024,
+    "forked_from_turn_id": "turn_55"
+  },
+  "session:branch_activated": {
+    "branch_id": "br_9k2m",
+    "parent_branch_id": "br_main"
+  },
+  "session:rewind_preview": {
+    "target": {
+      "type": "event",
+      "event_id": "evt_1024",
+      "seq": 1024,
+      "turn_id": "turn_55"
+    },
+    "current_branch_id": "br_main",
+    "planned_branch_id": "br_9k2m",
+    "rollback_change_ids": ["chg_5f2a9b", "chg_77c41"],
+    "rollback_count": 2,
+    "files": ["src/apps/event-contract.js", "src/core/runtime/agent-runtime.js"],
+    "force_required": false
+  },
+  "session:rewind_started": {
+    "current_branch_id": "br_main",
+    "target": {
+      "type": "event",
+      "event_id": "evt_1024",
+      "seq": 1024,
+      "turn_id": "turn_55"
+    },
+    "rollback_change_ids": ["chg_5f2a9b", "chg_77c41"],
+    "forced": false
+  },
+  "session:rewind_applied": {
+    "status": "success",
+    "previous_branch_id": "br_main",
+    "branch_id": "br_9k2m",
+    "target": {
+      "type": "event",
+      "event_id": "evt_1024",
+      "seq": 1024,
+      "turn_id": "turn_55"
+    },
+    "rollback_change_ids": ["chg_5f2a9b", "chg_77c41"],
+    "applied_rollbacks": ["chg_5f2a9b", "chg_77c41"],
+    "files": ["src/apps/event-contract.js", "src/core/runtime/agent-runtime.js"],
+    "forced": false
+  },
+  "session:rewind_conflict": {
+    "status": "conflict_restored",
+    "current_branch_id": "br_main",
+    "attempted_branch_id": "br_9k2m",
+    "phase": "rollback",
+    "applied_rollbacks": ["chg_5f2a9b"],
+    "failed_change_id": "chg_77c41",
+    "conflicts": [
+      {
+        "change_id": "chg_77c41",
+        "path": "src/core/runtime/agent-runtime.js",
+        "reason": "working tree is dirty"
+      }
+    ],
+    "forced": false,
+    "reason": "rollback_failed",
+    "restored_files": ["src/apps/event-contract.js"]
+  },
+  "session:rewind_failed": {
+    "status": "failed_unrestorable",
+    "current_branch_id": "br_main",
+    "attempted_branch_id": "br_9k2m",
+    "phase": "rollback",
+    "applied_rollbacks": ["chg_5f2a9b"],
+    "forced": false,
+    "reason": "rollback: lock epoch changed",
+    "restored_files": [],
+    "restore_error": "restore failed: permission denied"
+  },
+  "session:rewind_restore_started": {
+    "current_branch_id": "br_main",
+    "attempted_branch_id": "br_9k2m",
+    "phase": "rollback",
+    "applied_rollbacks": ["chg_5f2a9b"],
+    "forced": false,
+    "reason": "rollback: lock epoch changed"
+  },
+  "session:rewind_restored": {
+    "status": "failed_restored",
+    "current_branch_id": "br_main",
+    "attempted_branch_id": "br_9k2m",
+    "phase": "rollback",
+    "applied_rollbacks": ["chg_5f2a9b"],
+    "forced": false,
+    "reason": "rollback_failed",
+    "restored_files": ["src/apps/event-contract.js"]
+  },
+  "session:rewind_recovery_failed": {
+    "status": "failed_unrestorable",
+    "current_branch_id": "br_main",
+    "attempted_branch_id": "br_9k2m",
+    "phase": "rollback",
+    "applied_rollbacks": ["chg_5f2a9b"],
+    "forced": false,
+    "reason": "rollback_failed",
+    "restored_files": [],
+    "restore_error": "restore failed: permission denied"
+  },
+  "recovery:started": {
+    "recovery_id": "recovery_1719232000",
+    "project_id": "inkstone",
+    "lock_epoch": 7
+  },
+  "recovery:blocked": {
+    "item_id": "rec_pause_approval_3d8e",
+    "source_id": "approval_3d8e",
+    "reason": "corrupt paused sidecar: invalid json"
+  },
+  "recovery:report": {
+    "recovery_id": "recovery_1719232000",
+    "found_count": 2,
+    "done_count": 1,
+    "blocked_count": 1,
+    "next_actions": ["/recovery resume rec_pause_approval_3d8e"]
+  },
+  "tx:opened": {
+    "tx_id": "tx_edit_1a2b",
+    "kind": "edit",
+    "session_id": "sess_7f3a1c",
+    "turn_id": "turn_7f3a1c"
+  },
+  "tx:committed": {
+    "tx_id": "tx_edit_1a2b",
+    "commit_id": "commit_3c4d",
+    "change_id": "chg_5f2a9b",
+    "kind": "edit"
+  },
+  "tx:recovered": {
+    "kind": "edit",
+    "tx_id": "tx_edit_1a2b",
+    "preserved_count": 1
+  },
+  "turn:paused": {
+    "approval_id": "approval_3d8e",
+    "turn_id": "turn_7f3a1c",
+    "original_session_id": "sess_7f3a1c",
+    "surface": "cli"
+  },
+  "turn:rehydrated": {
+    "approval_id": "approval_3d8e",
+    "turn_id": "turn_7f3a1c",
+    "original_session_id": "sess_7f3a1c",
+    "marker_status": "ok"
+  },
+  "turn:resumed": {
+    "approval_id": "approval_3d8e",
+    "turn_id": "turn_7f3a1c",
+    "original_session_id": "sess_7f3a1c"
+  },
+  "turn:cancelled": {
+    "approval_id": "approval_3d8e",
+    "turn_id": "turn_7f3a1c",
+    "original_session_id": "sess_7f3a1c",
+    "reason": "operator cancelled approval"
+  },
+  "takeover:requested": {
+    "request_id": "req_6f2a"
+  },
+  "takeover:completed": {
+    "request_id": "req_6f2a"
+  },
+  "user:message": {
+    "turn_id": "turn_7f3a1c",
+    "content": "把 src/apps/event-contract.js 的 describeEvent 补上 file:diff_preview 展示分支",
+    "options": {
+      "autonomy": "gated",
+      "projectRules": []
+    }
+  },
+  "agent:turn_started": {
+    "turn": {
+      "id": "turn_7f3a1c",
+      "session_id": "sess_7f3a1c",
+      "user_message": "把 src/apps/event-contract.js 的 describeEvent 补上 file:diff_preview 展示分支",
+      "status": "running",
+      "autonomy": "gated",
+      "created_at": "2026-05-12T09:30:00.000Z",
+      "updated_at": "2026-05-12T09:30:00.000Z",
+      "steps": [],
+      "artifacts": [],
+      "usage": {
+        "total_tokens": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_hit_tokens": 0,
+        "cache_miss_tokens": 0
+      }
+    }
+  },
+  "agent:step": {
+    "turn_id": "turn_7f3a1c",
+    "step": {
+      "id": "step_4a1b",
+      "turn_id": "turn_7f3a1c",
+      "type": "classify",
+      "channel": "think",
+      "status": "completed",
+      "input_ref": null,
+      "output_ref": "classification:edit",
+      "started_at": "2026-05-12T09:30:00.010Z",
+      "ended_at": "2026-05-12T09:30:00.031Z"
+    },
+    "classification": {
+      "task_type": "edit",
+      "risk": "medium",
+      "channel": "think",
+      "autonomy": "gated",
+      "requires_plan": true,
+      "reason": "code modification request"
+    }
+  },
+  "model:request": {
+    "turn_id": "turn_7f3a1c",
+    "purpose": "plan",
+    "iteration": 0
+  },
+  "model:response": {
+    "turn_id": "turn_7f3a1c",
+    "purpose": "plan",
+    "iteration": 0,
+    "content": "我先读入展示契约与 schema 注册表,再按 E2 定稿字段改造两个生产点,最后补 fixtures 与回放断言。",
+    "tool_call_count": 1,
+    "usage": {
+      "prompt_tokens": 2431,
+      "completion_tokens": 512,
+      "completion_tokens_details": {
+        "reasoning_tokens": 384
+      },
+      "prompt_cache_hit_tokens": 2048,
+      "prompt_cache_miss_tokens": 383
+    },
+    "model": "deepseek-flash",
+    "channel": "act",
+    "reasoning": "我先读入契约文件,确认 describeEvent 对 model:response 的既有七字段口径,再核对 event-schemas.js 里 E2 冻结的新字段名。计划分三步:第一步给 executor-loop.js 的 modelResponseExtras 补 reasoning、tps、session_id、latency_ms 四个新键,并严格保持「仅非 null 时附键」,避免旧 mock 与旧时间线出现 undefined 占位;第二步给 repair-executor.js 的 repairResponseExtras 同步同口径实现,按 M1 决议不抽共享模块;第三步补事件回放 fixtures,让 CLI/TUI/GUI 三端复用同一份样本。需要特别小心 usage 子对象里的 completion_tokens_details.reasoning_tokens 与 prompt_cache_hit_tokens、prompt_cache_miss_tokens,展示层按 usage-tracker 的 ?? 回退链读取,fixtures 必须显式给全,否则回放断言会退化成 null 而失去锚定意义。",
+    "tps": 749.6,
+    "session_id": "sess_7f3a1c",
+    "latency_ms": 683
+  },
+  "tool:call": {
+    "call": {
+      "id": "call_9f3a",
+      "name": "read",
+      "params": {
+        "path": "src/core/runtime/agent-runtime.js"
+      },
+      "category": "read",
+      "risk_level": "low",
+      "side_effect": "none",
+      "source": "model",
+      "requested_by_step_id": "model:turn_7f3a1c:0"
+    },
+    "tool": {
+      "name": "read",
+      "description": "Read a text file from the workspace",
+      "category": "read",
+      "side_effect": "none",
+      "risk_level": "low",
+      "source": "builtin",
+      "version": "2.0",
+      "params": {
+        "path": {
+          "type": "string",
+          "description": "Workspace-relative file path"
+        }
+      }
+    }
+  },
+  "tool:result": {
+    "result": {
+      "id": "toolresult_5c2b",
+      "call_id": "call_9f3a",
+      "status": "success",
+      "content": [
+        {
+          "type": "text",
+          "text": "// src/core/runtime/agent-runtime.js\nimport { createAgentTurn } from \"../protocol/index.js\";\n\nexport function createAgentRuntime({ sessionId, ... }) {\n"
+        }
+      ],
+      "metadata": {
+        "path": "src/core/runtime/agent-runtime.js",
+        "bytes": 4213
+      },
+      "duration_ms": 42
+    }
+  },
+  "permission:decision": {
+    "call_id": "call_9f3a",
+    "tool": "read",
+    "category": "read",
+    "permission": {
+      "decision": "allow",
+      "matched_rule": "default:gated:read",
+      "source": "default-matrix"
+    }
+  },
+  "approval:requested": {
+    "approval": {
+      "id": "approval_3d8e",
+      "turn_id": "turn_7f3a1c",
+      "kind": "tool",
+      "risk": "medium",
+      "summary": "shell requires approval: `npm test -- tests/unit/apps/event-contract.test.js`",
+      "details_ref": "call_4b7c",
+      "decisions": ["approve", "deny"]
+    },
+    "call": {
+      "id": "call_4b7c",
+      "name": "shell",
+      "params": {
+        "argv": ["npm", "test", "--", "tests/unit/apps/event-contract.test.js"],
+        "cwd": "."
+      },
+      "category": "execute",
+      "risk_level": "medium",
+      "side_effect": "process",
+      "source": "model",
+      "requested_by_step_id": "model:turn_7f3a1c:1"
+    }
+  },
+  "approval:resolved": {
+    "approval_id": "approval_3d8e",
+    "decision": "approved"
+  },
+  "context:snapshot": {
+    "snapshot_id": "snap_2c9f",
+    "channel": "act",
+    "task_type": "edit",
+    "unit_count": 3,
+    "unit_paths": [
+      "src/apps/event-contract.js",
+      "src/sessions/event-schemas.js",
+      "tests/unit/apps/event-contract.test.js"
+    ],
+    "budget": {
+      "allocated": 12000,
+      "used": 8400,
+      "remaining": 3600
+    },
+    "stats": {
+      "indexed_files": 128,
+      "skipped_files": 12,
+      "reused_files": 96,
+      "changed_files": 20,
+      "selected_files": 3
+    }
+  },
+  "context:pin": {
+    "path": "src/sessions/event-schemas.js"
+  },
+  "context:unpin": {
+    "path": "src/sessions/event-schemas.js"
+  },
+  "context:warm": {
+    "path": "tests/unit/apps/event-contract.test.js",
+    "reason": "warm"
+  },
+  "context:cache_loaded": {
+    "files": 96
+  },
+  "context:cache_saved": {
+    "files": 128,
+    "reused_files": 96,
+    "changed_files": 20,
+    "skipped_files": 12,
+    "duration_ms": 417
+  },
+  "context:cache_reused": {
+    "files": 128,
+    "reused_files": 96,
+    "changed_files": 20,
+    "skipped_files": 12,
+    "duration_ms": 53
+  },
+  "context:semantic_degraded": {
+    "reason": "wasm tree-sitter grammar unavailable: javascript"
+  },
+  "file:diff_preview": {
+    "summary": [
+      { "path": "src/apps/event-contract.js", "status": "modify" },
+      { "path": "src/sessions/event-schemas.js", "status": "create" }
+    ],
+    "files": ["src/apps/event-contract.js", "src/sessions/event-schemas.js"],
+    "diff_hash": "sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f0091827364554637281910293a4b5c6d",
+    "diff_size": 5123
+  },
+  "file:diff_applied": {
+    "change_id": "chg_5f2a9b",
+    "approval_id": "approval_3d8e",
+    "summary": [
+      { "path": "src/apps/event-contract.js", "status": "modify" },
+      { "path": "src/sessions/event-schemas.js", "status": "create" }
+    ],
+    "files": ["src/apps/event-contract.js", "src/sessions/event-schemas.js"],
+    "diff_hash": "sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f0091827364554637281910293a4b5c6d",
+    "diff_size": 5123
+  },
+  "file:rollback_applied": {
+    "change_id": "chg_5f2a9b",
+    "summary": [
+      { "path": "src/sessions/event-schemas.js", "status": "create" }
+    ],
+    "files": ["src/sessions/event-schemas.js"],
+    "forced": false,
+    "conflicts": [],
+    "branch_id": "br_9k2m"
+  },
+  "file:transaction_started": {
+    "transaction_id": "tx_edit_1a2b",
+    "files": ["src/apps/event-contract.js", "src/sessions/event-schemas.js"],
+    "summary": [
+      { "path": "src/apps/event-contract.js", "status": "modify" },
+      { "path": "src/sessions/event-schemas.js", "status": "create" }
+    ],
+    "diff_hash": "sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f0091827364554637281910293a4b5c6d",
+    "diff_size": 5123
+  },
+  "file:transaction_committed": {
+    "transaction_id": "tx_edit_1a2b",
+    "change_id": "chg_5f2a9b",
+    "summary": [
+      { "path": "src/apps/event-contract.js", "status": "modify" },
+      { "path": "src/sessions/event-schemas.js", "status": "create" }
+    ],
+    "files": ["src/apps/event-contract.js", "src/sessions/event-schemas.js"],
+    "diff_hash": "sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f0091827364554637281910293a4b5c6d",
+    "diff_size": 5123
+  },
+  "file:transaction_failed": {
+    "transaction_id": null,
+    "files": ["src/apps/event-contract.js", "src/sessions/event-schemas.js"],
+    "restored_files": [],
+    "restored": false,
+    "message": "first file write failed: permission denied"
+  },
+  "file:transaction_rolled_back": {
+    "change_id": "chg_5f2a9b",
+    "files": ["src/apps/event-contract.js", "src/sessions/event-schemas.js"],
+    "restored_files": ["src/apps/event-contract.js", "src/sessions/event-schemas.js"],
+    "forced": true,
+    "conflicts": [],
+    "branch_id": "br_9k2m"
+  },
+  "file:rollback_conflict": {
+    "change_id": "chg_77c41",
+    "files": ["src/core/runtime/agent-runtime.js"],
+    "conflicts": [
+      {
+        "change_id": "chg_77c41",
+        "path": "src/core/runtime/agent-runtime.js",
+        "reason": "working tree is dirty"
+      }
+    ],
+    "force_available": true,
+    "branch_id": "br_9k2m"
+  },
+  "verification:result": {
+    "turn_id": "turn_7f3a1c",
+    "result": {
+      "status": "passed",
+      "tool_result": {
+        "id": "toolresult_8e1f",
+        "call_id": "call_verify",
+        "status": "success",
+        "content": [
+          { "type": "text", "text": "# pass 2\n# fail 0\n" }
+        ],
+        "metadata": { "exit_code": 0 },
+        "duration_ms": 5310
+      },
+      "reason": "# pass 2",
+      "exit_code": 0,
+      "mode": "detect"
+    }
+  },
+  "repair:started": {
+    "turn_id": "turn_7f3a1c",
+    "max_attempts": 2,
+    "verification_status": "failed"
+  },
+  "repair:attempt": {
+    "turn_id": "turn_7f3a1c",
+    "attempt": 1,
+    "verification_status": "failed"
+  },
+  "repair:result": {
+    "turn_id": "turn_7f3a1c",
+    "attempt": 1,
+    "status": "complete",
+    "verification_status": "passed",
+    "tool_result_count": 3
+  },
+  "repair:exhausted": {
+    "turn_id": "turn_7f3a1c",
+    "attempts": 2,
+    "verification_status": "failed"
+  },
+  "orchestration:planned": {
+    "subtasks": 3,
+    "done_when": "契约字段冻结且三端回放断言全绿"
+  },
+  "orchestration:round_started": {
+    "round": 2,
+    "subtasks": 3
+  },
+  "orchestration:replanned": {
+    "round": 2,
+    "done": false,
+    "new_subtasks": 2
+  },
+  "orchestration:subtask_started": {
+    "subtask_id": "st_2",
+    "attempt": 1,
+    "tool_profile": "edit"
+  },
+  "orchestration:subtask_reviewed": {
+    "subtask_id": "st_2",
+    "pass": true,
+    "severity": "warn"
+  },
+  "orchestration:completed": {
+    "rounds": 2,
+    "completed": 3,
+    "failed": 1,
+    "status": "partial"
+  },
+  "orchestration:routed": {
+    "lane": "orchestrate",
+    "reason": "band:complex",
+    "signals": ["files:7", "marker:migrate"],
+    "score": 0.82,
+    "band": "complex"
+  },
+  "agent:final": {
+    "turn_id": "turn_7f3a1c",
+    "content": "已完成 describeEvent 的 file:diff_preview 展示分支,契约回放断言全绿。",
+    "status": "complete"
+  },
+  "agent:error": {
+    "turn_id": "turn_7f3a1c",
+    "message": "model gateway timeout after 120000ms"
+  },
+  "experience:retrieved": {
+    "count": 2,
+    "tiers": ["procedural", "risk"],
+    "riskCueCount": 1
+  },
+  "experience:consolidated": {
+    "taskId": "task_k3f9x",
+    "written": 1
+  },
+  "experience:pending_approval": {
+    "pendingId": "exp_5d2a",
+    "kind": "lesson"
+  },
+  "experience:pending_resolved": {
+    "pendingId": "exp_5d2a",
+    "decision": "approve"
+  }
+}

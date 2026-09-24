@@ -3,8 +3,12 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { makeId } from "../shared/id.js";
 import { nowIso } from "../shared/time.js";
+import { validateEvent } from "./event-schemas.js";
 
 const SCHEMA_VERSION = 2;
+
+// M1 A1a:strict 模式下 schema 违规记录上限(超出丢弃最旧),防长会话无界增长。
+const MAX_SCHEMA_VIOLATIONS = 100;
 
 const RESERVED_KEYS = new Set([
   "schema_version",
@@ -22,10 +26,10 @@ export function projectIdFromRoot(root) {
   return `proj_${createHash("sha256").update(normalized).digest("hex").slice(0, 12)}`;
 }
 
-export async function createSessionEventLog({ sessionRoot, projectId, sessionId, meta = {} } = {}) {
+export async function createSessionEventLog({ sessionRoot, projectId, sessionId, meta = {}, strictSchema = false, onSchemaViolation = null } = {}) {
   assertLogOptions({ sessionRoot, projectId, sessionId });
   await fs.mkdir(sessionDirectory(sessionRoot, projectId), { recursive: true });
-  const log = new SessionEventLog(sessionFilePath(sessionRoot, projectId, sessionId), sessionId);
+  const log = new SessionEventLog(sessionFilePath(sessionRoot, projectId, sessionId), sessionId, { strictSchema, onSchemaViolation });
   const existing = await readJsonl(log.filePath);
   if (existing.length > 0) {
     log.seq = Number(existing.at(-1).seq) || 0;
@@ -36,10 +40,10 @@ export async function createSessionEventLog({ sessionRoot, projectId, sessionId,
   return log;
 }
 
-export async function openSessionEventLog({ sessionRoot, projectId, sessionId } = {}) {
+export async function openSessionEventLog({ sessionRoot, projectId, sessionId, strictSchema = false, onSchemaViolation = null } = {}) {
   assertLogOptions({ sessionRoot, projectId, sessionId });
   await fs.mkdir(sessionDirectory(sessionRoot, projectId), { recursive: true });
-  const log = new SessionEventLog(sessionFilePath(sessionRoot, projectId, sessionId), sessionId);
+  const log = new SessionEventLog(sessionFilePath(sessionRoot, projectId, sessionId), sessionId, { strictSchema, onSchemaViolation });
   const existing = await readJsonl(log.filePath);
   const validEvents = existing.filter((event) => event && typeof event === "object");
   if (validEvents.length > 0) {
@@ -50,11 +54,16 @@ export async function openSessionEventLog({ sessionRoot, projectId, sessionId } 
 }
 
 class SessionEventLog {
-  constructor(filePath, sessionId) {
+  constructor(filePath, sessionId, { strictSchema = false, onSchemaViolation = null } = {}) {
     this.filePath = filePath;
     this.sessionId = sessionId;
     this.seq = 0;
     this.lastHash = null;
+    // M1 A1a 契约守卫:默认关闭;开启时只记录 violations + 触发回调,
+    // 绝不 throw、绝不阻塞 appendFile —— 落盘永远是第一公民。
+    this.strictSchema = strictSchema === true;
+    this.onSchemaViolation = typeof onSchemaViolation === "function" ? onSchemaViolation : null;
+    this.violations = [];
     this.queue = Promise.resolve();
   }
 
@@ -75,6 +84,7 @@ class SessionEventLog {
         ...stripReservedKeys(data)
       };
       event.event_hash = hashEvent(event);
+      if (this.strictSchema) this.recordSchemaCheck(type, data, event.seq);
       await fs.appendFile(this.filePath, `${JSON.stringify(event)}\n`, "utf8");
       this.seq = event.seq;
       this.lastHash = event.event_hash;
@@ -82,6 +92,32 @@ class SessionEventLog {
     });
     this.queue = write.catch(() => {});
     return write;
+  }
+
+  // M1 A1a:strict 模式载荷校验。reserved 键本就不该由 schema 管 → 校验 strip 后载荷。
+  // 只告警:记 violations(上限 100,超出丢弃最旧)+ 回调;任何失败都不得打断写入。
+  recordSchemaCheck(type, data, seq) {
+    let result;
+    try {
+      result = validateEvent(type, stripReservedKeys(data));
+    } catch {
+      return; // validateEvent 契约保证永不抛错;兜底同样不阻断 appendFile。
+    }
+    if (result.ok) return;
+    const violation = { type, errors: [...result.errors], seq };
+    this.violations.push(violation);
+    if (this.violations.length > MAX_SCHEMA_VIOLATIONS) this.violations.shift();
+    if (this.onSchemaViolation) {
+      try {
+        this.onSchemaViolation({ type, errors: [...violation.errors], seq });
+      } catch {
+        // 告警回调自身失败同样不得打断事件流。
+      }
+    }
+  }
+
+  getViolations() {
+    return this.violations.map((violation) => ({ ...violation, errors: [...violation.errors] }));
   }
 
   async flush() {

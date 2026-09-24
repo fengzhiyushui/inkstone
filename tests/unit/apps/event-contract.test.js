@@ -118,3 +118,114 @@ test("model:response maps to a quiet thought descriptor with usage", () => {
   assert.equal(d.fields.reasoningTokens, 80);
   assert.equal(d.fields.purpose, "plan");
 });
+
+test("model:response descriptor carries the full v1.9.0 field set", () => {
+  // 全字段事件:既有七字段 + 新增七字段逐一断言(300 tokens / 4000ms = 75 tps)。
+  const d = describeEvent({
+    type: "model:response",
+    purpose: "plan",
+    model: "deepseek-v4-pro",
+    channel: "act",
+    tool_call_count: 2,
+    usage: {
+      prompt_tokens: 1200,
+      completion_tokens: 300,
+      completion_tokens_details: { reasoning_tokens: 180 },
+      prompt_cache_hit_tokens: 1024,
+      prompt_cache_miss_tokens: 176
+    },
+    latency_ms: 4000,
+    tps: 75,
+    reasoning: "先读 README 再动手",
+    session_id: "sess_1"
+  });
+  assert.equal(d.kind, "thought");
+  assert.equal(d.sourceType, "model:response");
+  assert.equal(d.severity, "info");
+  assert.equal(d.quiet, true);
+  // 既有七字段逐字节不动
+  assert.equal(d.fields.purpose, "plan");
+  assert.equal(d.fields.model, "deepseek-v4-pro");
+  assert.equal(d.fields.channel, "act");
+  assert.equal(d.fields.toolCallCount, 2);
+  assert.equal(d.fields.completionTokens, 300);
+  assert.equal(d.fields.reasoningTokens, 180);
+  // v1.9.0 M1 新增七字段
+  assert.equal(d.fields.promptTokens, 1200);
+  assert.equal(d.fields.cacheHitTokens, 1024);
+  assert.equal(d.fields.cacheMissTokens, 176);
+  assert.equal(d.fields.latencyMs, 4000);
+  assert.equal(d.fields.tps, 75);
+  assert.equal(d.fields.reasoning, "先读 README 再动手");
+  assert.equal(d.fields.sessionId, "sess_1");
+});
+
+test("model:response cache token fields follow the usage-tracker fallback chain", () => {
+  // 显式字段优先(参照 usage-tracker.js:9-10 的 ?? 链)
+  const explicit = describeEvent({
+    type: "model:response",
+    usage: { prompt_tokens: 100, prompt_cache_hit_tokens: 40, prompt_cache_miss_tokens: 60 }
+  });
+  assert.equal(explicit.fields.cacheHitTokens, 40);
+  assert.equal(explicit.fields.cacheMissTokens, 60);
+
+  // prompt_cache_hit_tokens 缺省回退 prompt_tokens_details.cached_tokens,
+  // miss 缺省且 hit/prompt 均可知时按 prompt-hit 推导(usage-tracker.js:10 同链)
+  const fallback = describeEvent({
+    type: "model:response",
+    usage: { prompt_tokens: 100, prompt_tokens_details: { cached_tokens: 40 } }
+  });
+  assert.equal(fallback.fields.cacheHitTokens, 40);
+  assert.equal(fallback.fields.cacheMissTokens, 60);
+
+  // 完全无 cache 信息:不推导,一律 null
+  const noCache = describeEvent({ type: "model:response", usage: { prompt_tokens: 100 } });
+  assert.equal(noCache.fields.cacheHitTokens, null);
+  assert.equal(noCache.fields.cacheMissTokens, null);
+});
+
+test("model:response descriptor tolerates legacy usage-only event (new keys null)", () => {
+  // 契约冻结前的旧形态事件只有 usage 子对象:不得抛错,新键一律 null。
+  const d = describeEvent({
+    type: "model:response",
+    purpose: "plan",
+    model: "deepseek-chat",
+    channel: "act",
+    tool_call_count: 1,
+    usage: { completion_tokens: 120, completion_tokens_details: { reasoning_tokens: 80 } }
+  });
+  assert.equal(d.kind, "thought");
+  assert.equal(d.fields.promptTokens, null);
+  assert.equal(d.fields.cacheHitTokens, null);
+  assert.equal(d.fields.cacheMissTokens, null);
+  assert.equal(d.fields.latencyMs, null);
+  assert.equal(d.fields.tps, null);
+  assert.equal(d.fields.reasoning, null);
+  assert.equal(d.fields.sessionId, null);
+  // 既有字段不受影响
+  assert.equal(d.fields.completionTokens, 120);
+  assert.equal(d.fields.reasoningTokens, 80);
+  // 连 usage 都没有的裸事件同样不炸
+  const bare = describeEvent({ type: "model:response" });
+  assert.equal(bare.kind, "thought");
+  assert.equal(bare.fields.promptTokens, null);
+  assert.equal(bare.fields.reasoning, null);
+  assert.equal(bare.fields.sessionId, null);
+});
+
+test("model:response descriptor truncates reasoning at 500 chars with ellipsis", () => {
+  const d = describeEvent({ type: "model:response", reasoning: "x".repeat(600) });
+  assert.equal(d.fields.reasoning.length, 501);
+  assert.equal(d.fields.reasoning, `${"x".repeat(500)}…`);
+  // 恰好 500 字不补「…」;空串归 null
+  assert.equal(describeEvent({ type: "model:response", reasoning: "y".repeat(500) }).fields.reasoning, "y".repeat(500));
+  assert.equal(describeEvent({ type: "model:response", reasoning: "" }).fields.reasoning, null);
+});
+
+test("model:response descriptor rounds tps to one decimal", () => {
+  // 74.96 → 75;748.129 → 748.1(与 publisher 的 1 位小数量纲一致,幂等)
+  assert.equal(describeEvent({ type: "model:response", tps: 74.96 }).fields.tps, 75);
+  assert.equal(describeEvent({ type: "model:response", tps: 748.129 }).fields.tps, 748.1);
+  assert.equal(describeEvent({ type: "model:response", tps: 75 }).fields.tps, 75);
+  assert.equal(describeEvent({ type: "model:response" }).fields.tps, null);
+});

@@ -588,3 +588,193 @@ test("resumeExecutorLoop replays reasoning_content in assistant message appended
   assert.equal(assistantMessages.length, 1);
   assert.equal(assistantMessages[0].reasoning_content, "apply the edit, then verify the result.");
 });
+
+function captureModelResponses() {
+  const responses = [];
+  return { responses, eventBus: { publish: (type, data) => { if (type === "model:response") responses.push(data); } } };
+}
+
+test("v1.9.0 M1: model:response carries the four new top-level keys when the model result has them", async () => {
+  // mock 带 reasoning_content/latency_ms/usage:事件附 reasoning/tps/session_id/latency_ms 四键。
+  // tps = completion_tokens / (latency_ms/1000) = 300 / (4000/1000) = 75(保留 1 位小数)。
+  const { responses, eventBus } = captureModelResponses();
+  const result = await runExecutorLoop({
+    message: "read README",
+    classification: { task_type: "diagnostic" },
+    turnId: "turn_extras",
+    sessionId: "sess_extras",
+    modelGateway: {
+      invoke: async () => ({
+        content: "done",
+        reasoning_content: "think first",
+        latency_ms: 4000,
+        usage: { completion_tokens: 300 },
+        tool_calls: []
+      })
+    },
+    toolSchemas: [],
+    executeTool: async () => { throw new Error("no tools expected"); },
+    createPolicyContext: () => ({ autonomy: "gated" }),
+    eventBus
+  });
+
+  assert.equal(result.status, "complete");
+  assert.equal(responses.length, 1);
+  const evt = responses[0];
+  assert.equal(evt.reasoning, "think first");
+  assert.equal(evt.tps, 75);
+  assert.equal(evt.session_id, "sess_extras");
+  assert.equal(evt.latency_ms, 4000);
+  // 既有七键逐字节不动
+  assert.equal(evt.turn_id, "turn_extras");
+  assert.equal(evt.purpose, "plan");
+  assert.equal(evt.iteration, 0);
+  assert.equal(evt.content, "done");
+  assert.equal(evt.tool_call_count, 0);
+  assert.deepEqual(evt.usage, { completion_tokens: 300 });
+  assert.equal(evt.model, undefined);
+  assert.equal(evt.channel, undefined);
+});
+
+test("v1.9.0 M1: model:response omits the four new keys when the model result lacks them", async () => {
+  // 反向:mock 不带 reasoning_content/latency_ms/usage 且无 sessionId 时,
+  // 事件不得包含四新键(不能用 undefined 占位),旧 mock 行为逐字节不变。
+  const { responses, eventBus } = captureModelResponses();
+  const result = await runExecutorLoop({
+    message: "read README",
+    classification: { task_type: "diagnostic" },
+    turnId: "turn_no_extras",
+    modelGateway: {
+      invoke: async () => ({ content: "done", tool_calls: [] })
+    },
+    toolSchemas: [],
+    executeTool: async () => { throw new Error("no tools expected"); },
+    createPolicyContext: () => ({ autonomy: "gated" }),
+    eventBus
+  });
+
+  assert.equal(result.status, "complete");
+  assert.equal(responses.length, 1);
+  const evt = responses[0];
+  assert.ok(!("reasoning" in evt));
+  assert.ok(!("tps" in evt));
+  assert.ok(!("session_id" in evt));
+  assert.ok(!("latency_ms" in evt));
+  // 旧形态:既有八键(turn_id/purpose/iteration/content/tool_call_count/usage/model/channel)齐全,
+  // usage 仍为 null,无任何 undefined 占位的新键漏进事件。
+  assert.deepEqual(Object.keys(evt).sort(),
+    ["channel", "content", "iteration", "model", "purpose", "tool_call_count", "turn_id", "usage"]);
+  assert.equal(evt.usage, null);
+});
+
+test("v1.9.0 M1: model:response truncates reasoning at 500 chars and rounds tps to one decimal", async () => {
+  // reasoning_content 600 字 → 500 字 + 「…」(共 501 字符);
+  // tps = 100 / (300/1000) = 333.333… → 333.3(1 位小数)。
+  const { responses, eventBus } = captureModelResponses();
+  await runExecutorLoop({
+    message: "read README",
+    classification: { task_type: "diagnostic" },
+    turnId: "turn_truncate",
+    sessionId: "sess_truncate",
+    modelGateway: {
+      invoke: async () => ({
+        content: "done",
+        reasoning_content: "x".repeat(600),
+        latency_ms: 300,
+        usage: { completion_tokens: 100 },
+        tool_calls: []
+      })
+    },
+    toolSchemas: [],
+    executeTool: async () => { throw new Error("no tools expected"); },
+    createPolicyContext: () => ({ autonomy: "gated" }),
+    eventBus
+  });
+
+  assert.equal(responses.length, 1);
+  assert.equal(responses[0].reasoning, `${"x".repeat(500)}…`);
+  assert.equal(responses[0].reasoning.length, 501);
+  assert.equal(responses[0].tps, 333.3);
+});
+
+test("v1.9.0 M1: model:response skips tps when latency is missing or non-positive but keeps latency_ms=0", async () => {
+  // 缺 usage → 无 tps;latency_ms=0 → 无 tps 但 latency_ms 键照附(有限数);
+  // latency_ms 缺省 → 两个键都不附。
+  const { responses, eventBus } = captureModelResponses();
+  await runExecutorLoop({
+    message: "a",
+    classification: { task_type: "general" },
+    turnId: "turn_zero_latency",
+    modelGateway: { invoke: async () => ({ content: "done", latency_ms: 0, tool_calls: [] }) },
+    toolSchemas: [],
+    executeTool: async () => { throw new Error("no tools expected"); },
+    createPolicyContext: () => ({ autonomy: "gated" }),
+    eventBus
+  });
+  assert.equal(responses.length, 1);
+  assert.ok(!("tps" in responses[0]));
+  assert.equal(responses[0].latency_ms, 0);
+
+  const noLatency = captureModelResponses();
+  await runExecutorLoop({
+    message: "b",
+    classification: { task_type: "general" },
+    turnId: "turn_no_latency",
+    modelGateway: { invoke: async () => ({ content: "done", usage: { completion_tokens: 10 }, tool_calls: [] }) },
+    toolSchemas: [],
+    executeTool: async () => { throw new Error("no tools expected"); },
+    createPolicyContext: () => ({ autonomy: "gated" }),
+    eventBus: noLatency.eventBus
+  });
+  assert.equal(noLatency.responses.length, 1);
+  assert.ok(!("tps" in noLatency.responses[0]));
+  assert.ok(!("latency_ms" in noLatency.responses[0]));
+});
+
+test("v1.9.0 M1: resumeExecutorLoop model:response carries the four new keys with sessionId", async () => {
+  const { responses, eventBus } = captureModelResponses();
+  const resumeState = {
+    turn_id: "turn_resume_extras",
+    message: "edit and read",
+    classification: { task_type: "edit" },
+    messages: [{ role: "user", content: "edit and read" }],
+    model_result: { content: "", tool_calls: [{ id: "call_edit", name: "edit", arguments: { diff: "d" } }] },
+    raw_tool_calls: [{ id: "call_edit", name: "edit", arguments: { diff: "d" } }],
+    pending_tool_call: { id: "call_edit", name: "edit", params: { diff: "d" }, requested_by_step_id: "model:turn_resume_extras:0" },
+    remaining_tool_calls: [],
+    iteration: 0,
+    tool_results: [],
+    tool_schemas: [],
+    max_iterations: 5,
+    options: {}
+  };
+
+  const result = await resumeExecutorLoop({
+    resumeState,
+    sessionId: "sess_resume_extras",
+    modelGateway: {
+      invoke: async () => ({
+        content: "done after resume",
+        reasoning_content: "resume reasoning",
+        latency_ms: 2000,
+        usage: { completion_tokens: 100 },
+        tool_calls: []
+      })
+    },
+    executeTool: async (toolCall) => ({
+      call_id: toolCall.id, status: "success", content: [{ type: "text", text: "edit ok" }]
+    }),
+    createPolicyContext: () => ({ autonomy: "supervised" }),
+    eventBus
+  });
+
+  assert.equal(result.status, "complete");
+  assert.equal(responses.length, 1);
+  const evt = responses[0];
+  assert.equal(evt.turn_id, "turn_resume_extras");
+  assert.equal(evt.purpose, "act");
+  assert.equal(evt.reasoning, "resume reasoning");
+  assert.equal(evt.tps, 50); // 100 / (2000/1000)
+  assert.equal(evt.session_id, "sess_resume_extras");
+  assert.equal(evt.latency_ms, 2000);
+});

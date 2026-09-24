@@ -54,6 +54,11 @@ export const DEFAULT_CONFIG = {
   edits: {
     maxCaptureBytes: 1024 * 1024,
     changeRetention: { maxRecords: 200, maxAgeDays: 90 }
+  },
+  // 事件日志 schema 守卫(M1 A1a,默认关闭):strictSchema 开启时 SessionEventLog 只记录
+  // violations + 触发 onSchemaViolation 回调,绝不抛错绝不阻断 appendFile(热路径零风险)。
+  events: {
+    strictSchema: false
   }
 };
 
@@ -78,7 +83,8 @@ export async function loadConfig(root, options = {}) {
     models: normalizeModels(fileConfig.models),
     limits: limitsFromEnv(normalizeLimits(fileConfig.limits)),
     context: normalizeContext(fileConfig.context),
-    edits: normalizeEdits(fileConfig.edits)
+    edits: normalizeEdits(fileConfig.edits),
+    events: normalizeEvents(fileConfig.events)
   };
 
   if (!config.apiKey && !options.allowMissingKey) {
@@ -121,7 +127,8 @@ export function normalizeConfig(config) {
     limits: normalizeLimits(config.limits),
     context: normalizeContext(config.context),
     orchestration: normalizeOrchestration(config.orchestration),
-    edits: normalizeEdits(config.edits)
+    edits: normalizeEdits(config.edits),
+    events: normalizeEvents(config.events)
   };
 }
 
@@ -185,6 +192,13 @@ export function normalizeLimits(raw = {}) {
     maxModelCalls: toLimit(safe.maxModelCalls, d.maxModelCalls),
     maxToolCallRepairs: toLimit(safe.maxToolCallRepairs, d.maxToolCallRepairs)
   };
+}
+
+// M1 A1a:strictSchema 只认显式布尔 true(字符串 "true" / 1 等一律 false);
+// undefined / 非对象 → 默认(关闭),保证默认行为与 DEFAULT_CONFIG 一致。
+export function normalizeEvents(raw = {}) {
+  const safe = raw && typeof raw === "object" ? raw : {};
+  return { strictSchema: safe.strictSchema === true };
 }
 
 export function normalizeContext(raw = {}) {

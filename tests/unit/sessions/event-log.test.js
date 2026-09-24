@@ -88,6 +88,95 @@ test("event log tail skips corrupt jsonl lines", async () => {
   assert.deepEqual(events.map((event) => event.type), ["session:start", "user:message", "agent:final"]);
 });
 
+test("event log strict schema records violation, callback fires, and append still lands", async () => {
+  const sessionRoot = await mkdtemp(path.join(tmpdir(), "dsc-session-log-"));
+  const seen = [];
+  const log = await createSessionEventLog({
+    sessionRoot,
+    projectId: "proj",
+    sessionId: "sess",
+    strictSchema: true,
+    onSchemaViolation: (violation) => seen.push(violation)
+  });
+
+  // "agent:final" 必填 turn_id / content / status,这里故意缺 turn_id 与 status。
+  const event = await log.append("agent:final", { content: "partial" });
+  await log.flush();
+
+  // append 成功落盘(不抛错、不阻塞)、seq 正常推进。
+  assert.equal(event.seq, 2);
+  const events = await log.tail(10);
+  assert.equal(events.length, 2);
+  assert.equal(events[1].type, "agent:final");
+
+  // violations 记录 1 条,带 type/errors/seq。
+  const violations = log.getViolations();
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].type, "agent:final");
+  assert.equal(violations[0].seq, 2);
+  assert.ok(Array.isArray(violations[0].errors) && violations[0].errors.length > 0);
+  assert.ok(violations[0].errors.some((e) => e.includes("turn_id")));
+
+  // onSchemaViolation 回调收到 { type, errors }(seq 一并提供)。
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].type, "agent:final");
+  assert.ok(Array.isArray(seen[0].errors) && seen[0].errors.length > 0);
+
+  // getViolations 返回副本:改动副本不得污染内部记录。
+  violations[0].errors.push("tampered");
+  assert.equal(log.getViolations()[0].errors.length, 2);
+});
+
+test("event log ignores schema violations when strictSchema is off (default)", async () => {
+  const sessionRoot = await mkdtemp(path.join(tmpdir(), "dsc-session-log-"));
+  const seen = [];
+  // 不传 strictSchema / onSchemaViolation:默认关闭。
+  const log = await createSessionEventLog({ sessionRoot, projectId: "proj", sessionId: "sess" });
+
+  await log.append("agent:final", { content: "partial" });
+  await log.flush();
+
+  assert.deepEqual(log.getViolations(), []);
+
+  // 显式 false + 回调同样不触发。
+  const offLog = await openSessionEventLog({
+    sessionRoot,
+    projectId: "proj",
+    sessionId: "sess",
+    strictSchema: false,
+    onSchemaViolation: (violation) => seen.push(violation)
+  });
+  await offLog.append("agent:final", { content: "still partial" });
+  await offLog.flush();
+
+  assert.deepEqual(offLog.getViolations(), []);
+  assert.equal(seen.length, 0);
+});
+
+test("event log strict schema passes valid payloads without violations", async () => {
+  const sessionRoot = await mkdtemp(path.join(tmpdir(), "dsc-session-log-"));
+  const log = await createSessionEventLog({
+    sessionRoot,
+    projectId: "proj",
+    sessionId: "sess",
+    strictSchema: true
+  });
+
+  await log.append("agent:final", { turn_id: "turn_1", content: "done", status: "complete" });
+  // 额外未知键放行(前向兼容),optional 键缺失不报错。
+  await log.append("model:response", {
+    turn_id: "turn_1",
+    purpose: "act",
+    iteration: 1,
+    content: "hi",
+    tool_call_count: 0,
+    future_field: { anything: true }
+  });
+  await log.flush();
+
+  assert.deepEqual(log.getViolations(), []);
+});
+
 test("projectIdFromRoot is stable and filesystem safe", () => {
   const first = projectIdFromRoot("D:\\person studio\\deepseek code");
   const second = projectIdFromRoot("D:\\person studio\\deepseek code");

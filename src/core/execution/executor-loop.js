@@ -6,6 +6,7 @@ export async function runExecutorLoop({
   message,
   classification,
   turnId,
+  sessionId = null,
   modelGateway,
   toolSchemas = [],
   executeTool,
@@ -59,7 +60,8 @@ export async function runExecutorLoop({
       tool_call_count: modelResult.tool_calls?.length || 0,
       usage: modelResult.usage || null,
       model: modelResult.model,
-      channel: modelResult.channel
+      channel: modelResult.channel,
+      ...modelResponseExtras(modelResult, sessionId)
     });
 
     const rawToolCalls = modelResult.tool_calls || [];
@@ -123,6 +125,36 @@ function withBudgetSpent(resumeState, budget) {
   if (!resumeState || !budget?.snapshot) return resumeState;
   const spent = budget.snapshot();
   return { ...resumeState, budget_spent: { tokens: spent.tokens, model_calls: spent.model_calls } };
+}
+
+// v1.9.0 M1 契约冻结:model:response 顶层键集一次定稿。既有八键
+// {turn_id,purpose,iteration,content,tool_call_count,usage,model,channel}
+// 逐字节不动;本 helper 产出的四个新键一律「仅非 null 时附键」(不用 undefined
+// 占位),旧 mock/旧时间线因此逐字节兼容。cache hit/miss 与 reasoning tokens
+// 不加顶层键,继续走 usage 子对象。
+//   reasoning  : modelResult.reasoning_content 截断 500 字符(超长结尾补「…」);
+//   tps        : usage.completion_tokens / (latency_ms/1000),保留 1 位小数,
+//                缺 usage/latency 或 latency<=0 时不附键;
+//   session_id : sessionId 非空才附;
+//   latency_ms : modelResult.latency_ms 为有限数才附。
+function modelResponseExtras(modelResult, sessionId) {
+  const extras = {};
+  const reasoning = modelResult?.reasoning_content;
+  if (typeof reasoning === "string" && reasoning.length > 0) {
+    extras.reasoning = reasoning.length > 500 ? `${reasoning.slice(0, 500)}…` : reasoning;
+  }
+  const completionTokens = modelResult?.usage?.completion_tokens;
+  const latencyMs = modelResult?.latency_ms;
+  if (Number.isFinite(completionTokens) && Number.isFinite(latencyMs) && latencyMs > 0) {
+    extras.tps = Math.round((completionTokens / (latencyMs / 1000)) * 10) / 10;
+  }
+  if (typeof sessionId === "string" && sessionId.length > 0) {
+    extras.session_id = sessionId;
+  }
+  if (Number.isFinite(latencyMs)) {
+    extras.latency_ms = latencyMs;
+  }
+  return extras;
 }
 
 async function continueToolIteration({
@@ -189,7 +221,8 @@ export async function resumeExecutorLoop({
   signal = null,
   budget = null,
   modelTimeoutMs = null,
-  maxToolCallRepairs = 0
+  maxToolCallRepairs = 0,
+  sessionId = null
 } = {}) {
   if (!resumeState) throw new Error("resumeState is required");
   if (!modelGateway || typeof modelGateway.invoke !== "function") {
@@ -269,7 +302,8 @@ export async function resumeExecutorLoop({
       tool_call_count: modelResult.tool_calls?.length || 0,
       usage: modelResult.usage || null,
       model: modelResult.model,
-      channel: modelResult.channel
+      channel: modelResult.channel,
+      ...modelResponseExtras(modelResult, sessionId)
     });
     const rawToolCalls = modelResult.tool_calls || [];
     if (!rawToolCalls.length) {

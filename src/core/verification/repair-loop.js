@@ -23,7 +23,8 @@ export async function runRepairLoop({
   runRepairExecutorImpl = runRepairExecutor,
   resumeAfterApproval = null,
   context = null,
-  budget = null
+  budget = null,
+  sessionId = null
 } = {}) {
   const attempts = resumeAfterApproval ? [...resumeAfterApproval.attempts] : [];
   let verification = resumeAfterApproval ? resumeAfterApproval.verification : initialVerification;
@@ -76,6 +77,7 @@ export async function runRepairLoop({
         signal,
         modelTimeoutMs,
         permissionContext,
+        sessionId,
         options: { ...options, message: userMessage, classification, context },
         budget
       });

@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { deriveAgentCards } from "../../../gui/src/state/agent-cards.js";
+
+// v1.9.0 M1 契约冻结波2:GUI 派生与内核契约同源消费的直接证据 ——
+// 直接喂 tests/fixtures/events/samples.json 的真实内核事件载荷(而非手写 mock),
+// 证明 agent-cards.js 复用 src/apps/event-contract.js 的展示契约即可正确派生。
+const samples = JSON.parse(readFileSync(new URL("../../fixtures/events/samples.json", import.meta.url), "utf8"));
 
 test("plan/tool(pair)/diff/test cards derived from event stream", () => {
   const cards = deriveAgentCards([
@@ -129,4 +135,75 @@ test("real kernel events: multiple concurrent tool calls paired correctly by cal
   assert.ok(card2);
   assert.equal(card1.status, "ok");
   assert.equal(card2.status, "error");
+});
+
+// ── v1.9.0 M1:与 tests/fixtures/events/samples.json 同源消费 ─────────────────
+
+test("M1 fixtures:tool:call + tool:result + model:response 内核样本直接派生出配对卡片", () => {
+  const cards = deriveAgentCards([
+    { type: "tool:call", ...samples["tool:call"] },
+    { type: "tool:result", ...samples["tool:result"] },
+    { type: "model:response", ...samples["model:response"] }
+  ]);
+  // tool:call 出工具卡、model:response 出推理摘要卡;tool:result 只回填、不新增卡。
+  assert.equal(cards.length, 2);
+  assert.deepEqual(cards[0], {
+    kind: "tool",
+    id: "call_9f3a",
+    tool: "read",
+    argHint: "src/core/runtime/agent-runtime.js",
+    status: "ok",
+    durationMs: 42
+  });
+  assert.deepEqual(cards[1], {
+    kind: "thought",
+    purpose: "plan",
+    model: "deepseek-flash",
+    reasoningTokens: 384,
+    completionTokens: 512
+  });
+});
+
+test("M1 fixtures:配对按 result.call_id 锚定,错序/孤立 result 均不误配", () => {
+  // 孤立 result(无先行 tool:call):不产卡、不回填。
+  assert.deepEqual(deriveAgentCards([{ type: "tool:result", ...samples["tool:result"] }]), []);
+  // 错序(result 先于 call):result 落空,后续 tool:call 保持 running。
+  const reversed = deriveAgentCards([
+    { type: "tool:result", ...samples["tool:result"] },
+    { type: "tool:call", ...samples["tool:call"] }
+  ]);
+  assert.equal(reversed.length, 1);
+  assert.equal(reversed[0].status, "running");
+  assert.equal(reversed[0].durationMs, undefined);
+});
+
+test("M1 fixtures:result.status 派生卡片终态(error → error 卡,耗时回填)", () => {
+  const cards = deriveAgentCards([
+    { type: "tool:call", ...samples["tool:call"] },
+    { type: "tool:result", result: { ...samples["tool:result"].result, status: "error" } }
+  ]);
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].status, "error");
+  assert.equal(cards[0].durationMs, 42);
+});
+
+test("M1 fixtures:model:response 推理摘要卡门控(样本带 reasoningTokens 即出卡,usage 为空即无卡)", () => {
+  const gated = deriveAgentCards([{ type: "model:response", ...samples["model:response"] }]);
+  assert.equal(gated.length, 1);
+  assert.equal(gated[0].kind, "thought");
+  // 无 usage/reasoning 用量且无 purpose 时不产卡(与 v1.8.0 门控语义一致)
+  assert.deepEqual(deriveAgentCards([{ type: "model:response", usage: null, reasoning: null, purpose: null }]), []);
+});
+
+test("M1 fixtures:审批卡也用内核样本闭环(requested 出卡 + resolved 回填决策)", () => {
+  const cards = deriveAgentCards([
+    { type: "approval:requested", ...samples["approval:requested"] },
+    { type: "approval:resolved", ...samples["approval:resolved"] }
+  ]);
+  assert.deepEqual(cards, [{
+    kind: "approval",
+    id: "approval_3d8e",
+    summary: "shell requires approval: `npm test -- tests/unit/apps/event-contract.test.js`",
+    decision: "approved"
+  }]);
 });
