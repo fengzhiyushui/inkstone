@@ -12,39 +12,25 @@
 
 下一个补丁 / 小版本的变更在此累积；发布时按版本规则定级并移入带版本号小节。
 
-- **v1.9.0 M4 模型适配 P1/P2**（版本仍为 1.8.7；八目录 diff 仅 4 个授权文件——`model-router.js` / `fim-client.js` / `model-gateway.js` / `api-errors.js`；测试 1277 → **1314**）:
-  - **#3 thinking 参数清理**：plan/review/repair 三个 think 通道不再发送 `temperature`（官方协议下 thinking 开启时静默无效，传即死参数）；采样控制走 `reasoning_effort`。
-  - **effort 归一重构**：合法全集 `none`/`low`/`medium`/`high`/`max` 原样透传，废弃历史 low/medium→high 折叠（否则「降档省 token」配置无效）；`none` 语义等价关思考，但关不禁用——实际开关由通道层决定。
-  - **#4 FIM betaBase 可配**：`config.json` 新增 `betaBase`（默认空 = `${baseUrl}/beta`，未配置行为逐字节不变），自建/代理网关可显式覆盖 FIM 端点根地址；client 侧 `resolveBetaCompletionsUrl`。
-  - **#9 max_tokens 提升**：think 通道 8192 → **32768**（官方 thinking 默认 64K、effort=max 128K、上限 384K）；`finish_reason:"length"` 时返回值挂 `truncated` 标记（不进事件载荷，冻结契约不受影响）。
-  - **#12 错误分类与退避**：`aborted` 纳入 retryable；402 增加「余额不足」提示；`invoke`/`stream` **首次实现退避重试执行端**（.retryable 分类自 v1.x 起无消费方）——最多 3 次尝试、指数退避 500ms→1000ms（上限 8s）、402/4xx/超时不重试、退避期间尊重 abort、usage 只对最终 attempt 记一次；stream 仅首字节前重试。
-  - **#7 JSON 空 content 重试**：jsonMode 下空 content 同 request 重发一次（300ms），两次皆空挂 `emptyContent`；单次 invoke 总 fetch ≤3。
-  - **#11 展示层收尾**：TUI 状态行新增 `r:N tok` 与 `tps` 段（无数据不渲染，口径与 GUI 对齐为 completion÷(avg_latency×requests)）；CLI 终局 usage 摘要行（`INKSTONE_SHOW_USAGE` 门控，默认关），kernel-runner 挂 usage 快照点亮该行。
-  - iteration 0 thinking 开/≥1 关的会话内切换经评估**不改**（per-request 参数无协议约束；系成本设计），但同历史混用 pro/flash 两模型已登记为跟进项。
+---
 
-- **v1.9.0 M3 TUI 对齐 + FIM 双端落地**（版本仍为 1.8.7；八目录 diff 为空——全部落在 `src/apps` 与组合根；测试 1232 → **1277**）:
-  - **A6 TUI 分支/检查点/回退对齐**：新增 `/branch`（list / `switch <id>` / `new <label>`，走 `kernel.session.branches`）与 `/rewind`（检查点 list / `preview <id>` / `apply <id>`，走 `session.checkpoints` + `session.rewind`）slash 命令；激活/回退经内核事件入时间线，与 CLI/GUI 三端同一事件卡。解析与格式化为纯函数 `src/apps/tui/session-actions.js`（`t` 函数 DI，零 I/O）+ 13 项单测；执行器循 recovery  handler 优雅降级模式 + 17 项 handler 测试。
-  - **A3 FIM 双端落地**（Q3/D3 拍板：不进编辑器）：组合根新增 `kernel.fim.complete` 门面（转调 `modelGateway.fimComplete`）；CLI `inkstone fim --prefix <text> [--suffix] [--file <path>] [--max-tokens ≤4096] [--model <id>]`——正文 stdout + 用量摘要行、失败静默一行 stderr 且非零退出；TUI `/fim <前缀>` quiet 卡片语义（不打断输入流）。超时/取消沿既有 `signal`/`withTimeout`，用量计入遥测；防抖/缓存对显式命令形态不适用（已记录）。
-  - i18n：TUI 双文字典对称新增 slash/message 键，parity 测试通过。
+## v1.9.0 — 2026-09-24 · 契约冻结 + 多智能体可视化 + 模型适配
 
-- **v1.9.0 M2 GUI Agent Inspector + 轨迹 + 遥测分列**（里程碑提交，版本仍为 1.8.7）:
-  - 右栏 Dock 第 5 tab「检查器」（D2：独立 tab，不动 PlanPanel）：纯派生五区视图（优先条 / 计划 / 工具 call↔result 配对 / 审批 / 时间线），`inspector-state.js` + 单测。
-  - Q5：会话头「轨迹」tab 接真实 `session:timeline`（与 Inspector 同源 `TimelineView` 虚拟列表），删除空态占位。
-  - 审批区补 `agent:list-paused` IPC 桥（kernel-host `listPaused`，白名单登记）。
-  - 遥测分列：状态行新增 cacheMiss / reasoningTokens / TPS 段（无数据即不渲染）+ `tpsDecimals` 格式；推理摘要卡展开体展示 cache hit/miss、TPS 与 reasoning 正文。
-  - **修 CONTEXT_WINDOW=128000 硬编码** → `contextWindowForModel`（现行 DeepSeek 代际 1M，旧 chat/reasoner 64k，未知 128k），1M 上下文下用量条不再在 12.8% 处显示 100%。
-  - gui-smoke 增 `inspector_verified` 景；全量 **1232/1232** + `npm run check` + renderer build 通过。
+> 小版本：事件契约三角锁死（schema/守卫/fixtures）、GUI Agent Inspector 与轨迹时间线、TUI 分支/回退对齐、FIM 双端落地，以及 DeepSeek 现网协议适配（默认模型 ID、reasoning_content 回传、thinking 参数、退避重试）。实施计划与 D1–D6 拍板见 [`plans/architecture/2026-09-23-v1.9.0-contract-freeze-and-visualization.md`](plans/architecture/2026-09-23-v1.9.0-contract-freeze-and-visualization.md)。
 
-- **v1.9.0 M1-P0 现网燃眉修正**（里程碑提交，版本仍为 1.8.7；八目录白名单首批 5 文件 +21/−8，测试 **1167/1167**）:
-  - **默认模型 ID 收敛单一常量源**:新增 `src/deepseek/model-ids.js`(`CURRENT_MODELS` / `RETIRED_MODELS` / `migrateModelId`),`config.js` 与 `model-router.js` 的双源头漂移消除。`act` / `fim` 默认 `deepseek-v4-flash`(已退役)→ **`deepseek-flash`**;`think` 维持 `deepseek-v4-pro`(V4-Pro 流量自 2026-09-14 起临时路由到 V4.1-Flash 并按 Flash 计费,不临时降档 —— 维护者拍板 D4)。
-  - **退役迁移仅精确键匹配**:首批仅 `deepseek-v4-flash → deepseek-flash` 一项;`deepseek-chat` / `deepseek-reasoner` 暂不纳入(兼容端点用户可能故意沿用旧名)。**仅内存归一,不重写用户 `config.json`**;`DEEPSEEK_MODEL` 环境变量不过迁移;第三方端点 id(形如 `deepseek-coder-v2:latest`)原样直通,绝不兜底改写。
-  - **`reasoning_content` 回传(修现网 400)**:`executor-loop.js` / `repair-executor.js` 的 `assistantToolCallMessage` 补该字段(仅当上游真返回时携带,向后兼容旧 mock)。此前带 tools 的多轮对话在 iteration 1 必被官方 API 判 400 —— 值在 `model-gateway.js` 早已解析备好,缺的只是回传。
-  - **GUI 模型下拉换现行 ID**:`Composer.jsx` `KNOWN_MODELS` 原为 `deepseek-chat` / `deepseek-reasoner`(2026-07-24 已停用,此前一直在向用户推荐死模型);`cli.js` help 文案同步。
-  - **FIM 兜底 id 同步** + `maxTokens` 钳制 ≤4096(默认提升)。
-  - 新增测试 15(迁移 7 / reasoning 回传 5 / fim 钳制 3),`package.json` check 清单补 `model-ids.js`;README 中英 / DEPLOYMENT / project-overview 六处默认值一致。
-  - 方案与拍板结论见 [`plans/architecture/2026-09-23-v1.9.0-contract-freeze-and-visualization.md`](plans/architecture/2026-09-23-v1.9.0-contract-freeze-and-visualization.md)。
+**契约冻结（M1）**：新增 `src/sessions/event-schemas.js`——64 类登记事件全覆盖的零依赖 schema 注册表（required 只收恒定发射键、`validateEvent` 永不抛错、未知键放行）；覆盖率守卫 14 项（登记表↔schema 双向锁死 + `describeEvent` 非静默回落 + QUIET_TYPES 白名单，**双向变异验证实际执行**）；回放 fixtures 68 样本 ↔ schema ↔ 展示契约 ↔ GUI 派生四向锚定。`model:response` 顶层键集一次定稿：+`reasoning`（500 字截断）/`tps`/`session_id`/`latency_ms`（三处生产点 + 描述符同步，cache/reasoning token 继续走 `usage` 不占顶层键）。fixtures 守卫发现 4 个 `experience:*` 事件有生产者却未登记，已补登记闭环。运行期可选严格模式（`events.strictSchema` 默认关、只告警不阻断落盘）。
 
-- **历史 release tag 补全**：v1.8.4 / v1.8.5 / v1.8.6 三个发布版本此前漏打注解 tag（v1.8 分支线合入前遗留），已按 CHANGELOG 标题补齐并推送，tagger 日期对齐各自提交（循 v1.5.2 先例）；本地与云端各 23 个 tag，与 CHANGELOG 版本节一一对应。
+**现网燃眉修正（M1-P0）**：默认模型 ID 收敛单一常量源 `model-ids.js`——`act`/`fim` 默认 `deepseek-v4-flash`（已退役）→ **`deepseek-flash`**，`think` 维持 `deepseek-v4-pro`（D4 不临时降档）；退役迁移仅精确键匹配、仅内存归一不重写 config.json、第三方端点 id 原样直通。**`reasoning_content` 回传**（修现网 400）：带 tools 的多轮对话此前 iteration 1 必被官方 API 判 400。GUI 模型下拉移除两个 2026-07 已停用的死 ID；FIM 兜底 id 同步 + max_tokens 钳制 ≤4096。
+
+**GUI Agent Inspector（M2）**：右栏 Dock 第 5 tab「检查器」——纯派生五区（优先条/计划/工具 call↔result 配对/审批/时间线）；会话头「轨迹」tab 接真实 `session:timeline`（共享虚拟列表）；审批区补 `agent:list-paused` IPC 桥；遥测分列（cacheMiss/reasoningTokens/TPS 段 + `tpsDecimals`）；**修 CONTEXT_WINDOW=128000 硬编码** → 按模型推导（现行代际 1M），1M 上下文下用量条不再在 12.8% 处显示 100%。
+
+**TUI 对齐 + FIM 双端（M3）**：新增 `/branch`（list/switch/new）与 `/rewind`（检查点 list/preview/apply）slash 命令，分支/回退经内核事件入时间线、三端同一事件卡；`inkstone fim --prefix/--suffix/--file/--max-tokens/--model` 与 TUI `/fim` 落地（Q3/D3：不进编辑器），组合根 `fim` 门面附加、八目录零改动。
+
+**模型适配（M4）**：think 通道（plan/review/repair）不再发送静默无效的 `temperature`；`reasoning_effort` 归一重构——合法全集 `none/low/medium/high/max` 原样透传，废弃 low/medium→high 折叠；`config.json` 新增 `betaBase`（FIM 端点根可配，默认行为不变）；think 通道 max_tokens 8192→32768，`finish_reason:"length"` 挂 `truncated`；`.retryable` 分类**首次接上退避执行端**（3 次尝试、500ms→1000ms 指数退避、402/4xx/超时不重试、usage 只记最终 attempt）；jsonMode 空 content 重发一次；TUI 状态行 `r:N tok`/`tps` 段、CLI 终局 usage 摘要（`INKSTONE_SHOW_USAGE` 门控）。
+
+**运维**：v1.8.4 / v1.8.5 / v1.8.6 三个漏打版本补齐注解 tag（属 v1.8 线欠账，循 v1.5.2 先例）。
+
+全量回归 **1139 → 1314 单测**（0 失败）；`npm run check`、renderer build、gui-smoke（含 inspector 景）全过；八目录改动全程白名单管控。
 
 ---
 
