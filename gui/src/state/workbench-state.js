@@ -11,7 +11,7 @@ var LEGACY_THEME_MAP = { night: "sumi", day: "latte", dawn: "lotus", mocha: "sum
 var LIGHT_IDS = ["snow", "sand", "lotus", "latte", "paper"];
 function isLightId(id) { return LIGHT_IDS.indexOf(id) >= 0; }
 var LANGUAGES = ["zh", "en"];
-export var DOCK_TABS = ["plan", "files", "changes", "recovery"];
+export var DOCK_TABS = ["inspector", "plan", "files", "changes", "recovery"];
 
 function normalizeSidebarWidth(value, fallback) {
   if (!Number.isFinite(Number(value))) return fallback;
@@ -402,11 +402,23 @@ export function formatRewindStatus(result) {
 }
 
 export function metricsFromUsage(usage) {
+  var u = usage || {};
   return {
-    tokens: formatTokenCount(usage.total_tokens || ((usage.total_prompt_tokens || 0) + (usage.total_completion_tokens || 0))),
-    cacheRate: formatCacheRate(usage),
-    latency: formatLatency(usage),
-    requests: String(usage.requests || 0)
+    tokens: formatTokenCount(u.total_tokens || ((u.total_prompt_tokens || 0) + (u.total_completion_tokens || 0))),
+    cacheRate: formatCacheRate(u),
+    latency: formatLatency(u),
+    requests: String(u.requests || 0),
+    // v1.9 M2:成本面板挂点(现无消费方,字段先齐)
+    cacheHitTokens: Number(u.cache_hit_tokens) || 0,
+    cacheMissTokens: Number(u.cache_miss_tokens) || 0,
+    reasoningTokens: Number(u.total_reasoning_tokens ?? u.reasoning_tokens) || 0,
+    tps: (function () {
+      var direct = Number(u.tps ?? u.tokens_per_second);
+      if (Number.isFinite(direct) && direct > 0) return direct;
+      var completion = Number(u.total_completion_tokens) || 0;
+      var latencyMs = Number(u.avg_latency_ms) || 0;
+      return completion > 0 && latencyMs > 0 ? (completion / latencyMs) * 1000 : 0;
+    })()
   };
 }
 

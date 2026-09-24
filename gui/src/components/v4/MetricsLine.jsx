@@ -82,7 +82,7 @@ export default function MetricsLine({ t, display, usage, status = {}, actions = 
   const d = display || {};
   const show = d.show || {};
   const form = FORMS.includes(d.form) ? d.form : "bar";
-  const segments = metricSegments(usage, d);
+  const segments = metricSegments(usage, d, status.model);
   const idle = status.connection === "ready" && !status.busy;
 
   const ConnIcon = CONN_ICON[status.connection] || CircleCheck;
@@ -120,8 +120,8 @@ export default function MetricsLine({ t, display, usage, status = {}, actions = 
             onClick={() => actions.onCycleForm && actions.onCycleForm(nextForm(form))}>
             <FormIcon size={11} /> {t(`settings.sd.form.${form}`)}
           </button>
-          {show.model !== false && status.model && (
-            <span className="sg opt"><Cpu size={12} /> {status.model}</span>
+          {show.model !== false && (status.model || status.modelLabel) && (
+            <span className="sg opt"><Cpu size={12} /> {status.modelLabel || status.model}</span>
           )}
           {show.theme !== false && (
             <button type="button" className="sg click" title={t("status.cycleTheme")} onClick={actions.onCycleTheme}>

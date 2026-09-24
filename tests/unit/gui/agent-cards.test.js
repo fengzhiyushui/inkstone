@@ -155,13 +155,20 @@ test("M1 fixtures:tool:call + tool:result + model:response 内核样本直接派
     status: "ok",
     durationMs: 42
   });
-  assert.deepEqual(cards[1], {
-    kind: "thought",
-    purpose: "plan",
-    model: "deepseek-flash",
-    reasoningTokens: 384,
-    completionTokens: 512
-  });
+  const thought = cards[1];
+  assert.equal(thought.kind, "thought");
+  assert.equal(thought.purpose, "plan");
+  assert.equal(thought.model, "deepseek-flash");
+  assert.equal(thought.reasoningTokens, 384);
+  assert.equal(thought.completionTokens, 512);
+  assert.equal(thought.cacheHitTokens, 2048);
+  assert.equal(thought.cacheMissTokens, 383);
+  assert.equal(thought.latencyMs, 683);
+  assert.equal(thought.tps, 749.6);
+  // describeEvent 对 reasoning 做 500 字截断(契约口径),样本原文更长
+  assert.ok(String(thought.reasoning).endsWith("…"));
+  assert.ok(String(thought.reasoning).length <= 501);
+  assert.ok(samples["model:response"].reasoning.startsWith(String(thought.reasoning).slice(0, 40)));
 });
 
 test("M1 fixtures:配对按 result.call_id 锚定,错序/孤立 result 均不误配", () => {

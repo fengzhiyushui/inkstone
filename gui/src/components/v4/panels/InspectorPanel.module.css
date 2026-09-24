@@ -1,0 +1,142 @@
+/* InspectorPanel.module.css — Agent Inspector 五区 */
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 2px 12px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.secTitle {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.chip {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  font-family: var(--font-mono);
+}
+
+.kv {
+  font-size: 11px;
+  color: var(--text-mut);
+  font-family: var(--font-mono);
+}
+
+.err {
+  color: var(--err);
+}
+
+.metaLine {
+  font-size: 11.5px;
+  color: var(--text-mut);
+  font-family: var(--font-mono);
+}
+
+.empty {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  padding: 6px 0;
+}
+
+.stepList,
+.toolList,
+.apprList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.step,
+.tool,
+.appr {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg-element);
+  border: 1px solid var(--border-l2);
+  font-size: 11.5px;
+}
+
+.stepIdx {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  width: 18px;
+}
+
+.stepId {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stepSt {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+}
+
+.step.done .stepSt { color: var(--ok); }
+.step.run .stepSt { color: var(--accent); }
+.step.failed .stepSt { color: var(--err); }
+
+.toolName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+.toolSt {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+}
+
+.tool.ok .toolSt { color: var(--ok); }
+.tool.error .toolSt { color: var(--err); }
+.tool.running .toolSt { color: var(--accent); }
+
+.apprId {
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.apprSum {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appr.run {
+  border-color: color-mix(in srgb, var(--warn) 50%, var(--border-l2));
+}

@@ -1,12 +1,14 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ChevronDown, ChevronRight, Wrench, FileDiff, TriangleAlert, ListChecks,
   Workflow, Check, CircleCheck, CircleX, GitCompare, Diamond, Sparkles,
   Copy, ThumbsUp, ThumbsDown, Share2, Database
 } from "lucide-react";
 import { deriveAgentCards } from "../../state/agent-cards.js";
+import { deriveTimelineRows } from "../../state/inspector-state.js";
 import Composer from "./Composer.jsx";
 import SessionHeader from "./SessionHeader.jsx";
+import TimelineView from "./TimelineView.jsx";
 import css from "./ChatView.module.css";
 
 function MessageTelemetry({ message, model }) {
@@ -212,7 +214,7 @@ function TestCard({ card, t }) {
 
 function ThoughtCard({ card, t }) {
   const [open, setOpen] = useState(false);
-  const meta = [card.purpose, card.reasoningTokens != null ? `${card.reasoningTokens} tokens` : null].filter(Boolean).join(" · ");
+  const meta = [card.purpose, card.model, card.reasoningTokens != null ? `${card.reasoningTokens} tokens` : null].filter(Boolean).join(" · ");
   return (
     <>
       <button type="button" className={css.thoughtRow} aria-expanded={open} onClick={() => setOpen(!open)}>
@@ -223,17 +225,49 @@ function ThoughtCard({ card, t }) {
         </span>
         {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
       </button>
-      {open && <div className={css.thoughtBody}><span className="mini">{t("ev.thought.hidden")}</span></div>}
+      {open && (
+        <div className={css.thoughtBody}>
+          {card.reasoning ? <div className={css.thoughtReasoning}>{card.reasoning}</div> : null}
+          <div className="mini">
+            {[
+              card.cacheHitTokens != null ? `${t("metrics.cacheHit")} ${card.cacheHitTokens}` : null,
+              card.cacheMissTokens != null ? `${t("metrics.cacheMiss")} ${card.cacheMissTokens}` : null,
+              card.tps != null ? `${t("metrics.tps")} ${card.tps}` : null,
+              card.latencyMs != null ? `${card.latencyMs}ms` : null
+            ].filter(Boolean).join(" · ")}
+          </div>
+          {!card.reasoning && !(card.cacheHitTokens != null || card.tps != null) && (
+            <span className="mini">{t("ev.thought.hidden")}</span>
+          )}
+        </div>
+      )}
     </>
   );
 }
 
 export default function ChatView({ t, state, actions, kernel, statusLine, setView, onChatTab, onToggleRightbar }) {
   const [draft, setDraft] = useState("");
+  const [timeline, setTimeline] = useState([]);
   const cards = useMemo(() => deriveAgentCards(state.activity), [state.activity]);
   const busy = Boolean(state.runtime && ["acting", "thinking", "verifying", "repairing"].includes(state.runtime.current));
   const projectName = state.currentProject ? state.currentProject.split(/[\\/]/).filter(Boolean).pop() : "";
   const chatTab = state.chatTab || "chat";
+
+  // Q5:轨迹 tab 接真实 session:timeline(与 Inspector 同源)
+  useEffect(() => {
+    if (chatTab !== "trajectory") return undefined;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const rows = kernel?.getTimeline ? await kernel.getTimeline(200) : [];
+        if (!cancelled) setTimeline(Array.isArray(rows) ? rows : []);
+      } catch {
+        if (!cancelled) setTimeline([]);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [chatTab, kernel, state.activity, state.currentProject]);
 
   const renderCard = (card, i) => {
     switch (card.kind) {
@@ -268,7 +302,9 @@ export default function ChatView({ t, state, actions, kernel, statusLine, setVie
       <div className={`stream ${css.stream}`}>
         <div className={`stream-in ${css.streamIn}`}>
           {chatTab === "trajectory" ? (
-            <div className={css.trajectoryEmpty}>{t("chat.trajectory.empty")}</div>
+            <div className={css.trajectoryWrap}>
+              <TimelineView t={t} rows={deriveTimelineRows(timeline)} height={420} emptyText={t("timeline.empty")} />
+            </div>
           ) : (
             <>
               {state.messages.map((m, i) => (

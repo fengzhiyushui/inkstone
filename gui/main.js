@@ -18,7 +18,7 @@ const IPC_CHANNELS = [
   "fs:tree", "fs:read", "fs:write",
   "settings:get", "config:set", "api:list", "api:save", "api:delete", "api:activate",
   "models:list", "conn:test", "session:branch-activate", "changes:list", "changes:describe",
-  "agent:send", "agent:approve", "agent:interrupt",
+  "agent:send", "agent:approve", "agent:interrupt", "agent:list-paused",
   "session:timeline", "session:branches", "session:branch-active", "session:checkpoints",
   "session:rewind-preview", "session:rewind-apply",
   "context:snapshot", "model:usage",
@@ -224,6 +224,30 @@ async function createWindow() {
             console.log("GUI_SMOKE_STEP:plan_verified");
           } catch (e) { console.log("GUI_SMOKE_STEP_ERR:plan:" + e.message); }
 
+          // M2 Agent Inspector(需足够列宽:窄窗后右栏会被布局挤掉)
+          try {
+            win.setSize(1440, 900);
+            await new Promise((r) => setTimeout(r, 400));
+            const opened = await win.webContents.executeJavaScript(`
+              (() => {
+                // 确保右栏打开
+                const toggle = document.querySelector("[aria-label='dock']") || document.querySelector(".rail-foot .iconbtn:last-child");
+                const tab = Array.from(document.querySelectorAll("[role='tab']")).find(el => {
+                  const s = (el.textContent || "").trim();
+                  return s.includes("检查器") || s.includes("Inspector");
+                });
+                if (tab) tab.click();
+                return Boolean(tab);
+              })()
+            `);
+            await new Promise((r) => setTimeout(r, 350));
+            const panel = await win.webContents.executeJavaScript(
+              `Boolean(document.querySelector("[data-testid='inspector-panel']"))`
+            );
+            console.log(opened && panel ? "GUI_SMOKE_STEP:inspector_verified" : `GUI_SMOKE_STEP_ERR:inspector:tab=${opened} panel=${panel}`);
+            await shoot("shell-inspector");
+          } catch (e) { console.log("GUI_SMOKE_STEP_ERR:inspector:" + e.message); }
+
           try {
             await win.webContents.executeJavaScript(`
               (() => {
@@ -340,6 +364,7 @@ function registerIpcHandlers() {
     catch (error) { return { error: error.message }; }
   });
   handle("session:timeline", async (_event, count) => host?.getTimeline(count || 20) || []);
+  handle("agent:list-paused", () => host?.listPaused() || []);
   handle("session:branches", async () => {
     try { return await host.listBranches(); }
     catch (error) { return { error: error.message }; }

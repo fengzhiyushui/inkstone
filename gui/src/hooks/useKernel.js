@@ -88,6 +88,9 @@ export function useKernel(dispatch) {
       // #9.3:敏感文件提醒的答复(非审批通道)
       respondSensitive: (requestId, allowed) => api?.respondSensitive?.(requestId, allowed === true),
       interrupt: () => api?.interrupt?.(),
+      listPaused: () => (api?.listPaused ? api.listPaused() : Promise.resolve([])),
+      getTimeline: (count) => (api?.getTimeline ? api.getTimeline(count) : Promise.resolve([])),
+      getState: () => (api?.getState ? api.getState() : Promise.resolve({ current: "idle", channel: null })),
       setPreferences: (patch) => api?.setPreferences?.(patch),
 
       // Settings bridge (pass-through; components own their local form state).

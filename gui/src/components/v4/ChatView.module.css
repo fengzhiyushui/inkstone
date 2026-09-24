@@ -175,13 +175,23 @@
   padding: 4px 0 8px;
   color: var(--text-faint);
   font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-.trajectoryEmpty {
-  padding: 48px 16px;
-  text-align: center;
-  color: var(--text-faint);
-  font-size: 14px;
+.thoughtReasoning {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+  color: var(--text-mut);
+  max-height: 180px;
+  overflow: auto;
+}
+
+.trajectoryWrap {
+  width: 100%;
+  padding: 4px 0 16px;
 }
 
 .emptyNote {

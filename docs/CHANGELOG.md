@@ -12,6 +12,14 @@
 
 下一个补丁 / 小版本的变更在此累积；发布时按版本规则定级并移入带版本号小节。
 
+- **v1.9.0 M2 GUI Agent Inspector + 轨迹 + 遥测分列**（里程碑提交，版本仍为 1.8.7）:
+  - 右栏 Dock 第 5 tab「检查器」（D2：独立 tab，不动 PlanPanel）：纯派生五区视图（优先条 / 计划 / 工具 call↔result 配对 / 审批 / 时间线），`inspector-state.js` + 单测。
+  - Q5：会话头「轨迹」tab 接真实 `session:timeline`（与 Inspector 同源 `TimelineView` 虚拟列表），删除空态占位。
+  - 审批区补 `agent:list-paused` IPC 桥（kernel-host `listPaused`，白名单登记）。
+  - 遥测分列：状态行新增 cacheMiss / reasoningTokens / TPS 段（无数据即不渲染）+ `tpsDecimals` 格式；推理摘要卡展开体展示 cache hit/miss、TPS 与 reasoning 正文。
+  - **修 CONTEXT_WINDOW=128000 硬编码** → `contextWindowForModel`（现行 DeepSeek 代际 1M，旧 chat/reasoner 64k，未知 128k），1M 上下文下用量条不再在 12.8% 处显示 100%。
+  - gui-smoke 增 `inspector_verified` 景；全量 **1232/1232** + `npm run check` + renderer build 通过。
+
 - **v1.9.0 M1-P0 现网燃眉修正**（里程碑提交，版本仍为 1.8.7；八目录白名单首批 5 文件 +21/−8，测试 **1167/1167**）:
   - **默认模型 ID 收敛单一常量源**:新增 `src/deepseek/model-ids.js`(`CURRENT_MODELS` / `RETIRED_MODELS` / `migrateModelId`),`config.js` 与 `model-router.js` 的双源头漂移消除。`act` / `fim` 默认 `deepseek-v4-flash`(已退役)→ **`deepseek-flash`**;`think` 维持 `deepseek-v4-pro`(V4-Pro 流量自 2026-09-14 起临时路由到 V4.1-Flash 并按 Flash 计费,不临时降档 —— 维护者拍板 D4)。
   - **退役迁移仅精确键匹配**:首批仅 `deepseek-v4-flash → deepseek-flash` 一项;`deepseek-chat` / `deepseek-reasoner` 暂不纳入(兼容端点用户可能故意沿用旧名)。**仅内存归一,不重写用户 `config.json`**;`DEEPSEEK_MODEL` 环境变量不过迁移;第三方端点 id(形如 `deepseek-coder-v2:latest`)原样直通,绝不兜底改写。

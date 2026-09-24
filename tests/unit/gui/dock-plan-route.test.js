@@ -4,9 +4,11 @@ import { DOCK_TABS, createInitialState, applyWorkbenchAction } from "../../../gu
 import kernelHostPkg from "../../../gui/kernel-host.js";
 const { GUI_DOCK_TABS } = kernelHostPkg;
 
-test("DOCK_TABS and GUI_DOCK_TABS include 'plan'", () => {
+test("DOCK_TABS and GUI_DOCK_TABS include 'plan' and 'inspector'", () => {
   assert.ok(DOCK_TABS.includes("plan"), "workbench-state DOCK_TABS must include 'plan'");
   assert.ok(GUI_DOCK_TABS.has("plan"), "kernel-host GUI_DOCK_TABS must include 'plan'");
+  assert.ok(DOCK_TABS.includes("inspector"), "workbench-state DOCK_TABS must include 'inspector'");
+  assert.ok(GUI_DOCK_TABS.has("inspector"), "kernel-host GUI_DOCK_TABS must include 'inspector'");
 });
 
 test("dock_tab_changed allows switching to 'plan'", () => {

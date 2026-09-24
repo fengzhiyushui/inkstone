@@ -63,8 +63,20 @@ export function deriveAgentCards(activity) {
       }
     } else if (type === "model:response") {
       // v1.8.0 推理摘要卡 —— 门控:只有带 purpose 或真实 reasoning 用量才出卡。
+      // v1.9 M2:meta 追加 model,展开体可展示 cache/tps/reasoning。
       if (f.reasoningTokens > 0 || f.purpose) {
-        cards.push({ kind: "thought", purpose: f.purpose, model: f.model, reasoningTokens: f.reasoningTokens, completionTokens: f.completionTokens });
+        cards.push({
+          kind: "thought",
+          purpose: f.purpose,
+          model: f.model,
+          reasoningTokens: f.reasoningTokens,
+          completionTokens: f.completionTokens,
+          cacheHitTokens: f.cacheHitTokens,
+          cacheMissTokens: f.cacheMissTokens,
+          latencyMs: f.latencyMs,
+          tps: f.tps,
+          reasoning: f.reasoning
+        });
       }
     } else if (type === "file:diff_applied" || type === "file:diff_preview") {
       const files = (f.files || []).filter((x) => x && x.path);

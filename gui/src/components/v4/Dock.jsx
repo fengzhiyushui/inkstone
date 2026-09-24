@@ -4,9 +4,11 @@ import FilesPanel from "./panels/FilesPanel.jsx";
 import ChangesPanel from "./panels/ChangesPanel.jsx";
 import RecoveryPanel from "./panels/RecoveryPanel.jsx";
 import PlanPanel from "./panels/PlanPanel.jsx";
+import InspectorPanel from "./panels/InspectorPanel.jsx";
 import css from "./Dock.module.css";
 
 const TABS = [
+  { id: "inspector", labelKey: "dock.inspector" },
   { id: "plan", labelKey: "dock.plan" },
   { id: "files", labelKey: "dock.files" },
   { id: "changes", labelKey: "dock.changes" },
@@ -57,6 +59,7 @@ export default function Dock({
         </button>
       </div>
       <div className={css.body}>
+        {tab === "inspector" && <InspectorPanel t={t} state={state} kernel={kernel} />}
         {tab === "plan" && <PlanPanel t={t} state={state} />}
         {tab === "files" && <FilesPanel t={t} state={state} kernel={kernel} dispatch={dispatch} />}
         {tab === "changes" && (

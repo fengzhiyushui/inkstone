@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld("deepseek", {
   respondSensitive: (requestId, allowed) => ipcRenderer.invoke("sensitive:respond", requestId, allowed === true),
   interrupt: () => ipcRenderer.invoke("agent:interrupt"),
   getTimeline: (count) => ipcRenderer.invoke("session:timeline", count),
+  listPaused: () => ipcRenderer.invoke("agent:list-paused"),
   onKernelEvent: (callback) => {
     const handler = (_event, data) => callback(data);
     ipcRenderer.on("kernel:event", handler);

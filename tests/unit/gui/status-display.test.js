@@ -5,18 +5,22 @@ import {
   normalizeStatusDisplay
 } from "../../../gui/src/state/status-display.js";
 
-test("默认值:4 组齐全,form=bar,11 个开关(本轮耗时/改动数默认关),格式默认", () => {
+test("默认值:4 组齐全,form=bar,14 个开关(本轮耗时/改动数默认关),格式默认", () => {
   assert.equal(STATUS_FORMS.length, 5);
   assert.equal(STATUS_POSITIONS.length, 3);
-  assert.equal(STATUS_TOGGLES.length, 11);
+  assert.equal(STATUS_TOGGLES.length, 14);
   assert.equal(STATUS_DISPLAY_DEFAULTS.form, "bar");
   assert.equal(STATUS_DISPLAY_DEFAULTS.position, "composer");
   assert.equal(STATUS_DISPLAY_DEFAULTS.format.dotsCount, 10);
-  assert.equal(Object.keys(STATUS_DISPLAY_DEFAULTS.show).length, 11);
+  assert.equal(STATUS_DISPLAY_DEFAULTS.format.tpsDecimals, 1);
+  assert.equal(Object.keys(STATUS_DISPLAY_DEFAULTS.show).length, 14);
   assert.equal(STATUS_DISPLAY_DEFAULTS.show.turnTime, false);   // 设计稿默认关
   assert.equal(STATUS_DISPLAY_DEFAULTS.show.turnChanges, false);
   assert.equal(STATUS_DISPLAY_DEFAULTS.show.model, false);   // 输入行已有模型 pill,不重复
   assert.equal(STATUS_DISPLAY_DEFAULTS.show.branch, true);
+  assert.equal(STATUS_DISPLAY_DEFAULTS.show.cacheMiss, true);
+  assert.equal(STATUS_DISPLAY_DEFAULTS.show.reasoningTokens, true);
+  assert.equal(STATUS_DISPLAY_DEFAULTS.show.tps, true);
 });
 
 test("normalize:null/非对象 → 完整默认深拷贝", () => {
@@ -59,4 +63,11 @@ test("normalize:越界与非法值被夹紧/回退", () => {
   assert.equal(out.format.percentDecimals, 4, "小数位夹紧到 0–4");
   assert.equal(out.format.contextWarnRatio, 1, "阈值夹紧到 0–1");
   assert.equal(out.format.dotsCount, 4, "点阵格数夹紧到 4–24");
+  assert.equal(out.format.tpsDecimals, 1, "未提及的 tpsDecimals 保留默认");
+});
+
+test("normalize:tpsDecimals 夹紧 0–2", () => {
+  assert.equal(normalizeStatusDisplay({ format: { tpsDecimals: 0 } }).format.tpsDecimals, 0);
+  assert.equal(normalizeStatusDisplay({ format: { tpsDecimals: 2 } }).format.tpsDecimals, 2);
+  assert.equal(normalizeStatusDisplay({ format: { tpsDecimals: 9 } }).format.tpsDecimals, 2);
 });

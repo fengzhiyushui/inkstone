@@ -2,8 +2,9 @@
 // 纯函数,node:test 覆盖;组件按此渲染形态与开关。
 export const STATUS_FORMS = ["text", "num", "bar", "dots", "off"]; // 指标展示形态(5 选 1)
 export const STATUS_POSITIONS = ["composer", "statusbar", "both"]; // 显示位置
-export const STATUS_TOGGLES = [ // 显示哪些信息(11 个独立开关)
-  "branch", "checkpoint", "connection", "context", "cacheHit", "retrievalHit",
+export const STATUS_TOGGLES = [ // 显示哪些信息(14 个独立开关;cacheMiss/reasoningTokens/tps 为 v1.9 遥测分列)
+  "branch", "checkpoint", "connection", "context", "cacheHit", "cacheMiss", "retrievalHit",
+  "reasoningTokens", "tps",
   "turnTime", "turnChanges", "model", "theme", "language"
 ];
 
@@ -14,14 +15,17 @@ export const STATUS_DISPLAY_DEFAULTS = {
   compact: false,          // 紧凑模式
   show: {                  // 与设计稿的开关默认一致:本轮耗时/本轮改动数默认关(状态行已足够长)
     branch: true, checkpoint: true, connection: true, context: true,
-    cacheHit: true, retrievalHit: true, turnTime: false, turnChanges: false,
+    cacheHit: true, cacheMiss: true, retrievalHit: true,
+    reasoningTokens: true, tps: true,
+    turnTime: false, turnChanges: false,
     model: false, theme: true, language: true
   },
   format: {                // 数值与格式
     percentDecimals: 0,    // 百分比小数位
     bigUnits: true,        // 大数字单位(k/M)
     contextWarnRatio: 0.8, // 上下文告警阈值
-    dotsCount: 10          // 点阵格数
+    dotsCount: 10,         // 点阵格数
+    tpsDecimals: 1         // TPS 小数位(v1.9)
   }
 };
 
@@ -39,6 +43,7 @@ export function normalizeStatusDisplay(input, fallback = STATUS_DISPLAY_DEFAULTS
   if (typeof f.bigUnits === "boolean") format.bigUnits = f.bigUnits;
   if (typeof f.contextWarnRatio === "number") format.contextWarnRatio = Math.max(0, Math.min(1, f.contextWarnRatio));
   if (Number.isInteger(f.dotsCount)) format.dotsCount = Math.max(4, Math.min(24, f.dotsCount));
+  if (Number.isInteger(f.tpsDecimals)) format.tpsDecimals = Math.max(0, Math.min(2, f.tpsDecimals));
   return {
     form: STATUS_FORMS.includes(input.form) ? input.form : fallback.form,
     position: STATUS_POSITIONS.includes(input.position) ? input.position : fallback.position,

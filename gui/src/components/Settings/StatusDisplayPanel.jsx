@@ -93,6 +93,12 @@ export default function StatusDisplayPanel({ t, state, kernel, dispatch }) {
             {DOTS_COUNTS.map((n) => <option key={n} value={n}>{t("settings.sd.cells").replace("{n}", n)}</option>)}
           </select>
         </Row>
+        <Row title={t("settings.sd.tpsDecimals")} desc={t("settings.sd.tpsDecimalsDesc")}>
+          <select className="f-in mid" value={d.format.tpsDecimals ?? 1}
+            onChange={(e) => apply({ format: { tpsDecimals: Number(e.target.value) } })}>
+            {PERCENT_DECIMALS.map((n) => <option key={n} value={n}>{t("settings.sd.decimals").replace("{n}", n)}</option>)}
+          </select>
+        </Row>
       </div>
     </>
   );

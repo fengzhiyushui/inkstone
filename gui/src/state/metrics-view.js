@@ -1,8 +1,21 @@
 // gui/src/state/metrics-view.js — 对话框状态行的指标推导(纯函数,node:test 覆盖)。
 // 设计稿 v4 把「比例型指标」做成 5 形态(文字/数值/进度条/点阵/关闭),此处只算数值与色阶,
 // 具体 DOM 交给 MetricsLine。数据源是 kernel 的 usage 快照,没有的指标一律不出现(不编造)。
+// v1.9:M2 遥测分列(cacheMiss / reasoningTokens / tps)+ CONTEXT_WINDOW 按模型推导(现行代际 1M)。
 
-export const CONTEXT_WINDOW = 128000; // 上下文窗口上限(与 deepseek 模型档一致)
+export const CONTEXT_WINDOW_LEGACY = 128000;
+export const CONTEXT_WINDOW_CURRENT = 1000000;
+// 兼容旧引用:默认按现行 DeepSeek 代际(1M)。精确值请用 contextWindowForModel。
+export const CONTEXT_WINDOW = CONTEXT_WINDOW_CURRENT;
+
+/** 按模型 id 推导上下文窗口。现行售卖代际(flash / v4-pro / v4.1)= 1M;旧 chat/reasoner= 64k;未知= 128k。 */
+export function contextWindowForModel(model) {
+  const id = String(model || "").toLowerCase();
+  if (!id) return CONTEXT_WINDOW_CURRENT;
+  if (id.includes("deepseek-chat") || id.includes("deepseek-reasoner")) return 64000;
+  if (id.includes("flash") || id.includes("pro") || id.includes("v4") || id.includes("v4.1")) return CONTEXT_WINDOW_CURRENT;
+  return CONTEXT_WINDOW_LEGACY;
+}
 
 export function formatPercent(ratio, decimals = 0) {
   const pct = Math.max(0, Math.min(1, Number(ratio) || 0)) * 100;
@@ -32,24 +45,47 @@ export function totalTokens(usage) {
   return (Number(u.total_prompt_tokens) || 0) + (Number(u.total_completion_tokens) || 0);
 }
 
+function reasonTokens(usage) {
+  const u = usage || {};
+  return Number(u.total_reasoning_tokens ?? u.reasoning_tokens) || 0;
+}
+
+function cacheMissTokens(usage) {
+  const u = usage || {};
+  return Number(u.cache_miss_tokens) || 0;
+}
+
+function tpsOf(usage) {
+  const u = usage || {};
+  const direct = Number(u.tps ?? u.tokens_per_second);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  const completion = Number(u.total_completion_tokens) || 0;
+  const latency = Number(u.avg_latency_ms) || 0;
+  if (completion > 0 && latency > 0) return (completion / latency) * 1000;
+  return 0;
+}
+
 // 比例型指标段。每段:{ key, ratio, text, num:{v,u}, tone }。
 // tone:accent(默认)/ok(越高越好)/warn(超过阈值的上下文用量)。
-export function metricSegments(usage, display) {
+// model 可选:用于 contextWindowForModel;不传则用 display.model 或 1M。
+export function metricSegments(usage, display, model) {
   const show = (display && display.show) || {};
   const fmt = (display && display.format) || {};
   const decimals = Number.isInteger(fmt.percentDecimals) ? fmt.percentDecimals : 0;
+  const tpsDecimals = Number.isInteger(fmt.tpsDecimals) ? Math.max(0, Math.min(2, fmt.tpsDecimals)) : 1;
   const bigUnits = fmt.bigUnits !== false;
   const warnAt = typeof fmt.contextWarnRatio === "number" ? fmt.contextWarnRatio : 0.8;
+  const windowSize = contextWindowForModel(model || display?.model);
   const segments = [];
 
   if (show.context !== false) {
     const tokens = totalTokens(usage);
-    const ratio = Math.min(1, tokens / CONTEXT_WINDOW);
+    const ratio = Math.min(1, tokens / windowSize);
     segments.push({
       key: "context",
       ratio,
-      text: `${formatCount(tokens, bigUnits)}/${formatCount(CONTEXT_WINDOW, bigUnits)}`,
-      num: { v: formatCount(tokens, bigUnits), u: `/${formatCount(CONTEXT_WINDOW, bigUnits)}` },
+      text: `${formatCount(tokens, bigUnits)}/${formatCount(windowSize, bigUnits)}`,
+      num: { v: formatCount(tokens, bigUnits), u: `/${formatCount(windowSize, bigUnits)}` },
       percent: formatPercent(ratio, decimals),
       tone: ratio >= warnAt ? "warn" : "accent"
     });
@@ -67,6 +103,22 @@ export function metricSegments(usage, display) {
     });
   }
 
+  // v1.9:缓存未命中 token——无数据即不渲染。
+  const miss = cacheMissTokens(usage);
+  const hits = Number(usage?.cache_hit_tokens) || 0;
+  if (show.cacheMiss !== false && (miss > 0 || hits > 0)) {
+    const denom = hits + miss;
+    const ratio = denom > 0 ? Math.min(1, miss / denom) : 0;
+    segments.push({
+      key: "cacheMiss",
+      ratio,
+      text: formatCount(miss, bigUnits),
+      num: { v: formatCount(miss, bigUnits), u: "" },
+      percent: formatCount(miss, bigUnits),
+      tone: "warn"
+    });
+  }
+
   // 检索命中率:kernel 暂未上报,没有数据就不显示这一段(而不是显示 0)。
   const retrieval = usage && usage.retrieval;
   if (show.retrievalHit !== false && retrieval && Number(retrieval.total) > 0) {
@@ -77,6 +129,35 @@ export function metricSegments(usage, display) {
       text: `${retrieval.hit}/${retrieval.total}`,
       num: { v: String(retrieval.hit), u: `/${retrieval.total}` },
       percent: formatPercent(ratio, decimals),
+      tone: "accent"
+    });
+  }
+
+  // v1.9:推理 tokens——无数据即不渲染。
+  const reasoning = reasonTokens(usage);
+  if (show.reasoningTokens !== false && reasoning > 0) {
+    const completion = Number(usage?.total_completion_tokens) || 0;
+    const ratio = completion > 0 ? Math.min(1, reasoning / completion) : 1;
+    segments.push({
+      key: "reasoningTokens",
+      ratio,
+      text: formatCount(reasoning, bigUnits),
+      num: { v: formatCount(reasoning, bigUnits), u: "" },
+      percent: formatCount(reasoning, bigUnits),
+      tone: "accent"
+    });
+  }
+
+  // v1.9:TPS——无数据即不渲染。bar/dots 形态用 50 t/s 作满刻度参考。
+  const tps = tpsOf(usage);
+  if (show.tps !== false && tps > 0) {
+    const text = tps.toFixed(tpsDecimals);
+    segments.push({
+      key: "tps",
+      ratio: Math.min(1, tps / 50),
+      text,
+      num: { v: text, u: " t/s" },
+      percent: text,
       tone: "accent"
     });
   }

@@ -101,7 +101,7 @@ const GUI_PREFERENCE_DEFAULTS = Object.freeze({
   dockTab: "files"
 });
 
-const GUI_DOCK_TABS = new Set(["plan", "files", "changes", "recovery"]);
+const GUI_DOCK_TABS = new Set(["inspector", "plan", "files", "changes", "recovery"]);
 
 const EXT_LANGUAGE = {
   js: "javascript", mjs: "javascript", cjs: "javascript", jsx: "javascript",
@@ -335,6 +335,16 @@ function createKernelHost({
 
   function getState() {
     return ready() ? requireKernel().runtime.getState() : { current: "idle", channel: null };
+  }
+
+  // M2 Agent Inspector：审批区需要 runtime.listPaused（kernel.agent.listPaused）
+  function listPaused() {
+    if (!ready()) return [];
+    try {
+      return requireKernel().agent?.listPaused?.() || requireKernel().runtime?.listPaused?.() || [];
+    } catch {
+      return [];
+    }
   }
 
   async function listBranches() {
@@ -690,7 +700,7 @@ function createKernelHost({
     }));
   }
 
-  return { init, ready, send, approve, interrupt, getTimeline, getSnapshot, getUsage, getConfig, getState,
+  return { init, ready, send, approve, interrupt, getTimeline, getSnapshot, getUsage, getConfig, getState, listPaused,
            listBranches, listCheckpoints, rewindPreview, rewindApply, getActiveBranch,
            getPreferences, setPreferences, listTree, readFile, writeFile, listChanges, describeChange,
            getSettings, setConfig, listApiProfiles, saveApiProfile, deleteApiProfile, activateApiProfile,
