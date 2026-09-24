@@ -44,11 +44,11 @@ test("buildKernelOptions forwards config orchestration to the kernel", async () 
 });
 
 test("buildKernelOptions forwards config models into deepseek options", async () => {
-  const models = { act: "cfg-act", think: "deepseek-v4-pro", fim: "deepseek-v4-pro" };
+  const models = { act: "deepseek-flash", think: "deepseek-v4-pro", fim: "deepseek-flash" };
   const options = await buildKernelOptions("/repo", {}, async () => ({
     apiKey: "sk-test",
     baseUrl: "https://example.invalid",
     models
   }));
-  assert.deepEqual(options.deepseek.models, { act: "cfg-act", think: "deepseek-v4-pro", fim: "deepseek-v4-pro" });
+  assert.deepEqual(options.deepseek.models, { act: "deepseek-flash", think: "deepseek-v4-pro", fim: "deepseek-flash" });
 });

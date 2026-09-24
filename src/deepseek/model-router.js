@@ -1,8 +1,8 @@
-export const DEFAULT_MODELS = {
-  act: "deepseek-v4-flash",
-  think: "deepseek-v4-pro",
-  fim: "deepseek-v4-pro"
-};
+import { CURRENT_MODELS } from "./model-ids.js";
+
+// 保留命名导出:路由默认模型统一取自单一常量源 model-ids.js(v1.9.0 M1-P0),
+// 消除「config 显示 A、实际发 B」的双源头漂移;deepseek-v4-flash 已退役。
+export const DEFAULT_MODELS = CURRENT_MODELS;
 
 const CHANNELS = {
   reply: { purpose: "reply", channel: "act", thinking: { type: "disabled" }, temperature: 0.2, max_tokens: 4096, stream: true },
@@ -10,7 +10,7 @@ const CHANNELS = {
   plan: { purpose: "plan", channel: "think", thinking: { type: "enabled" }, reasoning_effort: "high", temperature: 0.2, max_tokens: 8192, stream: false },
   review: { purpose: "review", channel: "think", thinking: { type: "enabled" }, reasoning_effort: "high", temperature: 0.2, max_tokens: 8192, stream: false },
   repair: { purpose: "repair", channel: "think", thinking: { type: "enabled" }, reasoning_effort: "high", temperature: 0.1, max_tokens: 8192, stream: false },
-  fim: { purpose: "fim", channel: "fim", max_tokens: 512 }
+  fim: { purpose: "fim", channel: "fim", max_tokens: 4096 }
 };
 
 export function routeModel({ purpose = "reply", complexity = "normal", explicitModel = null, models } = {}) {

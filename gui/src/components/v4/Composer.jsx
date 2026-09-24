@@ -4,8 +4,8 @@ import MetricsLine from "./MetricsLine.jsx";
 import css from "./Composer.module.css";
 
 const KNOWN_MODELS = [
-  { id: "deepseek-chat", name: "DeepSeek-V3", desc: "通用模型 · 快速响应" },
-  { id: "deepseek-reasoner", name: "DeepSeek-R1", desc: "深度思考 · 复杂推理" }
+  { id: "deepseek-flash", name: "DeepSeek-V4.1-Flash", desc: "通用模型 · 快速响应" },
+  { id: "deepseek-v4-pro", name: "DeepSeek-V4-Pro", desc: "深度思考 · 复杂推理" }
 ];
 
 export default function Composer({
@@ -53,7 +53,7 @@ export default function Composer({
   };
 
   const autonomyLabel = autonomy || (t ? t("composer.workspaceMod") : "工作区内修改");
-  const currentModel = model || "deepseek-chat";
+  const currentModel = model || "deepseek-flash";
   const allModels = [...KNOWN_MODELS];
   if (currentModel && !allModels.some((m) => m.id === currentModel)) {
     allModels.unshift({ id: currentModel, name: currentModel, desc: t ? t("composer.configuredModel") : "当前配置的模型" });

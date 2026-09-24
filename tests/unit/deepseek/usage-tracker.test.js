@@ -19,7 +19,7 @@ test("usage tracker records prompt completion reasoning and cache tokens", () =>
 
 test("usage tracker falls back to prompt_tokens_details.cached_tokens", () => {
   const tracker = createUsageTracker();
-  tracker.recordUsage({ channel: "act", model: "deepseek-v4-flash", usage: { prompt_tokens: 50, completion_tokens: 10, prompt_tokens_details: { cached_tokens: 20 } } });
+  tracker.recordUsage({ channel: "act", model: "deepseek-flash", usage: { prompt_tokens: 50, completion_tokens: 10, prompt_tokens_details: { cached_tokens: 20 } } });
   const stats = tracker.getUsageStats();
   assert.equal(stats.cache_hit_tokens, 20);
   assert.equal(stats.cache_miss_tokens, 30);

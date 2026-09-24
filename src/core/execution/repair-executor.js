@@ -93,6 +93,10 @@ function assistantToolCallMessage(modelResult, rawToolCalls) {
   return {
     role: "assistant",
     content: modelResult.content || "",
+    // DeepSeek 协议:带 tools 的请求必须完整回传历史每轮 assistant 消息的
+    // reasoning_content,否则 HTTP 400。仅当上游确实返回了该字段(真字符串)时
+    // 才附带,不用 undefined 占位键——旧 mock 不传该字段时行为逐字节不变。
+    ...(modelResult.reasoning_content ? { reasoning_content: modelResult.reasoning_content } : {}),
     tool_calls: rawToolCalls.map((call) => ({
       id: call.id,
       type: "function",

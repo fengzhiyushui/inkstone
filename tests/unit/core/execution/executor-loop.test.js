@@ -464,3 +464,127 @@ test("resumeExecutorLoop can pause again on a remaining tool approval", async ()
   assert.equal(result.resume_state.pending_tool_call.name, "shell");
   assert.equal(result.resume_state.tool_results.length, 1);
 });
+
+test("executor loop replays model reasoning_content in second-round assistant message", async () => {
+  // DeepSeek 协议:请求带 tools 时,历史每轮 assistant 消息必须完整回传
+  // reasoning_content,否则第二轮请求 HTTP 400。这里捕捉第二轮请求体,
+  // 断言首条 assistant 消息携带该字段且值与上游返回一致。
+  const calls = [];
+  const modelGateway = {
+    invoke: async (messages) => {
+      calls.push(messages);
+      if (calls.length === 1) {
+        return {
+          content: "",
+          reasoning_content: "I should read the README first.",
+          tool_calls: [{ id: "call_read", name: "read", arguments: { path: "README.md" } }]
+        };
+      }
+      return { content: "Read result handled", tool_calls: [] };
+    }
+  };
+
+  const result = await runExecutorLoop({
+    message: "read README",
+    classification: { task_type: "diagnostic" },
+    turnId: "turn_reasoning",
+    modelGateway,
+    toolSchemas: [{ type: "function", function: { name: "read" } }],
+    executeTool: async (toolCall) => ({
+      call_id: toolCall.id, status: "success", content: [{ type: "text", text: "README content" }]
+    }),
+    createPolicyContext: () => ({ autonomy: "gated" })
+  });
+
+  assert.equal(result.status, "complete");
+  assert.equal(calls.length, 2);
+  const assistantMessages = calls[1].filter((entry) => entry.role === "assistant");
+  assert.equal(assistantMessages.length, 1);
+  assert.equal(assistantMessages[0].reasoning_content, "I should read the README first.");
+  assert.equal(assistantMessages[0].tool_calls[0].id, "call_read");
+});
+
+test("executor loop omits reasoning_content key when model returns none", async () => {
+  // 反向用例:上游模型结果无 reasoning_content 时,第二轮请求体的 assistant
+  // 消息不得包含该键(不能用 undefined 占位),保持旧 mock 行为逐字节不变。
+  const calls = [];
+  const modelGateway = {
+    invoke: async (messages) => {
+      calls.push(messages);
+      if (calls.length === 1) {
+        return {
+          content: "",
+          tool_calls: [{ id: "call_read", name: "read", arguments: { path: "README.md" } }]
+        };
+      }
+      return { content: "Read result handled", tool_calls: [] };
+    }
+  };
+
+  const result = await runExecutorLoop({
+    message: "read README",
+    classification: { task_type: "diagnostic" },
+    turnId: "turn_no_reasoning",
+    modelGateway,
+    toolSchemas: [{ type: "function", function: { name: "read" } }],
+    executeTool: async (toolCall) => ({
+      call_id: toolCall.id, status: "success", content: [{ type: "text", text: "README content" }]
+    }),
+    createPolicyContext: () => ({ autonomy: "gated" })
+  });
+
+  assert.equal(result.status, "complete");
+  assert.equal(calls.length, 2);
+  const assistantMessages = calls[1].filter((entry) => entry.role === "assistant");
+  assert.equal(assistantMessages.length, 1);
+  assert.ok(!("reasoning_content" in assistantMessages[0]));
+  assert.deepEqual(Object.keys(assistantMessages[0]), ["role", "content", "tool_calls"]);
+});
+
+test("resumeExecutorLoop replays reasoning_content in assistant message appended on resume", async () => {
+  // resume 路径(executor-loop.js 中审批恢复后追加 assistant 工具消息处)同样
+  // 回传 reasoning_content:审批恢复后的第一次模型请求,首条 assistant 消息
+  // 由 resume_state.model_result 构造,缺失该字段同样会触发 400。
+  const modelCalls = [];
+  const resumeState = {
+    turn_id: "turn_resume_reasoning",
+    message: "edit and read",
+    classification: { task_type: "edit" },
+    messages: [{ role: "user", content: "edit and read" }],
+    model_result: {
+      content: "",
+      reasoning_content: "apply the edit, then verify the result.",
+      tool_calls: [{ id: "call_edit", name: "edit", arguments: { diff: "d" } }]
+    },
+    raw_tool_calls: [
+      { id: "call_edit", name: "edit", arguments: { diff: "d" } }
+    ],
+    pending_tool_call: { id: "call_edit", name: "edit", params: { diff: "d" }, requested_by_step_id: "model:turn_resume_reasoning:0" },
+    remaining_tool_calls: [],
+    iteration: 0,
+    tool_results: [],
+    tool_schemas: [],
+    max_iterations: 5,
+    options: {}
+  };
+
+  const result = await resumeExecutorLoop({
+    resumeState,
+    modelGateway: {
+      invoke: async (messages) => {
+        modelCalls.push(messages);
+        return { content: "done after resume", tool_calls: [] };
+      }
+    },
+    executeTool: async (toolCall) => ({
+      call_id: toolCall.id, status: "success", content: [{ type: "text", text: "edit ok" }]
+    }),
+    createPolicyContext: () => ({ autonomy: "supervised" })
+  });
+
+  assert.equal(result.status, "complete");
+  assert.equal(result.content, "done after resume");
+  const assistantMessages = modelCalls[0].filter((message) => message.role === "assistant");
+  assert.equal(assistantMessages.length, 1);
+  assert.equal(assistantMessages[0].reasoning_content, "apply the edit, then verify the result.");
+});

@@ -3,6 +3,7 @@
 - 类型：路线图
 - 日期：2026-09-17
 - 状态：已评审（拍板结论见文末；装箱版本以 CHANGELOG 为准）
+- 更新（2026-09-23）：**B4（打包 / 分发）暂缓**——维护者判定当前产品成熟度未达打包水平，已撤相应实施计划；重启时机由维护者评估后另立。
 - 关联：[V3 路线图](2026-06-24-v3-roadmap-design.md) · [审计补救台账](../backend/2026-07-12-agent-findings-remediation.md) · [agent-runtime 边界](../backend/2026-08-09-v1.6.3-agent-runtime-refactor-design.md) · [v1.4 前端定稿](../frontend/2026-07-28-v1.4.0-frontend-redesign-design.md)
 
 ---

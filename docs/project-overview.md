@@ -62,11 +62,11 @@ user:message
 
 | 用途 | channel | 模型 | thinking | 流式 | 备注 |
 |------|---------|------|----------|------|------|
-| `reply` / `act` | `act` | `deepseek-v4-flash` | disabled | 是 | 对话与工具调用 |
+| `reply` / `act` | `act` | `deepseek-flash` | disabled | 是 | 对话与工具调用 |
 | `plan` / `review` / `repair` | `think` | `deepseek-v4-pro` | enabled（`reasoning_effort: high`） | 否 | 规划 / 评审 / 修复 |
-| `fim` | `fim` | `deepseek-v4-pro` | — | — | 补全，走 `/beta/completions` |
+| `fim` | `fim` | `deepseek-flash` | — | — | 补全，走 `/beta/completions` |
 
-`reply` 且 `complexity:"high"` 时改走 `plan` 档。模型 id 是默认值，可用 `DEEPSEEK_MODEL` 或 `config.json` 覆盖，也可用顶层 `models.{act,think,fim}` 整体切换。
+`reply` 且 `complexity:"high"` 时改走 `plan` 档。模型 id 是默认值，可用 `DEEPSEEK_MODEL` 或 `config.json` 覆盖，也可用顶层 `models.{act,think,fim}` 整体切换。注：`deepseek-v4-flash`（V4-Flash）已退役，旧配置中的该 id 会在加载时静默改写为 `deepseek-flash`（仅内存生效，不重写 `config.json`）。
 
 ### 其余协议件
 
@@ -300,7 +300,7 @@ tests/            单元 / 集成 / e2e
 - repair executor 目前是单轮修复执行器。
 - GUI 用量统计在离线或未接入真实模型调用时可能显示零值。
 - `src/theme.js` 的 `VERSION` 可能滞后于 `package.json`；发布真源是 `package.json`。
-- 模型 id 默认 `deepseek-v4-flash` / `deepseek-v4-pro`，以配置覆盖为准。
+- 模型 id 默认 `deepseek-flash` / `deepseek-v4-pro`（`deepseek-v4-flash` 已退役，旧 id 加载时静默迁移），以配置覆盖为准。
 
 ---
 

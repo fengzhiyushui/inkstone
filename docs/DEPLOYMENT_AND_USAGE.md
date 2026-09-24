@@ -152,12 +152,12 @@ node ./bin/inkstone.js config init \
 {
   "apiKey": "sk-********************",
   "baseUrl": "https://api.deepseek.com",
-  "model": "deepseek-v4-flash",
+  "model": "deepseek-flash",
   "reasoningEffort": "high",
   "models": {
-    "act": "deepseek-v4-flash",
+    "act": "deepseek-flash",
     "think": "deepseek-v4-pro",
-    "fim": "deepseek-v4-pro"
+    "fim": "deepseek-flash"
   },
   "limits": {
     "toolTimeoutMs": 120000,
@@ -206,9 +206,9 @@ node ./bin/inkstone.js config init \
 
 | 字段 | 含义 |
 |------|------|
-| `models.act` | 日常问答与工具调用（默认 `deepseek-v4-flash`） |
+| `models.act` | 日常问答与工具调用（默认 `deepseek-flash`） |
 | `models.think` | 规划 / 评审 / 修复（默认 `deepseek-v4-pro`） |
-| `models.fim` | 光标处补全（`/beta/completions`） |
+| `models.fim` | 光标处补全（`/beta/completions`，默认 `deepseek-flash`） |
 | `limits` | 超时与回合预算护栏 |
 | `context.semantic` | 语义上下文（默认关） |
 | `orchestration` | 多智能体拆解、并行写隔离、经验学习 |
@@ -217,13 +217,17 @@ node ./bin/inkstone.js config init \
 
 持久化恢复不是 `config.json` 字段。启用方式是 `createKernel(root, { recovery: { enabled: true } })`（CLI/TUI 经对应入口透传；默认关闭）。
 
+### 旧模型 id 静默迁移
+
+`deepseek-v4-flash`（V4-Flash）已退役。旧配置（`model` / `models.*`）中若仍写着该 id，Inkstone 加载时会在内存中自动改写为 `deepseek-flash`：仅本次运行生效，不会重写 `config.json`。改写只做精确键匹配，第三方端点（Ollama / vLLM / OneAPI）的模型 id 一律原样保留，显式指定的模型 id 仍最高优先。
+
 ### 环境变量
 
 | 变量 | 对应配置 | 默认 |
 |------|----------|------|
 | `DEEPSEEK_API_KEY` | `apiKey` | 无 |
 | `DEEPSEEK_BASE_URL` | `baseUrl` | `https://api.deepseek.com` |
-| `DEEPSEEK_MODEL` | `model` | `deepseek-v4-flash` |
+| `DEEPSEEK_MODEL` | `model` | `deepseek-flash` |
 | `DEEPSEEK_REASONING_EFFORT` | `reasoningEffort` | `high` |
 | `DEEPSEEK_TOOL_TIMEOUT_MS` | `limits.toolTimeoutMs` | `120000` |
 | `DEEPSEEK_MODEL_TIMEOUT_MS` | `limits.modelTimeoutMs` | `120000` |

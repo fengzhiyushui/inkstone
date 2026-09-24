@@ -210,7 +210,7 @@ Inkstone loads configuration from `./.deepseek-code/config.json` (gitignored) an
 |:---|:---|:---|
 | `DEEPSEEK_API_KEY` | — | DeepSeek API authentication key |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | Base endpoint URL (compatible with Ollama/vLLM) |
-| `DEEPSEEK_MODEL` | `deepseek-v4-flash` | Default model for conversations and tool actions |
+| `DEEPSEEK_MODEL` | `deepseek-flash` | Default model for conversations and tool actions |
 | `DEEPSEEK_REASONING_EFFORT` | `high` | Thinking model reasoning intensity (`low` / `medium` / `high`) |
 | `DEEPSEEK_TOOL_TIMEOUT_MS` | `120000` (120s) | Execution timeout per tool call |
 | `DEEPSEEK_MODEL_TIMEOUT_MS` | `120000` (120s) | Request & streaming timeout per model call |

@@ -4,10 +4,28 @@ import { buildFimRequest, createFimClient } from "../../../src/deepseek/fim-clie
 import { normalizeToolCalls, parseToolArguments } from "../../../src/deepseek/tool-call-repair.js";
 
 test("buildFimRequest creates beta completion body without chat-only fields", () => {
-  const body = buildFimRequest({ prefix: "function add(a, b) {", suffix: "}", model: "deepseek-v4-pro", maxTokens: 256 });
-  assert.deepEqual(body, { model: "deepseek-v4-pro", prompt: "function add(a, b) {", suffix: "}", max_tokens: 256 });
+  const body = buildFimRequest({ prefix: "function add(a, b) {", suffix: "}", model: "deepseek-flash", maxTokens: 4096 });
+  assert.deepEqual(body, { model: "deepseek-flash", prompt: "function add(a, b) {", suffix: "}", max_tokens: 4096 });
   assert.equal(body.thinking, undefined);
   assert.equal(body.response_format, undefined);
+});
+
+test("buildFimRequest defaults to deepseek-flash with 4096 max_tokens", () => {
+  const body = buildFimRequest({ prefix: "function add(a, b) {" });
+  assert.equal(body.model, "deepseek-flash");
+  assert.equal(body.max_tokens, 4096);
+});
+
+test("buildFimRequest clamps max_tokens into 1..4096 and falls back on non-finite", () => {
+  assert.equal(buildFimRequest({ prefix: "x", maxTokens: 9999 }).max_tokens, 4096);
+  assert.equal(buildFimRequest({ prefix: "x", maxTokens: 0 }).max_tokens, 1);
+  assert.equal(buildFimRequest({ prefix: "x", maxTokens: 1.9 }).max_tokens, 1);
+  assert.equal(buildFimRequest({ prefix: "x", maxTokens: 100.9 }).max_tokens, 100);
+  assert.equal(buildFimRequest({ prefix: "x", maxTokens: Infinity }).max_tokens, 4096);
+  assert.equal(buildFimRequest({ prefix: "x", maxTokens: Number.NaN }).max_tokens, 4096);
+  assert.equal(buildFimRequest({ prefix: "x", maxTokens: "abc" }).max_tokens, 4096);
+  assert.throws(() => buildFimRequest({ prefix: "" }), /non-empty string/);
+  assert.throws(() => buildFimRequest({}), /non-empty string/);
 });
 
 test("fim client posts to beta completions endpoint and returns text", async () => {

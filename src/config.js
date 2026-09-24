@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { CURRENT_MODELS, migrateModelId } from "./deepseek/model-ids.js";
 
 const DEFAULT_ORCH_MARKERS = [
   "这几个", "这些", "分别", "各自", "逐个", "逐一", "重构整个", "迁移", "跨多个文件", "跨文件",
@@ -9,16 +10,17 @@ const DEFAULT_ORCH_MARKERS = [
 
 export const DEFAULT_CONFIG = {
   baseUrl: "https://api.deepseek.com",
-  model: "deepseek-v4-flash",
+  // 模型 ID 单一常量源见 src/deepseek/model-ids.js(与 model-router.js 的 DEFAULT_MODELS 收敛)。
+  model: CURRENT_MODELS.act,
   apiKey: "",
   temperature: 0.2,
   maxTokens: 4096,
   thinking: { type: "disabled" },
   reasoningEffort: "high",
   models: {
-    act: "deepseek-v4-flash",
-    think: "deepseek-v4-pro",
-    fim: "deepseek-v4-pro"
+    act: CURRENT_MODELS.act,
+    think: CURRENT_MODELS.think,
+    fim: CURRENT_MODELS.fim
   },
   limits: {
     toolTimeoutMs: 120000,
@@ -68,7 +70,9 @@ export async function loadConfig(root, options = {}) {
     ...fileConfig,
     apiKey: fileConfig.apiKey || process.env.DEEPSEEK_API_KEY || "",
     baseUrl: process.env.DEEPSEEK_BASE_URL || fileConfig.baseUrl || DEFAULT_CONFIG.baseUrl,
-    model: process.env.DEEPSEEK_MODEL || fileConfig.model || DEFAULT_CONFIG.model,
+    // 顶层 model:env 是显式指定(D5,可能指向仍接受旧 id 的自建网关),不过迁移;
+    // 仅 fileConfig.model 过迁移。未知/第三方 id(migrateModelId 精确键匹配)原样透传。
+    model: process.env.DEEPSEEK_MODEL || migrateModelId(fileConfig.model) || DEFAULT_CONFIG.model,
     thinking: normalizeThinking(fileConfig.thinking ?? DEFAULT_CONFIG.thinking),
     reasoningEffort: process.env.DEEPSEEK_REASONING_EFFORT || fileConfig.reasoningEffort || DEFAULT_CONFIG.reasoningEffort,
     models: normalizeModels(fileConfig.models),
@@ -107,7 +111,7 @@ export function normalizeConfig(config) {
     ...DEFAULT_CONFIG,
     ...config,
     baseUrl: stripTrailingSlash(config.baseUrl || DEFAULT_CONFIG.baseUrl),
-    model: config.model || DEFAULT_CONFIG.model,
+    model: migrateModelId(config.model) || DEFAULT_CONFIG.model,
     apiKey: config.apiKey || "",
     temperature: toNumber(config.temperature, DEFAULT_CONFIG.temperature),
     maxTokens: Math.trunc(toNumber(config.maxTokens, DEFAULT_CONFIG.maxTokens)),
@@ -166,7 +170,7 @@ export function normalizeModels(raw) {
   const out = { ...d };
   for (const key of ["act", "think", "fim"]) {
     const value = typeof raw[key] === "string" ? raw[key].trim() : "";
-    if (value) out[key] = value;
+    if (value) out[key] = migrateModelId(value);
   }
   return out;
 }

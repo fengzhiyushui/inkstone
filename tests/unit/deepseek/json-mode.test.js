@@ -8,7 +8,7 @@ test("detects json in system or user messages case-insensitively", () => {
 });
 
 test("does not add response_format when JSON mode is disabled", () => {
-  const body = applyJsonMode({ body: { model: "deepseek-v4-flash" }, messages: [{ role: "user", content: "hello" }], jsonMode: false });
+  const body = applyJsonMode({ body: { model: "deepseek-flash" }, messages: [{ role: "user", content: "hello" }], jsonMode: false });
   assert.equal(body.response_format, undefined);
 });
 

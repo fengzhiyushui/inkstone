@@ -355,7 +355,7 @@ ${commandLine("inkstone resume", "查看最近会话记录")}
 环境变量：
   DEEPSEEK_API_KEY     如果本地配置没有 apiKey，则使用这里的密钥
   DEEPSEEK_BASE_URL    默认 https://api.deepseek.com
-  DEEPSEEK_MODEL       默认 deepseek-v4-flash
+  DEEPSEEK_MODEL       默认 deepseek-flash
   DEEPSEEK_REASONING_EFFORT 默认 high
 `);
 }

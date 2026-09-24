@@ -210,7 +210,7 @@ Inkstone 支持项目级配置文件与系统环境变量。配置文件存储�
 |:---|:---|:---|
 | `DEEPSEEK_API_KEY` | — | DeepSeek API 鉴权密钥 |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | API 服务端点（支持兼容端点如 Ollama/vLLM） |
-| `DEEPSEEK_MODEL` | `deepseek-v4-flash` | 默认对话与工具调用模型 |
+| `DEEPSEEK_MODEL` | `deepseek-flash` | 默认对话与工具调用模型 |
 | `DEEPSEEK_REASONING_EFFORT` | `high` | 思考模型推理强度（`low` / `medium` / `high`） |
 | `DEEPSEEK_TOOL_TIMEOUT_MS` | `120000` (120s) | 单次工具执行超时阈值 |
 | `DEEPSEEK_MODEL_TIMEOUT_MS` | `120000` (120s) | 模型请求与流式传输超时阈值 |

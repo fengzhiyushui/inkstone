@@ -101,3 +101,57 @@ test("repair executor returns final content when model has no tool calls", async
   assert.equal(result.content, "cannot repair");
   assert.deepEqual(result.toolResults, []);
 });
+
+test("repair executor replays model reasoning_content in assistant message", async () => {
+  // DeepSeek 协议:请求带 tools 时,历史 assistant 消息必须完整回传
+  // reasoning_content,否则后续请求 HTTP 400。repair 完成后返回的 messages
+  // 会被拼回后续请求,其中的 assistant 工具消息必须携带该字段且值与上游一致。
+  const result = await runRepairExecutor({
+    turnId: "turn_repair_reasoning",
+    messages: [{ role: "user", content: "repair" }],
+    modelGateway: {
+      invoke: async () => ({
+        content: "",
+        reasoning_content: "fix the diff first, then re-run tests.",
+        tool_calls: [{ id: "call_edit", name: "edit", arguments: { diff: "d" } }]
+      })
+    },
+    toolSchemas: [{ type: "function", function: { name: "edit" } }],
+    executeTool: async (toolCall) => ({
+      call_id: toolCall.id, status: "success", content: [{ type: "text", text: "applied" }]
+    }),
+    createPolicyContext: () => ({ autonomy: "gated" })
+  });
+
+  assert.equal(result.status, "complete");
+  const assistantMessages = result.messages.filter((message) => message.role === "assistant");
+  assert.equal(assistantMessages.length, 1);
+  assert.equal(assistantMessages[0].reasoning_content, "fix the diff first, then re-run tests.");
+  assert.equal(assistantMessages[0].tool_calls[0].id, "call_edit");
+});
+
+test("repair executor omits reasoning_content key when model returns none", async () => {
+  // 反向用例:上游模型结果无 reasoning_content 时,回传的 assistant 消息
+  // 不得包含该键(不能用 undefined 占位),保持旧 mock 行为逐字节不变。
+  const result = await runRepairExecutor({
+    turnId: "turn_repair_no_reasoning",
+    messages: [{ role: "user", content: "repair" }],
+    modelGateway: {
+      invoke: async () => ({
+        content: "",
+        tool_calls: [{ id: "call_edit", name: "edit", arguments: { diff: "d" } }]
+      })
+    },
+    toolSchemas: [{ type: "function", function: { name: "edit" } }],
+    executeTool: async (toolCall) => ({
+      call_id: toolCall.id, status: "success", content: [{ type: "text", text: "applied" }]
+    }),
+    createPolicyContext: () => ({ autonomy: "gated" })
+  });
+
+  assert.equal(result.status, "complete");
+  const assistantMessages = result.messages.filter((message) => message.role === "assistant");
+  assert.equal(assistantMessages.length, 1);
+  assert.ok(!("reasoning_content" in assistantMessages[0]));
+  assert.deepEqual(Object.keys(assistantMessages[0]), ["role", "content", "tool_calls"]);
+});

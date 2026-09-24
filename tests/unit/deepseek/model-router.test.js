@@ -6,13 +6,13 @@ test("routes reply and act to flash with thinking disabled", () => {
   assert.deepEqual(routeModel({ purpose: "reply" }), {
     purpose: "reply",
     channel: "act",
-    model: "deepseek-v4-flash",
+    model: "deepseek-flash",
     thinking: { type: "disabled" },
     temperature: 0.2,
     max_tokens: 4096,
     stream: true
   });
-  assert.equal(routeModel({ purpose: "act" }).model, "deepseek-v4-flash");
+  assert.equal(routeModel({ purpose: "act" }).model, "deepseek-flash");
   assert.deepEqual(routeModel({ purpose: "act" }).thinking, { type: "disabled" });
 });
 
@@ -36,8 +36,8 @@ test("routes complex reply to pro when complexity is high", () => {
 test("routes fim to beta completion profile without thinking", () => {
   const route = routeModel({ purpose: "fim" });
   assert.equal(route.channel, "fim");
-  assert.equal(route.model, "deepseek-v4-pro");
-  assert.equal(route.max_tokens, 512);
+  assert.equal(route.model, "deepseek-flash");
+  assert.equal(route.max_tokens, 4096);
   assert.equal(route.thinking, undefined);
 });
 
@@ -57,7 +57,7 @@ test("models option overrides channel default models", () => {
   assert.equal(routeModel({ purpose: "act", models }).model, "custom-act");
   assert.equal(routeModel({ purpose: "plan", models }).model, "custom-think");
   assert.equal(routeModel({ purpose: "fim", models }).model, "custom-fim");
-  assert.equal(routeModel({ purpose: "act" }).model, "deepseek-v4-flash"); // 默认不变
+  assert.equal(routeModel({ purpose: "act" }).model, "deepseek-flash"); // 默认不变
 });
 
 test("partial models override keeps other channel defaults", () => {

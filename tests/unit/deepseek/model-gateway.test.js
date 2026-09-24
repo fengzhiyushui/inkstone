@@ -33,7 +33,7 @@ test("assembleReplyMessages inserts sanitized history before current user messag
 test("buildChatRequest keeps plain reply out of JSON mode", () => {
   const gateway = createDeepSeekGateway({ apiKey: "key" });
   const request = gateway.buildChatRequest([{ role: "user", content: "hello" }], { purpose: "reply", stream: false });
-  assert.equal(request.body.model, "deepseek-v4-flash");
+  assert.equal(request.body.model, "deepseek-flash");
   assert.equal(request.body.response_format, undefined);
   assert.deepEqual(request.body.thinking, { type: "disabled" });
 });

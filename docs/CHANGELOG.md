@@ -12,6 +12,17 @@
 
 下一个补丁 / 小版本的变更在此累积；发布时按版本规则定级并移入带版本号小节。
 
+- **v1.9.0 M1-P0 现网燃眉修正**（里程碑提交，版本仍为 1.8.7；八目录白名单首批 5 文件 +21/−8，测试 **1167/1167**）:
+  - **默认模型 ID 收敛单一常量源**:新增 `src/deepseek/model-ids.js`(`CURRENT_MODELS` / `RETIRED_MODELS` / `migrateModelId`),`config.js` 与 `model-router.js` 的双源头漂移消除。`act` / `fim` 默认 `deepseek-v4-flash`(已退役)→ **`deepseek-flash`**;`think` 维持 `deepseek-v4-pro`(V4-Pro 流量自 2026-09-14 起临时路由到 V4.1-Flash 并按 Flash 计费,不临时降档 —— 维护者拍板 D4)。
+  - **退役迁移仅精确键匹配**:首批仅 `deepseek-v4-flash → deepseek-flash` 一项;`deepseek-chat` / `deepseek-reasoner` 暂不纳入(兼容端点用户可能故意沿用旧名)。**仅内存归一,不重写用户 `config.json`**;`DEEPSEEK_MODEL` 环境变量不过迁移;第三方端点 id(形如 `deepseek-coder-v2:latest`)原样直通,绝不兜底改写。
+  - **`reasoning_content` 回传(修现网 400)**:`executor-loop.js` / `repair-executor.js` 的 `assistantToolCallMessage` 补该字段(仅当上游真返回时携带,向后兼容旧 mock)。此前带 tools 的多轮对话在 iteration 1 必被官方 API 判 400 —— 值在 `model-gateway.js` 早已解析备好,缺的只是回传。
+  - **GUI 模型下拉换现行 ID**:`Composer.jsx` `KNOWN_MODELS` 原为 `deepseek-chat` / `deepseek-reasoner`(2026-07-24 已停用,此前一直在向用户推荐死模型);`cli.js` help 文案同步。
+  - **FIM 兜底 id 同步** + `maxTokens` 钳制 ≤4096(默认提升)。
+  - 新增测试 15(迁移 7 / reasoning 回传 5 / fim 钳制 3),`package.json` check 清单补 `model-ids.js`;README 中英 / DEPLOYMENT / project-overview 六处默认值一致。
+  - 方案与拍板结论见 [`plans/architecture/2026-09-23-v1.9.0-contract-freeze-and-visualization.md`](plans/architecture/2026-09-23-v1.9.0-contract-freeze-and-visualization.md)。
+
+- **历史 release tag 补全**：v1.8.4 / v1.8.5 / v1.8.6 三个发布版本此前漏打注解 tag（v1.8 分支线合入前遗留），已按 CHANGELOG 标题补齐并推送，tagger 日期对齐各自提交（循 v1.5.2 先例）；本地与云端各 23 个 tag，与 CHANGELOG 版本节一一对应。
+
 ---
 
 ## v1.8.7 — 2026-09-23 · 文档全量重写与原型存档清理
