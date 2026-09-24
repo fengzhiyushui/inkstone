@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { initialTuiState, reduce, statusLine, formatTokens, SPINNER } from "../../../src/apps/tui/tui-state.js";
+import { initialTuiState, reduce, statusLine, formatTokens, deriveTps, SPINNER } from "../../../src/apps/tui/tui-state.js";
 import { makeT } from "../../../src/apps/tui/tui-i18n.js";
 
 const S = () => initialTuiState({});
@@ -102,6 +102,46 @@ test("formatTokens", () => {
   assert.equal(formatTokens(999), "999");
   assert.equal(formatTokens(12400), "12.4k");
   assert.equal(formatTokens(3200000), "3.2m");
+});
+
+test("v1.9 M4 #11:statusLine hides reasoning/tps segments without data", () => {
+  let s = reduce(S(), { type: "status", patch: { model: "deepseek-chat", tokens: 12400, cacheRate: 0.5 } });
+  const line = statusLine(s, makeT("zh"));
+  assert.ok(line.includes("tokens 12.4k"));
+  assert.ok(line.includes("cache 50%"));
+  assert.ok(!line.includes("r:")); // 无推理 tokens → 不出段
+  assert.ok(!line.includes("tps")); // 无 tps → 不出段
+  s = reduce(s, { type: "status", patch: { reasoningTokens: 0, tps: 0 } });
+  assert.equal(statusLine(s, makeT("zh")), line); // 显式 0 与缺字段等价
+  s = reduce(s, { type: "status", patch: { tps: 0.04 } });
+  assert.ok(!statusLine(s, makeT("zh")).includes("tps")); // 四舍五入不到 0.1 视为无数据
+});
+
+test("v1.9 M4 #11:statusLine renders r: tok and tps segments when data present", () => {
+  const s = reduce(S(), { type: "status", patch: { model: "deepseek-chat", tokens: 12400, reasoningTokens: 3200, tps: 42.35, cacheRate: 0.714 } });
+  const line = statusLine(s, makeT("zh"));
+  assert.ok(line.includes("tokens 12.4k"));
+  assert.ok(line.includes("r:3.2k tok"));
+  assert.ok(line.includes("42.4 tps")); // 保留 1 位小数
+  assert.ok(line.includes("cache 71%")); // 既有 cache 段不受影响
+  // 段序:reasoning/tps 紧挨 tokens,cache 保持原位
+  assert.ok(line.indexOf("r:") > line.indexOf("tokens"));
+  assert.ok(line.indexOf("tps") < line.indexOf("cache"));
+});
+
+test("v1.9 M4 #11:deriveTps uses per-request mean throughput, 0 on missing data", () => {
+  assert.equal(deriveTps(), 0);
+  assert.equal(deriveTps({}), 0);
+  // 2 请求 × 平均 500ms = 1s 总时长,100 completion tokens → 100 tok/s
+  assert.equal(deriveTps({ requests: 2, avg_latency_ms: 500, total_completion_tokens: 100 }), 100);
+  assert.equal(deriveTps({ requests: 1, avg_latency_ms: 1000, total_completion_tokens: 33 }), 33);
+  // 90 / (0.333s × 3) = 90.09… → 1 位小数
+  assert.equal(deriveTps({ requests: 3, avg_latency_ms: 333, total_completion_tokens: 90 }), 90.1);
+  // 缺 requests / 缺延迟 / 无 completion → 0(状态行即不渲染)
+  assert.equal(deriveTps({ avg_latency_ms: 500, total_completion_tokens: 100 }), 0);
+  assert.equal(deriveTps({ requests: 2, total_completion_tokens: 100 }), 0);
+  assert.equal(deriveTps({ requests: 2, avg_latency_ms: 500 }), 0);
+  assert.equal(deriveTps({ requests: 2, avg_latency_ms: 0, total_completion_tokens: 100 }), 0);
 });
 
 test("reducer is immutable and ignores unknown actions", () => {

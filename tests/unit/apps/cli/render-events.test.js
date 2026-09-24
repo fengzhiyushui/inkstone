@@ -3,8 +3,32 @@ import assert from "node:assert/strict";
 import {
   summarizeKernelEvent,
   renderKernelResult,
+  formatUsageLine,
   createEventRenderer
 } from "../../../../src/apps/cli/render-events.js";
+
+const USAGE_SNAPSHOT = {
+  requests: 4,
+  total_prompt_tokens: 120,
+  total_completion_tokens: 340,
+  total_reasoning_tokens: 120,
+  cache_hit_tokens: 80,
+  cache_miss_tokens: 40,
+  avg_latency_ms: 850
+};
+
+// INKSTONE_SHOW_USAGE 进程级开关:用例现场改、finally 复原,不污染其它测试。
+function withUsageEnv(value, fn) {
+  const prev = process.env.INKSTONE_SHOW_USAGE;
+  if (value === undefined) delete process.env.INKSTONE_SHOW_USAGE;
+  else process.env.INKSTONE_SHOW_USAGE = value;
+  try {
+    fn();
+  } finally {
+    if (prev === undefined) delete process.env.INKSTONE_SHOW_USAGE;
+    else process.env.INKSTONE_SHOW_USAGE = prev;
+  }
+}
 
 test("summarizeKernelEvent formats key V2 events without raw payload dumps", () => {
   assert.equal(
@@ -34,6 +58,42 @@ test("renderKernelResult returns final content and approval message", () => {
     renderKernelResult({ status: "awaiting_approval", approval: { id: "apr_1" } }),
     ["", "Approval required: apr_1", "Approve? y/N"]
   );
+});
+
+test("v1.9 M4 #11:renderKernelResult appends one-line usage summary when INKSTONE_SHOW_USAGE is set", () => {
+  withUsageEnv("1", () => {
+    const lines = renderKernelResult({ status: "complete", content: "done", usage: USAGE_SNAPSHOT });
+    assert.equal(lines.length, 3);
+    assert.equal(lines[0], "");
+    assert.equal(lines[1], "done");
+    assert.equal(lines[2], formatUsageLine(USAGE_SNAPSHOT));
+    assert.ok(lines[2].includes("usage: tokens 120 prompt / 340 completion"));
+    assert.ok(lines[2].includes("cache 80 hit / 40 miss"));
+    assert.ok(lines[2].includes("reasoning 120 tok"));
+    assert.ok(lines[2].includes("avg latency 850 ms"));
+    // 缺 usage 快照时不追加(无数据不编造)
+    assert.deepEqual(renderKernelResult({ status: "complete", content: "done" }), ["", "done"]);
+    // 审批/错误终局不加 usage 行
+    assert.deepEqual(renderKernelResult({ status: "error", error: "boom", usage: USAGE_SNAPSHOT }), ["", "Error: boom"]);
+  });
+});
+
+test("v1.9 M4 #11:usage summary off by default and for falsy env values", () => {
+  withUsageEnv(undefined, () => {
+    assert.deepEqual(renderKernelResult({ status: "complete", content: "done", usage: USAGE_SNAPSHOT }), ["", "done"]);
+  });
+  for (const raw of ["", "0", "false"]) {
+    withUsageEnv(raw, () => {
+      assert.deepEqual(renderKernelResult({ status: "complete", content: "done", usage: USAGE_SNAPSHOT }), ["", "done"]);
+    });
+  }
+});
+
+test("v1.9 M4 #11:formatUsageLine renders all four segments, zero-safe", () => {
+  const line = formatUsageLine(USAGE_SNAPSHOT);
+  assert.equal(line, "usage: tokens 120 prompt / 340 completion · cache 80 hit / 40 miss · reasoning 120 tok · avg latency 850 ms");
+  assert.equal(formatUsageLine({}), "usage: tokens 0 prompt / 0 completion · cache 0 hit / 0 miss · reasoning 0 tok · avg latency 0 ms");
+  assert.equal(formatUsageLine(), "usage: tokens 0 prompt / 0 completion · cache 0 hit / 0 miss · reasoning 0 tok · avg latency 0 ms");
 });
 
 test("createEventRenderer writes only useful progress events", () => {

@@ -61,7 +61,10 @@ function tpsOf(usage) {
   if (Number.isFinite(direct) && direct > 0) return direct;
   const completion = Number(u.total_completion_tokens) || 0;
   const latency = Number(u.avg_latency_ms) || 0;
-  if (completion > 0 && latency > 0) return (completion / latency) * 1000;
+  const requests = Number(u.requests) || 0;
+  // 与 TUI deriveTps 同口径(v1.9 M4 #11):avg_latency 是「每请求均值」,
+  // 总生成时长 ≈ avg_latency × requests;不除 requests 会把均值当总时长,多请求时虚高。
+  if (completion > 0 && latency > 0 && requests > 0) return completion / ((latency / 1000) * requests);
   return 0;
 }
 

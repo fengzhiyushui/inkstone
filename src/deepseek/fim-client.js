@@ -10,11 +10,20 @@ export function buildFimRequest({ prefix, suffix = "", model = "deepseek-flash",
   return removeUndefined({ model, prompt: prefix, suffix, max_tokens });
 }
 
-export function createFimClient({ apiKey, baseUrl = "https://api.deepseek.com", fetchImpl = globalThis.fetch } = {}) {
+// v1.9.0 M4:betaBase 可配(代理/自建网关可能只在裸 /completions 上暴露 beta 模型);
+// 缺省时逐字节维持旧行为 `${baseUrl 去尾斜杠}/beta/completions`。
+export function resolveBetaCompletionsUrl(baseUrl, betaBase) {
+  const explicitBase = typeof betaBase === "string" ? betaBase.replace(/\/+$/, "") : "";
+  const prefix = explicitBase || `${baseUrl.replace(/\/+$/, "")}/beta`;
+  return `${prefix}/completions`;
+}
+
+export function createFimClient({ apiKey, baseUrl = "https://api.deepseek.com", betaBase, fetchImpl = globalThis.fetch } = {}) {
+  const completionsUrl = resolveBetaCompletionsUrl(baseUrl, betaBase);
   async function complete({ prefix, suffix = "", model, maxTokens, signal } = {}) {
     const body = buildFimRequest({ prefix, suffix, model, maxTokens });
     const started = Date.now();
-    const response = await fetchImpl(`${baseUrl.replace(/\/+$/, "")}/beta/completions`, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
+    const response = await fetchImpl(completionsUrl, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body), signal });
     const latencyMs = Date.now() - started;
     if (!response.ok) throw createDeepSeekApiError(response.status, await response.text().catch(() => ""));
     const payload = await response.json();

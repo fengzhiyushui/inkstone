@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildFimRequest, createFimClient } from "../../../src/deepseek/fim-client.js";
+import { buildFimRequest, createFimClient, resolveBetaCompletionsUrl } from "../../../src/deepseek/fim-client.js";
 import { normalizeToolCalls, parseToolArguments } from "../../../src/deepseek/tool-call-repair.js";
 
 test("buildFimRequest creates beta completion body without chat-only fields", () => {
@@ -37,6 +37,48 @@ test("fim client posts to beta completions endpoint and returns text", async () 
   assert.equal(JSON.parse(calls[0].init.body).prompt, "function add(a, b) {");
   assert.ok(typeof result.latency_ms === "number");
   assert.ok(result.latency_ms >= 0);
+});
+
+test("fim client defaults to api.deepseek.com beta completions when baseUrl is omitted", async () => {
+  const calls = [];
+  const client = createFimClient({ apiKey: "key", fetchImpl: async (url, init) => { calls.push({ url, init }); return jsonResponse(200, { choices: [{ text: "ok" }] }); } });
+  await client.complete({ prefix: "x" });
+  assert.equal(calls[0].url, "https://api.deepseek.com/beta/completions");
+});
+
+test("resolveBetaCompletionsUrl falls back to baseUrl beta path", () => {
+  assert.equal(resolveBetaCompletionsUrl("https://api.deepseek.com", undefined), "https://api.deepseek.com/beta/completions");
+  assert.equal(resolveBetaCompletionsUrl("https://api.deepseek.com/", undefined), "https://api.deepseek.com/beta/completions");
+  assert.equal(resolveBetaCompletionsUrl("https://api.deepseek.com///", ""), "https://api.deepseek.com/beta/completions");
+  assert.equal(resolveBetaCompletionsUrl("https://api.deepseek.com", 42), "https://api.deepseek.com/beta/completions");
+  assert.equal(resolveBetaCompletionsUrl("https://api.deepseek.com", null), "https://api.deepseek.com/beta/completions");
+  assert.equal(resolveBetaCompletionsUrl("https://api.deepseek.com", { url: "https://evil.example" }), "https://api.deepseek.com/beta/completions");
+});
+
+test("resolveBetaCompletionsUrl appends /completions to a betaBase and trims trailing slashes", () => {
+  assert.equal(resolveBetaCompletionsUrl("https://api.deepseek.com", "https://api.deepseek.com/beta"), "https://api.deepseek.com/beta/completions");
+  assert.equal(resolveBetaCompletionsUrl("https://api.deepseek.com", "https://api.deepseek.com/beta/"), "https://api.deepseek.com/beta/completions");
+  assert.equal(resolveBetaCompletionsUrl("https://api.deepseek.com", "https://api.deepseek.com/beta///"), "https://api.deepseek.com/beta/completions");
+  assert.equal(resolveBetaCompletionsUrl("https://api.deepseek.com", "http://127.0.0.1:8787"), "http://127.0.0.1:8787/completions");
+  assert.equal(resolveBetaCompletionsUrl("https://api.deepseek.com", "http://127.0.0.1:8787/"), "http://127.0.0.1:8787/completions");
+});
+
+test("fim client posts to betaBase /completions for proxy bases without /beta prefix", async () => {
+  for (const betaBase of ["https://api.deepseek.com/beta", "https://api.deepseek.com/beta/", "http://127.0.0.1:8787"]) {
+    const calls = [];
+    const client = createFimClient({ apiKey: "key", baseUrl: "https://api.deepseek.com", betaBase, fetchImpl: async (url, init) => { calls.push({ url, init }); return jsonResponse(200, { choices: [{ text: "ok" }] }); } });
+    await client.complete({ prefix: "x" });
+    assert.equal(calls[0].url, `${betaBase.replace(/\/+$/, "")}/completions`);
+  }
+});
+
+test("fim client falls back to default beta path when betaBase is blank or not a string", async () => {
+  for (const betaBase of ["", undefined, null, 42, { url: "https://evil.example" }, ["https://evil.example"]]) {
+    const calls = [];
+    const client = createFimClient({ apiKey: "key", baseUrl: "https://api.deepseek.com", betaBase, fetchImpl: async (url, init) => { calls.push({ url, init }); return jsonResponse(200, { choices: [{ text: "ok" }] }); } });
+    await client.complete({ prefix: "x" });
+    assert.equal(calls[0].url, "https://api.deepseek.com/beta/completions", `betaBase ${JSON.stringify(betaBase)} should fall back`);
+  }
 });
 
 test("normalizeToolCalls preserves raw argument strings and parsed arguments", () => {

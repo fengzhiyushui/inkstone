@@ -40,6 +40,7 @@ test("metricSegments:无数据即不渲染 cacheMiss/reasoning/tps", () => {
 
 test("metricSegments:有数据时渲染三段遥测", () => {
   const usage = {
+    requests: 1,
     total_prompt_tokens: 100,
     total_completion_tokens: 50,
     total_tokens: 150,
@@ -54,7 +55,7 @@ test("metricSegments:有数据时渲染三段遥测", () => {
   assert.ok(keys.includes("reasoningTokens"));
   assert.ok(keys.includes("tps"));
   const tps = segs.find((s) => s.key === "tps");
-  // completion 50 / 0.5s = 100 t/s
+  // requests=1:completion 50 / 0.5s = 100 t/s(v1.9 M4 起 tps 口径 = completion ÷ (avg_latency×requests))
   assert.equal(tps.text, "100.0");
   const miss = segs.find((s) => s.key === "cacheMiss");
   assert.equal(miss.num.v, "70");

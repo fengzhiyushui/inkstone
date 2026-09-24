@@ -33,3 +33,9 @@ test("parseJsonContent parses object and annotates invalid JSON errors", () => {
   assert.deepEqual(parseJsonContent("{\"answer\":42}"), { answer: 42 });
   assert.throws(() => parseJsonContent("{bad"), /invalid DeepSeek JSON content/);
 });
+
+// 空串解析失败兜底在此;空 content 的重试策略在 gateway 侧(M4 #7),
+// parseJsonContent 自身行为不变。
+test("parseJsonContent rejects empty content with DEEPSEEK_INVALID_JSON", () => {
+  assert.throws(() => parseJsonContent(""), (error) => error.code === "DEEPSEEK_INVALID_JSON" && /invalid DeepSeek JSON content/.test(error.message));
+});

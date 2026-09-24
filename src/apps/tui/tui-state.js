@@ -22,7 +22,8 @@ export function initialTuiState({ lang = "zh", mode = "gated", theme = "sumi", s
     overlay: null,
     pending: [],
     hint: "",
-    status: { state: "idle", model: "", tokens: 0, cacheRate: 0 },
+    // v1.9 M4 #11:reasoningTokens/tps 由 refreshStatus 从 usage 快照透传,0 = 无数据
+    status: { state: "idle", model: "", tokens: 0, reasoningTokens: 0, tps: 0, cacheRate: 0 },
     ctrlcAt: 0
   };
 }
@@ -119,13 +120,33 @@ export function formatTokens(n) {
   return `${(v / 1_000_000).toFixed(1)}m`;
 }
 
+// v1.9 M4 #11:tps 口径 = 每请求均值吞吐(completion tokens / latency,循
+// src/core/execution/executor-loop.js:148 约定,保留 1 位小数)。usage tracker 没有
+// completion/latency 组合字段,用均值粗算:
+//   tps = total_completion_tokens / (avg_latency_ms/1000 × requests)
+//      = (total_completion_tokens / requests) / (avg_latency_ms / 1000)
+// 即「平均每次请求的 completion tokens ÷ 平均每次延迟」。requests 或延迟为 0
+// (尚无请求/网关未记 latency)时返回 0,状态行即不渲染该段(无数据不编造)。
+export function deriveTps(usage = {}) {
+  const u = usage || {};
+  const requests = Number(u.requests) || 0;
+  const avgLatencyMs = Number(u.avg_latency_ms) || 0;
+  const completion = Number(u.total_completion_tokens) || 0;
+  if (requests <= 0 || avgLatencyMs <= 0 || completion <= 0) return 0;
+  return Math.round((completion / ((avgLatencyMs / 1000) * requests)) * 10) / 10;
+}
+
 export function statusLine(state, t) {
   const runState = state.busy ? SPINNER[state.spin] : (state.status.state || "idle");
+  const reasoningTokens = Number(state.status.reasoningTokens) || 0;
+  const tpsValue = Math.round((Number(state.status.tps) || 0) * 10) / 10;
   const parts = [
     state.mode,
     state.status.model || "-",
     runState,
     `tokens ${formatTokens(state.status.tokens)}`,
+    reasoningTokens > 0 ? `r:${formatTokens(reasoningTokens)} tok` : "", // v1.9 M4 #11:无推理数据不渲染
+    tpsValue > 0 ? `${tpsValue} tps` : "", // v1.9 M4 #11:吞吐(四舍五入不到 0.1 即视为无数据)
     `cache ${Math.round((state.status.cacheRate || 0) * 100)}%`,
     state.shell ? `sh:${state.shell}` : "",
     state.theme ? `theme:${state.theme}` : "", // v1.4.6:与设计稿的 TUI 状态行一致

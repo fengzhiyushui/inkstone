@@ -17,6 +17,9 @@ export const DEFAULT_CONFIG = {
   maxTokens: 4096,
   thinking: { type: "disabled" },
   reasoningEffort: "high",
+  // FIM(代码补全)beta 端点根地址:""(默认)= 客户端自行拼 `${baseUrl}/beta`,
+  // 现有行为逐字节不变;非空 = 自建/代理网关显式覆盖 base,入库前统一去尾斜杠。
+  betaBase: "",
   models: {
     act: CURRENT_MODELS.act,
     think: CURRENT_MODELS.think,
@@ -80,6 +83,8 @@ export async function loadConfig(root, options = {}) {
     model: process.env.DEEPSEEK_MODEL || migrateModelId(fileConfig.model) || DEFAULT_CONFIG.model,
     thinking: normalizeThinking(fileConfig.thinking ?? DEFAULT_CONFIG.thinking),
     reasoningEffort: process.env.DEEPSEEK_REASONING_EFFORT || fileConfig.reasoningEffort || DEFAULT_CONFIG.reasoningEffort,
+    // betaBase 只来自文件配置(无反 env 覆盖需求):"" 保持客户端缺省 `${baseUrl}/beta`。
+    betaBase: stripTrailingSlash(String(fileConfig.betaBase ?? "").trim()),
     models: normalizeModels(fileConfig.models),
     limits: limitsFromEnv(normalizeLimits(fileConfig.limits)),
     context: normalizeContext(fileConfig.context),
@@ -123,6 +128,7 @@ export function normalizeConfig(config) {
     maxTokens: Math.trunc(toNumber(config.maxTokens, DEFAULT_CONFIG.maxTokens)),
     thinking: normalizeThinking(config.thinking ?? DEFAULT_CONFIG.thinking),
     reasoningEffort: normalizeReasoningEffort(config.reasoningEffort),
+    betaBase: stripTrailingSlash(String(config.betaBase ?? "").trim()),
     models: normalizeModels(config.models),
     limits: normalizeLimits(config.limits),
     context: normalizeContext(config.context),
@@ -316,17 +322,17 @@ function normalizeThinking(value) {
   return DEFAULT_CONFIG.thinking;
 }
 
-function normalizeReasoningEffort(value) {
-  if (value === "max" || value === "xhigh") {
-    return "max";
-  }
-  if (value === "minimal") {
-    return "minimal";
-  }
-  if (["low", "medium", "high"].includes(value)) {
-    return "high";
-  }
-  return DEFAULT_CONFIG.reasoningEffort;
+// reasoning_effort 合法全集(官方协议):none|low|medium|high|max。
+// 语义:thinking 开启时控制思考预算强度;none 等价于「关思考」——
+// 但关不禁用配置层自己拍板:通道层(model-router CHANNELS.thinking 开关)决定本次请求
+// 到底带不带 thinking,本函数只做合法集校验与原样透传,绝不替通道层改写语义。
+// 归一:trim + 小写;undefined / 空串 / 非法值一律回落默认 high(循既有默认行为)。
+// 注意:历史实现把 low/medium 折叠成 high——已废弃,否则「降档省 token」的配置无效。
+// 导出仅为单测可观测(与 normalizeModels / normalizeEdits 同一风格)。
+export function normalizeReasoningEffort(value) {
+  const REASONING_EFFORTS = ["none", "low", "medium", "high", "max"];
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return REASONING_EFFORTS.includes(normalized) ? normalized : DEFAULT_CONFIG.reasoningEffort;
 }
 
 function toNumber(value, fallback) {

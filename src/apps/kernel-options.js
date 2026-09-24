@@ -17,6 +17,9 @@ export async function buildKernelOptions(root, overrides = {}, loadConfigImpl = 
     }
   };
   if (config.models) result.deepseek.models = config.models;
+  // M4 #4:FIM betaBase 可配(空串=客户端缺省 ${baseUrl}/beta)。空值不传,
+  // 未配置用户行为逐字节不变。
+  if (config.betaBase) result.deepseek.betaBase = config.betaBase;
   if (config.limits) result.limits = config.limits;
   if (config.orchestration) result.orchestration = config.orchestration;
   if (config.edits) result.edits = config.edits;

@@ -7,9 +7,10 @@ import { createFimClient } from "./fim-client.js";
 import { normalizeToolCalls } from "./tool-call-repair.js";
 import { assembleReplyMessages } from "./prompt-assembler.js";
 
-export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY || "", baseUrl = "https://api.deepseek.com", fetchImpl = globalThis.fetch, userId = null, models } = {}) {
+export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY || "", baseUrl = "https://api.deepseek.com", betaBase, fetchImpl = globalThis.fetch, userId = null, models, sleepFn = defaultSleep } = {}) {
   const usageTracker = createUsageTracker();
-  const fimClient = createFimClient({ apiKey, baseUrl, fetchImpl });
+  // M4 #4:betaBase 透传给 FIM 客户端(undefined=客户端缺省 ${baseUrl}/beta/completions)。
+  const fimClient = createFimClient({ apiKey, baseUrl, betaBase, fetchImpl });
 
   function buildChatRequest(messages, options = {}) {
     const routed = { ...options, models: options.models ?? models };
@@ -19,50 +20,89 @@ export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY ||
     return { url: `${baseUrl.replace(/\/+$/, "")}/chat/completions`, body, route };
   }
 
+  // M4 #12:首字节前(HTTP 头阶段)的有限指数退避重试——.retryable 标志自 v1.x 起
+  // 首次有执行端。最多 RETRY_MAX_ATTEMPTS 次尝试(首次+2 重试),退避序列
+  // 500ms→1000ms(指数,上限 8s);402/400/401/403 等不可重试错误直接抛。
+  // 重试期间尊重 options.signal:已 abort 则不进入重试并以 ABORT 收场,
+  // 退避等待中 abort 同样立即抛 ABORT。每次重试都新建 timeout(didTimeout
+  // 语义=单次尝试内超时;MODEL_TIMEOUT 不可重试,原样抛出)。
+  // 返回 { response, timeout }:成功 attempt 的 timeout 不在此清理,由调用方在
+  // body 解析/流读取结束后 cleanup(body 阶段的 abort 必须仍能取消读取)。
+  async function fetchChatWithRetry(request, options) {
+    let attempts = 0;
+    while (true) {
+      attempts += 1;
+      const timeout = withTimeout(options.signal, options.timeoutMs);
+      let response;
+      try {
+        try {
+          response = await fetchImpl(request.url, { method: "POST", headers: authHeaders(apiKey), body: JSON.stringify(request.body), signal: timeout.signal });
+        } catch (error) {
+          if (timeout.didTimeout()) throw modelTimeoutError(options.timeoutMs);
+          throw error;
+        }
+        if (!response.ok) throw createDeepSeekApiError(response.status, await response.text().catch(() => ""));
+      } catch (error) {
+        timeout.cleanup();
+        const retryable = isRetryableDeepSeekError(error) || error?.retryable === true;
+        if (attempts < RETRY_MAX_ATTEMPTS && retryable) {
+          if (options.signal?.aborted) throw abortError();
+          await sleepFn(backoffDelayMs(attempts), options.signal);
+          continue;
+        }
+        throw error;
+      }
+      return { response, timeout };
+    }
+  }
+
   async function invoke(messages, options = {}) {
     const request = buildChatRequest(messages, { ...options, stream: false });
     const started = Date.now();
-    const timeout = withTimeout(options.signal, options.timeoutMs);
-    try {
-      let response;
+    let attempts = 0;
+    let jsonAttempts = 0;
+    while (true) {
+      attempts += 1;
+      // fetch 阶段走有限退避重试;MODEL_TIMEOUT/调用方 abort 等不可重试错误直接穿传。
+      const { response, timeout } = await fetchChatWithRetry(request, options);
       try {
-        response = await fetchImpl(request.url, { method: "POST", headers: authHeaders(apiKey), body: JSON.stringify(request.body), signal: timeout.signal });
-      } catch (error) {
-        if (timeout.didTimeout()) throw modelTimeoutError(options.timeoutMs);
-        throw error;
+        const latencyMs = Date.now() - started;
+        let payload;
+        try {
+          payload = await response.json();
+        } catch (error) {
+          if (timeout.didTimeout()) throw modelTimeoutError(options.timeoutMs);
+          throw error;
+        }
+        const processed = markTruncated(processChatPayload(payload, request.route, latencyMs));
+        if (isRetryableDeepSeekError({ finish_reason: processed.finish_reason })) processed.retryable = true;
+        // JSON 模式空 content:同一 request 原样重发(共最多 JSON_EMPTY_MAX_ATTEMPTS 次);
+        // 退避固定 300ms 并遵守 signal;仍空则挂 emptyContent 返回,不抛错。
+        if (options.jsonMode && processed.content === "" && !processed.retryable) {
+          jsonAttempts += 1;
+          if (jsonAttempts < JSON_EMPTY_MAX_ATTEMPTS && attempts < RETRY_MAX_ATTEMPTS) {
+            await sleepFn(JSON_EMPTY_RETRY_DELAY_MS, options.signal);
+            continue;
+          }
+          processed.emptyContent = true;
+        }
+        // 重试逻辑不重复计费用:仅最终返回的 attempt 记录一次 usage。
+        usageTracker.recordUsage({ usage: processed.usage, channel: request.route.channel, model: request.body.model, latency_ms: latencyMs });
+        return processed;
+      } finally {
+        timeout.cleanup();
       }
-      const latencyMs = Date.now() - started;
-      if (!response.ok) throw createDeepSeekApiError(response.status, await response.text().catch(() => ""));
-      let payload;
-      try {
-        payload = await response.json();
-      } catch (error) {
-        if (timeout.didTimeout()) throw modelTimeoutError(options.timeoutMs);
-        throw error;
-      }
-      const processed = processChatPayload(payload, request.route, latencyMs);
-      usageTracker.recordUsage({ usage: processed.usage, channel: request.route.channel, model: request.body.model, latency_ms: latencyMs });
-      if (isRetryableDeepSeekError({ finish_reason: processed.finish_reason })) processed.retryable = true;
-      return processed;
-    } finally {
-      timeout.cleanup();
     }
   }
 
   async function stream(messages, options = {}) {
     const request = buildChatRequest(messages, { ...options, stream: true });
     const started = Date.now();
-    const timeout = withTimeout(options.signal, options.timeoutMs);
+    // 只对首字节前(fetch 抛错/非 2xx)应用退避重试;body 开始读取后失败不重试——
+    // 已通过 onDelta 吐出的增量无法收回,重发等于重复输出。
+    const { response, timeout } = await fetchChatWithRetry(request, options);
     try {
-      let response;
-      try {
-        response = await fetchImpl(request.url, { method: "POST", headers: authHeaders(apiKey), body: JSON.stringify(request.body), signal: timeout.signal });
-      } catch (error) {
-        if (timeout.didTimeout()) throw modelTimeoutError(options.timeoutMs);
-        throw error;
-      }
       const latencyMs = Date.now() - started;
-      if (!response.ok) throw createDeepSeekApiError(response.status, await response.text().catch(() => ""));
       // Keep the timeout armed across the SSE body read: the fetch resolves on headers,
       // so the body is consumed after — an abort here (timeout or caller) must cancel
       // the reader and surface as MODEL_TIMEOUT / the original AbortError.
@@ -73,7 +113,7 @@ export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY ||
         if (timeout.didTimeout()) throw modelTimeoutError(options.timeoutMs);
         throw error;
       }
-      const result = { ...streamed, model: request.body.model, channel: request.route.channel, latency_ms: latencyMs, tool_calls: normalizeToolCalls(streamed.tool_calls) };
+      const result = markTruncated({ ...streamed, model: request.body.model, channel: request.route.channel, latency_ms: latencyMs, tool_calls: normalizeToolCalls(streamed.tool_calls) });
       usageTracker.recordUsage({ usage: result.usage, channel: request.route.channel, model: request.body.model, latency_ms: latencyMs });
       return result;
     } finally {
@@ -145,4 +185,37 @@ function modelTimeoutError(timeoutMs) {
   const err = new Error(`model request timed out after ${timeoutMs}ms`);
   err.code = "MODEL_TIMEOUT";
   return err;
+}
+
+function abortError() { const error = new Error("DeepSeek request was aborted"); error.name = "AbortError"; error.code = "ABORT_ERR"; return error; }
+
+// v1.9.0 M4 #12 重试参数:最多 3 次尝试(首次+2 重试),指数退避基 500ms、上限 8s。
+const RETRY_MAX_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = 500;
+const RETRY_MAX_DELAY_MS = 8000;
+// M4 #7:JSON 模式空 content 最多重发 1 次(共 2 次尝试),固定间隔 300ms。
+const JSON_EMPTY_MAX_ATTEMPTS = 2;
+const JSON_EMPTY_RETRY_DELAY_MS = 300;
+
+// retryIndex 从 1 起(第 1 次重试):500ms、1000ms……指数翻倍并钳制在上限 8s。
+function backoffDelayMs(retryIndex) { return Math.min(RETRY_BASE_DELAY_MS * 2 ** (retryIndex - 1), RETRY_MAX_DELAY_MS); }
+
+// 可注入的退避 sleep(测试传即刻 resolve 的实现);默认实现在等待期间监听 signal,
+// abort 即拒(ABORT),不让调用方在退避窗口里无限等待一个已取消的回合。
+function defaultSleep(ms, signal) {
+  if (signal?.aborted) return Promise.reject(abortError());
+  if (!(ms > 0)) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const onAbort = () => { clearTimeout(timer); reject(abortError()); };
+    const timer = setTimeout(() => { if (signal) signal.removeEventListener("abort", onAbort); resolve(); }, ms);
+    if (signal) signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+// finish_reason === "length" = 输出被 max_tokens 截断;仅此值挂 truncated,
+// 其余 finish_reason 不加键(调用方 `in`/hasOwn 检查保持干净)。只挂返回值,
+// 不进 model:response 事件载荷(M1 冻结契约)。
+function markTruncated(result) {
+  if (result.finish_reason === "length") result.truncated = true;
+  return result;
 }

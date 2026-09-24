@@ -154,6 +154,7 @@ node ./bin/inkstone.js config init \
   "baseUrl": "https://api.deepseek.com",
   "model": "deepseek-flash",
   "reasoningEffort": "high",
+  "betaBase": "",
   "models": {
     "act": "deepseek-flash",
     "think": "deepseek-v4-pro",
@@ -209,6 +210,8 @@ node ./bin/inkstone.js config init \
 | `models.act` | 日常问答与工具调用（默认 `deepseek-flash`） |
 | `models.think` | 规划 / 评审 / 修复（默认 `deepseek-v4-pro`） |
 | `models.fim` | 光标处补全（`/beta/completions`，默认 `deepseek-flash`） |
+| `reasoningEffort` | think 通道思考强度：`none` / `low` / `medium` / `high` / `max`，默认 `high`；历史版本的 low/medium 折叠为 high 已废弃 |
+| `betaBase` | FIM beta 端点根地址，默认 `""` = 客户端自拼 `${baseUrl}/beta`；自建/代理网关可显式覆盖 |
 | `limits` | 超时与回合预算护栏 |
 | `context.semantic` | 语义上下文（默认关） |
 | `orchestration` | 多智能体拆解、并行写隔离、经验学习 |
@@ -220,6 +223,23 @@ node ./bin/inkstone.js config init \
 ### 旧模型 id 静默迁移
 
 `deepseek-v4-flash`（V4-Flash）已退役。旧配置（`model` / `models.*`）中若仍写着该 id，Inkstone 加载时会在内存中自动改写为 `deepseek-flash`：仅本次运行生效，不会重写 `config.json`。改写只做精确键匹配，第三方端点（Ollama / vLLM / OneAPI）的模型 id 一律原样保留，显式指定的模型 id 仍最高优先。
+
+### thinking 与 reasoning_effort
+
+- 通道画像由内核路由表决定：`plan` / `review` / `repair` 三个 think 通道**默认开启 thinking**（effort `high`），`reply` / `act` / `fim` 默认关闭。
+- 官方协议下 **thinking 开启时 `temperature` 静默无效**——think 通道因此不传 temperature；需要调采样只能先关 thinking（配置层改变量不影响已冻硬的通道开关）。
+- `reasoning_effort` 合法全集 `none` / `low` / `medium` / `high` / `max`，原样透传不做折叠；`none` 语义等价「关思考」。未识别值回落默认 `high`。
+- `max_tokens`：非 thinking 默认 8K 量级、thinking 官方默认 64K（`effort=max` 时 128K），单次上限 384K；输出被截断时结果带 `truncated` 标记，可用更低的 effort 或更具体的指令重试。
+
+### 第三方端点兼容警告
+
+Inkstone 核心按 DeepSeek 官方协议编写。接入 **Ollama / vLLM / OneAPI / 硅基流动 / OpenRouter** 等兼容端点时，网关必须完整透传以下扩展字段，否则思考链断裂或在工具循环中直接 400：
+
+- `thinking`（开关）与 `reasoning_effort`（强度）——OneAPI 类网关的「模型映射」重建请求体时最易吞掉；
+- 历史消息的 `reasoning_content`——带 `tools` 的请求每轮必须回传；
+- `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens` / `completion_tokens_details.reasoning_tokens`——用量分列依赖。
+
+现象与处置：思考不显示 → 网关吞了 `thinking`；工具循环第二轮 400 → 网关吞了 `reasoning_content`；用量缺列 → 网关重写了 usage。自建网关可用 `betaBase` 单独指定 FIM 端点根地址；无法升级网关时建议对 agent 类任务直连官方端点。
 
 ### 环境变量
 

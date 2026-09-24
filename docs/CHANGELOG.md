@@ -12,6 +12,16 @@
 
 下一个补丁 / 小版本的变更在此累积；发布时按版本规则定级并移入带版本号小节。
 
+- **v1.9.0 M4 模型适配 P1/P2**（版本仍为 1.8.7；八目录 diff 仅 4 个授权文件——`model-router.js` / `fim-client.js` / `model-gateway.js` / `api-errors.js`；测试 1277 → **1314**）:
+  - **#3 thinking 参数清理**：plan/review/repair 三个 think 通道不再发送 `temperature`（官方协议下 thinking 开启时静默无效，传即死参数）；采样控制走 `reasoning_effort`。
+  - **effort 归一重构**：合法全集 `none`/`low`/`medium`/`high`/`max` 原样透传，废弃历史 low/medium→high 折叠（否则「降档省 token」配置无效）；`none` 语义等价关思考，但关不禁用——实际开关由通道层决定。
+  - **#4 FIM betaBase 可配**：`config.json` 新增 `betaBase`（默认空 = `${baseUrl}/beta`，未配置行为逐字节不变），自建/代理网关可显式覆盖 FIM 端点根地址；client 侧 `resolveBetaCompletionsUrl`。
+  - **#9 max_tokens 提升**：think 通道 8192 → **32768**（官方 thinking 默认 64K、effort=max 128K、上限 384K）；`finish_reason:"length"` 时返回值挂 `truncated` 标记（不进事件载荷，冻结契约不受影响）。
+  - **#12 错误分类与退避**：`aborted` 纳入 retryable；402 增加「余额不足」提示；`invoke`/`stream` **首次实现退避重试执行端**（.retryable 分类自 v1.x 起无消费方）——最多 3 次尝试、指数退避 500ms→1000ms（上限 8s）、402/4xx/超时不重试、退避期间尊重 abort、usage 只对最终 attempt 记一次；stream 仅首字节前重试。
+  - **#7 JSON 空 content 重试**：jsonMode 下空 content 同 request 重发一次（300ms），两次皆空挂 `emptyContent`；单次 invoke 总 fetch ≤3。
+  - **#11 展示层收尾**：TUI 状态行新增 `r:N tok` 与 `tps` 段（无数据不渲染，口径与 GUI 对齐为 completion÷(avg_latency×requests)）；CLI 终局 usage 摘要行（`INKSTONE_SHOW_USAGE` 门控，默认关），kernel-runner 挂 usage 快照点亮该行。
+  - iteration 0 thinking 开/≥1 关的会话内切换经评估**不改**（per-request 参数无协议约束；系成本设计），但同历史混用 pro/flash 两模型已登记为跟进项。
+
 - **v1.9.0 M3 TUI 对齐 + FIM 双端落地**（版本仍为 1.8.7；八目录 diff 为空——全部落在 `src/apps` 与组合根；测试 1232 → **1277**）:
   - **A6 TUI 分支/检查点/回退对齐**：新增 `/branch`（list / `switch <id>` / `new <label>`，走 `kernel.session.branches`）与 `/rewind`（检查点 list / `preview <id>` / `apply <id>`，走 `session.checkpoints` + `session.rewind`）slash 命令；激活/回退经内核事件入时间线，与 CLI/GUI 三端同一事件卡。解析与格式化为纯函数 `src/apps/tui/session-actions.js`（`t` 函数 DI，零 I/O）+ 13 项单测；执行器循 recovery  handler 优雅降级模式 + 17 项 handler 测试。
   - **A3 FIM 双端落地**（Q3/D3 拍板：不进编辑器）：组合根新增 `kernel.fim.complete` 门面（转调 `modelGateway.fimComplete`）；CLI `inkstone fim --prefix <text> [--suffix] [--file <path>] [--max-tokens ≤4096] [--model <id>]`——正文 stdout + 用量摘要行、失败静默一行 stderr 且非零退出；TUI `/fim <前缀>` quiet 卡片语义（不打断输入流）。超时/取消沿既有 `signal`/`withTimeout`，用量计入遥测；防抖/缓存对显式命令形态不适用（已记录）。

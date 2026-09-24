@@ -69,6 +69,31 @@ export function summarizeKernelEvent(event = {}) {
   return event.type || "event";
 }
 
+// v1.9 M4 #11:终局 usage 摘要。默认不输出,由 INKSTONE_SHOW_USAGE 环境变量门控
+// ("0"/"false"/空即关,循仓内 env 开关的朴素真值风格)。数据口径 =
+// usage-tracker.getUsageStats()(requests/total_*_tokens/cache_*/avg_latency_ms),
+// 由调用方把 kernel.metrics.getUsage() 快照挂到 result.usage 上;
+// 缺 usage 快照时不追加(没有数据不编造一行)。返回纯文本行,着色交给调用方
+// (循 cli.js formatFimUsageSummary「不含 dim,由调用方着色」的约定)。
+export function formatUsageLine(usage = {}) {
+  const u = usage || {};
+  const num = (v) => Number(v) || 0;
+  const parts = [
+    `tokens ${num(u.total_prompt_tokens)} prompt / ${num(u.total_completion_tokens)} completion`,
+    `cache ${num(u.cache_hit_tokens)} hit / ${num(u.cache_miss_tokens)} miss`,
+    `reasoning ${num(u.total_reasoning_tokens)} tok`,
+    `avg latency ${num(u.avg_latency_ms)} ms`
+  ];
+  return `usage: ${parts.join(" · ")}`;
+}
+
+function usageSummaryEnabled() {
+  const raw = process.env.INKSTONE_SHOW_USAGE;
+  if (raw == null) return false;
+  const value = String(raw).trim().toLowerCase();
+  return value !== "" && value !== "0" && value !== "false";
+}
+
 export function renderKernelResult(result = {}) {
   if (result.status === "awaiting_approval") {
     return [
@@ -80,7 +105,10 @@ export function renderKernelResult(result = {}) {
   if (result.status === "error") {
     return ["", `Error: ${result.error || result.message || "unknown error"}`];
   }
-  return ["", result.content || ""];
+  const lines = ["", result.content || ""];
+  // 终局 usage 摘要:显式开关 + usage 快照齐备才追加一行,默认输出零变化。
+  if (usageSummaryEnabled() && result.usage) lines.push(formatUsageLine(result.usage));
+  return lines;
 }
 
 export function createEventRenderer({ write = console.log } = {}) {

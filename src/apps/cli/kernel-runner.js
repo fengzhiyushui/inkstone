@@ -85,7 +85,7 @@ export async function runKernelChatCommand({
 
 export async function resolveApprovals({ kernel, result, write = console.log, promptApproval = defaultPromptApproval, onSigint = defaultOnSigint } = {}) {
   let current = result;
-  for (const line of renderKernelResult(current)) write(line);
+  for (const line of renderKernelResult(withUsage(current, kernel))) write(line);
   while (current.status === "awaiting_approval" && current.approval?.id) {
     const answer = await promptApproval(current.approval);
     const decision = isApprovalYes(answer) ? "approve" : "deny";
@@ -95,9 +95,20 @@ export async function resolveApprovals({ kernel, result, write = console.log, pr
       onSigint,
       run: () => kernel.agent.approve(current.approval.id, decision)
     });
-    for (const line of renderKernelResult(current)) write(line);
+    for (const line of renderKernelResult(withUsage(current, kernel))) write(line);
   }
   return current;
+}
+
+// v1.9 M4 #11:给终局渲染挂 usage 快照。agent.send/approve 的 result 不带 usage,
+// 渲染层读不到就永远不出摘要行;遥测读取失败静默跳过(循 cli.js readFimUsage 兜底风格)。
+function withUsage(current, kernel) {
+  if (!kernel?.metrics?.getUsage) return current;
+  try {
+    return { ...current, usage: kernel.metrics.getUsage() };
+  } catch {
+    return current;
+  }
 }
 
 async function runChatRepl({ kernel, write, question, sendOptions, promptApproval, onSigint }) {

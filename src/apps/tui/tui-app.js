@@ -9,7 +9,7 @@ import { VERSION } from "../../theme.js";
 import { seq } from "./ansi.js";
 import { createKeyDecoder } from "./input.js";
 import { makeT } from "./tui-i18n.js";
-import { initialTuiState, reduce } from "./tui-state.js";
+import { initialTuiState, reduce, deriveTps } from "./tui-state.js";
 import { QUIET, eventToLines } from "./event-cards.js";
 import { computeBottom, createPainter } from "./paint.js";
 import { loadTuiPrefs, saveTuiPrefs } from "./prefs.js";
@@ -90,9 +90,13 @@ export function createTuiApp({
     if (!kernel) return;
     const st = kernel.runtime?.getState?.() || {};
     const usage = kernel.metrics?.getUsage?.() || {};
+    // v1.9 M4 #11:推理 tokens 直接透传;tps 由 usage 快照均值粗算(deriveTps 的口径
+    // 见 tui-state.js 注释),数据不足时 0 → 状态行不渲染该段。
     dispatch({ type: "status", patch: {
       state: st.current || "idle",
       tokens: usage.total_tokens || 0,
+      reasoningTokens: usage.total_reasoning_tokens || 0,
+      tps: deriveTps(usage),
       cacheRate: usage.cache_hit_rate || 0
     } });
   }

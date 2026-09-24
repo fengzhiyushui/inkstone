@@ -68,12 +68,15 @@ user:message
 
 `reply` 且 `complexity:"high"` 时改走 `plan` 档。模型 id 是默认值，可用 `DEEPSEEK_MODEL` 或 `config.json` 覆盖，也可用顶层 `models.{act,think,fim}` 整体切换。注：`deepseek-v4-flash`（V4-Flash）已退役，旧配置中的该 id 会在加载时静默改写为 `deepseek-flash`（仅内存生效，不重写 `config.json`）。
 
+think 通道**不声明 `temperature`**：官方协议下 thinking 开启时 temperature / presence_penalty / frequency_penalty 静默无效，传了即是死参数；采样控制改走 `reasoning_effort`（合法全集 `none`/`low`/`medium`/`high`/`max`，配置层原样透传不折叠，历史版本的 low/medium→high 折叠已废弃）。FIM 端点根地址可经 `betaBase` 配置覆盖（默认空 = `${baseUrl}/beta`）。
+
 ### 其余协议件
 
-- **JSON mode guard**（[`json-mode.js`](../src/deepseek/json-mode.js)）：只有明确要结构化 JSON 的调用才启用 `response_format`。
+- **JSON mode guard**（[`json-mode.js`](../src/deepseek/json-mode.js)）：只有明确要结构化 JSON 的调用才启用 `response_format`；空 content 时按 jsonMode 重试一次（`emptyContent` 标记）。
+- **错误分类与退避**（[`api-errors.js`](../src/deepseek/api-errors.js)）：402（余额不足）/ 429 / 5xx / `insufficient_system_resource` / `aborted` 分类；retryable 错误在 `invoke`（与 `stream` 首字节前）按指数退避有限重试（最多 3 次尝试，500ms–8s），402/4xx（除 408/409/425）不重试。
 - **SSE streaming**（[`streaming.js`](../src/deepseek/streaming.js)）。
 - **tool-call 规范化 + 畸形重试**（[`tool-call-repair.js`](../src/deepseek/tool-call-repair.js)）：参数非法 JSON 时按 `maxToolCallRepairs` 有界重试，发 `model:tool_call_repair`。
-- **用量遥测**（[`usage-tracker.js`](../src/deepseek/usage-tracker.js)）：token、reasoning token、cache hit/miss、latency。
+- **用量遥测**（[`usage-tracker.js`](../src/deepseek/usage-tracker.js)）：token、reasoning token、cache hit/miss、latency；三端展示（GUI 状态行/检查器、TUI 状态行 `r:N tok`/tps、CLI `INKSTONE_SHOW_USAGE=1` 终局摘要）。
 - **超时**（[`model-gateway.js`](../src/deepseek/model-gateway.js)）：`invoke` / `stream` / `fimComplete` 支持 `timeoutMs`，超时抛 `MODEL_TIMEOUT`。定时器在 body 读完之后才解除，SSE 流读与 `response.json()` 悬挂同样受约束；不传 `timeoutMs` 则不设超时。
 
 ---
