@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Bug, Sparkles, Search, FileDiff, Diamond, MessageSquare } from "lucide-react";
+import { Bug, Sparkle, MagnifyingGlass, GitDiff, Diamond, ChatText } from "@phosphor-icons/react";
 import Composer from "./Composer.jsx";
 import { recentSessions, sessionStamp } from "../../state/session-groups.js";
 
@@ -15,9 +15,9 @@ function greetingKey(hour) {
 
 const QUICK = [
   { id: "bug", icon: Bug },
-  { id: "feature", icon: Sparkles },
-  { id: "read", icon: Search },
-  { id: "changes", icon: FileDiff, go: "changes" } // setViewOrDock 会转到右栏 dock
+  { id: "feature", icon: Sparkle },
+  { id: "read", icon: MagnifyingGlass },
+  { id: "changes", icon: GitDiff, go: "changes" } // setViewOrDock 会转到右栏 dock
 ];
 
 export default function HomeView({ t, state, actions, setView, onSwitchProject, statusLine }) {
@@ -74,7 +74,7 @@ export default function HomeView({ t, state, actions, setView, onSwitchProject, 
                     const p = (state.projects || []).find((x) => x.id === s.projectDir);
                     if (p) onSwitchProject(p.root); else setView("chat");
                   }}>
-                  <span className="ric"><MessageSquare size={14} /></span>
+                  <span className="ric"><ChatText size={14} /></span>
                   <span className="rt">{s.summary || t("rail.untitled")}</span>
                   <span className="rm">{stampText(s.mtime)} · {t("home.recentEvents").replace("{n}", s.events || 0)}</span>
                 </button>

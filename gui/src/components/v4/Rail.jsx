@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
-  Home, FolderKanban, GitCompare, Network, Puzzle, Plus, ChevronDown, ChevronRight,
-  FolderPlus, MessageSquare, Diamond, Settings, PanelLeftClose, PanelLeftOpen, LifeBuoy, Search,
-  Palette, Languages
-} from "lucide-react";
+  House, Folders, GitDiff, ShareNetwork, PuzzlePiece, Plus, CaretDown, CaretRight,
+  FolderPlus, ChatText, Diamond, Gear, SidebarSimple, Lifebuoy, MagnifyingGlass,
+  Palette, Translate, Trash
+} from "@phosphor-icons/react";
 import { filterProjectTree, groupSessionsByDate, sessionStamp } from "../../state/session-groups.js";
 import css from "./Rail.module.css";
 
@@ -12,6 +12,7 @@ import css from "./Rail.module.css";
 
 export default function Rail({
   t, state, version, setView, onSwitchProject, onNewSession, onOpenFolder,
+  onRemoveProject, onDeleteSession, onRequestConfirm,
   collapsed = false, onToggleCollapse,
   onOpenDock,
   onCycleTheme, onToggleLang
@@ -25,6 +26,46 @@ export default function Rail({
   const [closedProject, setClosedProject] = useState({});
   const [query, setQuery] = useState("");
   const now = Date.now();
+
+  const handleRemoveProject = (e, root) => {
+    e.stopPropagation();
+    if (!onRemoveProject) return;
+    if (onRequestConfirm) {
+      onRequestConfirm({
+        title: t ? t("rail.removeProject") : "移除项目",
+        message: t ? t("rail.removeProjectConfirm") : "确定从侧栏列表中移除该项目吗？",
+        subMessage: t ? t("rail.removeProjectSub") : "仅从侧栏列表中解绑，不会删除磁盘上的任何代码文件。",
+        confirmText: t ? t("confirm.remove") : "移除",
+        cancelText: t ? t("confirm.cancel") : "取消",
+        danger: true,
+        onConfirm: () => onRemoveProject(root)
+      });
+      return;
+    }
+    const msg = t ? t("rail.removeProjectConfirm") : "确定从侧栏列表中移除该项目吗？";
+    if (typeof window !== "undefined" && typeof window.confirm === "function" && !window.confirm(msg)) return;
+    onRemoveProject(root);
+  };
+
+  const handleDeleteSession = (e, sessionId, options) => {
+    e.stopPropagation();
+    if (!onDeleteSession) return;
+    if (onRequestConfirm) {
+      onRequestConfirm({
+        title: t ? t("rail.deleteSession") : "删除会话",
+        message: t ? t("rail.deleteSessionConfirm") : "确定删除该会话记录吗？",
+        subMessage: t ? t("rail.deleteSessionSub") : "此操作将永久清理磁盘上的会话记录文件，不可撤销。",
+        confirmText: t ? t("confirm.delete") : "删除",
+        cancelText: t ? t("confirm.cancel") : "取消",
+        danger: true,
+        onConfirm: () => onDeleteSession(sessionId, options)
+      });
+      return;
+    }
+    const msg = t ? t("rail.deleteSessionConfirm") : "确定删除此会话记录？";
+    if (typeof window !== "undefined" && typeof window.confirm === "function" && !window.confirm(msg)) return;
+    onDeleteSession(sessionId, options);
+  };
 
   useEffect(() => {
     if (collapsed) {
@@ -57,12 +98,12 @@ export default function Rail({
   const tree = filterProjectTree(projects, state.sessions, query);
 
   const fn = [
-    { id: "home", label: t("rail.home"), icon: Home },
-    { id: "projects", label: t("rail.projects"), icon: FolderKanban, badge: projects.length || null },
-    { id: "changes", label: t("rail.changes"), icon: GitCompare, badge: (state.changes || []).length || null, dock: "changes" },
-    { id: "recovery", label: t("rail.recovery"), icon: LifeBuoy, dock: "recovery" },
-    { id: "mcp", label: t("rail.mcp"), icon: Network },
-    { id: "plugins", label: t("rail.plugins"), icon: Puzzle }
+    { id: "home", label: t("rail.home"), icon: House },
+    { id: "projects", label: t("rail.projects"), icon: Folders, badge: projects.length || null },
+    { id: "changes", label: t("rail.changes"), icon: GitDiff, badge: (state.changes || []).length || null, dock: "changes" },
+    { id: "recovery", label: t("rail.recovery"), icon: Lifebuoy, dock: "recovery" },
+    { id: "mcp", label: t("rail.mcp"), icon: ShareNetwork },
+    { id: "plugins", label: t("rail.plugins"), icon: PuzzlePiece }
   ];
 
   const stampText = (mtime) => {
@@ -80,7 +121,7 @@ export default function Rail({
         aria-expanded={!collapsedSections[id]}
         onClick={() => setCollapsedSections((p) => ({ ...p, [id]: !p[id] }))}
       >
-        <span className="chev">{collapsedSections[id] ? <ChevronRight size={11} /> : <ChevronDown size={11} />}</span>
+        <span className="chev">{collapsedSections[id] ? <CaretRight size={11} /> : <CaretDown size={11} />}</span>
         {label}
       </button>
       {onAdd
@@ -99,7 +140,7 @@ export default function Rail({
           title={collapsed ? t("rail.expand") : t("rail.collapse")}
           aria-label={collapsed ? t("rail.expand") : t("rail.collapse")}
           onClick={onToggleCollapse}>
-          {collapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
+          <SidebarSimple size={15} />
         </button>
       </div>
 
@@ -113,7 +154,7 @@ export default function Rail({
           <span className={`kbd ${css.newBtnKbd}`}>Ctrl N</span>
         </button>
         <button type="button" className={`new-more ${css.newMore}`} onClick={() => setNewMenu(!newMenu)} title={t("rail.newWhere")}>
-          <ChevronDown size={12} />
+          <CaretDown size={12} />
         </button>
         {newMenu && (
           <div className={`new-menu open ${css.newMenu}`}>
@@ -139,13 +180,13 @@ export default function Rail({
       </div>
 
       <div className={`rail-search ${css.search}`}>
-        <Search size={12} aria-hidden="true" />
+        <MagnifyingGlass size={12} aria-hidden="true" />
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("rail.searchPlaceholder")} />
       </div>
 
       <nav className={`rail-fn ${css.fn}`}>
         {fn.map(({ id, label, icon: Icon, badge, dock }) => (
-          <button type="button" key={id} className={`fn-item ${css.fnItem} ${view === id || (dock && state.dockTab === dock && state.rightbarOpen) ? "on" : ""}`}
+          <button type="button" key={id} className={`fn-item ${css.fnItem} ${view === id || (dock && state.dockTab === dock && state.rightbarOpen && view === "chat") ? "on" : ""}`}
             title={collapsed ? label : undefined}
             data-tooltip={collapsed ? label : undefined}
             onClick={() => {
@@ -178,7 +219,7 @@ export default function Rail({
                     aria-expanded={open}
                     onClick={() => setClosedProject((prev) => ({ ...prev, [p.id]: !open }))}
                   >
-                    <span className="chev">{open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}</span>
+                    <span className="chev">{open ? <CaretDown size={11} /> : <CaretRight size={11} />}</span>
                     <span className="dot" />
                     <span className="nm" title={p.root}>{p.name}</span>
                   </button>
@@ -187,6 +228,14 @@ export default function Rail({
                     : <span className="cnt">{sessions.length}</span>}
                   <button type="button" className={`pnew ${css.iconbtn}`} title={t("rail.newInProject")}
                     onClick={() => onNewSession(p.root)}><Plus size={12} /></button>
+                  {onRemoveProject && (
+                    <button type="button" className={`pdel ${css.iconbtn} ${css.pdel}`}
+                      title={t("rail.removeProject")}
+                      aria-label={t("rail.removeProject")}
+                      onClick={(e) => handleRemoveProject(e, p.root)}>
+                      <Trash size={12} />
+                    </button>
+                  )}
                 </div>
                 <div className="proj-b">
                   {groups.length === 0 && <div className="proj-empty">{t("rail.noSessions")}</div>}
@@ -194,10 +243,23 @@ export default function Rail({
                     <React.Fragment key={g.bucket}>
                       <div className={`rail-grp ${css.secHead}`}>{t(`bucket.${g.bucket}`)}</div>
                       {g.sessions.slice(0, 4).map((s) => (
-                        <button type="button" key={s.id} className={`r-item ${css.row}`} onClick={() => openSession(p.root)}>
-                          <span className="tt" style={{ flex: 1, minWidth: 0 }}>{s.summary || t("rail.untitled")}</span>
-                          <span className={`xx ${css.meta}`}>{stampText(s.mtime)}</span>
-                        </button>
+                        <div key={s.id} className={`r-item-wrap ${css.sessionWrap}`}>
+                          <button type="button" className={`r-item ${css.row} ${css.sessionBtn}`} onClick={() => openSession(p.root)}>
+                            <span className="tt" style={{ flex: 1, minWidth: 0 }}>{s.summary || t("rail.untitled")}</span>
+                            <span className={`xx ${css.meta}`}>{stampText(s.mtime)}</span>
+                          </button>
+                          {onDeleteSession && (
+                            <button
+                              type="button"
+                              className={`sdel ${css.sessionDelBtn}`}
+                              title={t("rail.deleteSession")}
+                              aria-label={t("rail.deleteSession")}
+                              onClick={(e) => handleDeleteSession(e, s.id, { projectRoot: s.projectRoot || p.root, projectDir: s.projectDir || p.id })}
+                            >
+                              <Trash size={12} />
+                            </button>
+                          )}
+                        </div>
                       ))}
                     </React.Fragment>
                   ))}
@@ -216,11 +278,24 @@ export default function Rail({
         <div className={`sec-body ${collapsedSections.standalone ? "closed" : ""}`}>
           {standalone.length === 0 && <div className="proj-empty">{t("rail.noStandalone")}</div>}
           {standalone.slice(0, 8).map((s) => (
-            <button type="button" key={s.id} className={`r-item ${css.row}`} onClick={() => setView("chat")}>
-              <span className="ric"><MessageSquare size={13} /></span>
-              <span className="tt" style={{ flex: 1, minWidth: 0 }}>{s.summary || t("rail.untitled")}</span>
-              <span className={`xx ${css.meta}`}>{stampText(s.mtime)}</span>
-            </button>
+            <div key={s.id} className={`r-item-wrap ${css.sessionWrap}`}>
+              <button type="button" className={`r-item ${css.row} ${css.sessionBtn}`} onClick={() => setView("chat")}>
+                <span className="ric"><ChatText size={13} /></span>
+                <span className="tt" style={{ flex: 1, minWidth: 0 }}>{s.summary || t("rail.untitled")}</span>
+                <span className={`xx ${css.meta}`}>{stampText(s.mtime)}</span>
+              </button>
+              {onDeleteSession && (
+                <button
+                  type="button"
+                  className={`sdel ${css.sessionDelBtn}`}
+                  title={t("rail.deleteSession")}
+                  aria-label={t("rail.deleteSession")}
+                  onClick={(e) => handleDeleteSession(e, s.id, { projectRoot: s.projectRoot || null, projectDir: s.projectDir || null })}
+                >
+                  <Trash size={12} />
+                </button>
+              )}
+            </div>
           ))}
           <button type="button" className={`r-item ${css.row}`} onClick={() => onNewSession(null)}>
             <span className="ric"><Plus size={13} /></span>
@@ -230,17 +305,23 @@ export default function Rail({
       </div>
 
       <div className={`rail-foot ${css.foot}`}>
-        <span className={`who ${css.who}`} title={state.currentProject || ""}>
-          <span className="avatar" style={{ width: 22, height: 22 }}><FolderKanban size={12} /></span>
+        <button
+          type="button"
+          className={`who ${css.who}`}
+          title={state.currentProject ? `${state.currentProject} (${t ? t("rail.projects") : "项目管理"})` : (t ? t("rail.projects") : "项目管理")}
+          aria-label={state.currentProject ? `${state.currentProject} (${t ? t("rail.projects") : "项目管理"})` : (t ? t("rail.projects") : "项目管理")}
+          onClick={() => setView("projects")}
+        >
+          <span className="avatar" style={{ width: 22, height: 22 }}><Folders size={12} /></span>
           <span className="nmx">{state.currentProject ? state.currentProject.split(/[\\/]/).filter(Boolean).pop() : t("rail.noProjects")}</span>
-        </span>
+        </button>
         <div className={css.footActions}>
           <button type="button" className={`iconbtn rail-toggle ${css.iconbtn} ${collapsed ? "on" : ""}`}
             title={collapsed ? t("rail.expand") : t("rail.collapse")}
             aria-label={collapsed ? t("rail.expand") : t("rail.collapse")}
             data-tooltip={collapsed ? t("rail.expand") : undefined}
             onClick={onToggleCollapse}>
-            {collapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
+            <SidebarSimple size={15} />
           </button>
           {onCycleTheme && (
             <button type="button" className={`iconbtn ${css.iconbtn}`}
@@ -257,14 +338,14 @@ export default function Rail({
               aria-label={t ? t("toggle.lang") : "切换语言"}
               data-tooltip={collapsed ? (state.language === "zh" ? "English" : "中文") : undefined}
               onClick={onToggleLang}>
-              <Languages size={15} />
+              <Translate size={15} />
             </button>
           )}
           <button type="button" className={`iconbtn ${css.iconbtn} ${state.settingsOpen ? "on" : ""}`}
             title={t("rail.settings")}
             aria-label={t("rail.settings")}
             data-tooltip={collapsed ? t("rail.settings") : undefined}
-            onClick={() => setView("settings")}><Settings size={15} /></button>
+            onClick={() => setView("settings")}><Gear size={15} /></button>
         </div>
       </div>
     </aside>

@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  ChevronDown, ChevronRight, Wrench, FileDiff, TriangleAlert, ListChecks,
-  Workflow, Check, CircleCheck, CircleX, GitCompare, Diamond, Sparkles,
-  Copy, ThumbsUp, ThumbsDown, Share2, Database
-} from "lucide-react";
+  CaretDown, CaretRight, Wrench, GitDiff, Warning, ListChecks,
+  GitFork, Check, CheckCircle, XCircle, Diamond, Sparkle,
+  Copy, ThumbsUp, ThumbsDown, ShareNetwork, Database
+} from "@phosphor-icons/react";
 import { deriveAgentCards } from "../../state/agent-cards.js";
 import { deriveTimelineRows } from "../../state/inspector-state.js";
 import Composer from "./Composer.jsx";
@@ -47,7 +47,7 @@ function MessageTelemetry({ message, model }) {
           <ThumbsDown size={12} />
         </button>
         <button type="button" className="msg-action-btn" title="分享此轮">
-          <Share2 size={12} />
+          <ShareNetwork size={12} />
         </button>
       </div>
       <div className="msg-metrics-group">
@@ -75,7 +75,7 @@ function Collapsible({ defaultClosed = false, head, actions, children, className
           disabled={!collapsible}
           onClick={() => collapsible && setClosed(!closed)}
         >
-          {collapsible && <span className="car">{closed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}</span>}
+          {collapsible && <span className="car">{closed ? <CaretRight size={11} /> : <CaretDown size={11} />}</span>}
           {head}
         </button>
         {actions ? <div className={css.cardActions}>{actions}</div> : null}
@@ -126,7 +126,7 @@ function ToolCard({ card, t }) {
         <span className="r">
           {card.durationMs != null && <span className="mini">{t("ev.tool.duration").replace("{n}", card.durationMs)}</span>}
           <span className={`mini ${tone}`}>
-            {card.status === "ok" ? <CircleCheck size={11} /> : card.status === "error" ? <CircleX size={11} /> : <span className="spin" style={{ width: 9, height: 9, borderWidth: 1.5 }} />}
+            {card.status === "ok" ? <CheckCircle size={11} /> : card.status === "error" ? <XCircle size={11} /> : <span className="spin" style={{ width: 9, height: 9, borderWidth: 1.5 }} />}
             {card.status === "running" ? t("ev.running") : card.status === "ok" ? t("ev.toolOk") : t("ev.error")}
           </span>
         </span>
@@ -138,7 +138,7 @@ function ToolCard({ card, t }) {
 function DiffCard({ card, t, onOpen }) {
   const head = (
     <>
-      <FileDiff size={13} />
+      <GitDiff size={13} />
       <span className="ttl">{t("ev.diff")}</span>
       <span>· {card.files?.length || 0}</span>
     </>
@@ -159,7 +159,7 @@ function DiffCard({ card, t, onOpen }) {
 function ApprovalCard({ card, t, onApprove }) {
   const head = (
     <>
-      <TriangleAlert size={13} />
+      <Warning size={13} />
       <span className="ttl">{t("ev.approval")}</span>
       {card.summary && <span className={css.headSum}>· {card.summary}</span>}
     </>
@@ -180,7 +180,7 @@ function OrchCard({ card, t }) {
   return (
     <Collapsible head={
       <>
-        <Workflow size={13} />
+        <GitFork size={13} />
         <span className="ttl">{t("ev.orchestration")}</span>
         <span className="r"><span className="mini">{t("ev.rounds").replace("{n}", card.rounds || 1)}</span></span>
       </>
@@ -204,7 +204,7 @@ function TestCard({ card, t }) {
   return (
     <Collapsible head={
       <>
-        {card.pass ? <CircleCheck size={13} /> : <CircleX size={13} />}
+        {card.pass ? <CheckCircle size={13} /> : <XCircle size={13} />}
         <span className="ttl">{t("ev.verification")}</span>
         <span className="r"><span className={`mini ${card.pass ? "ok" : "err"}`}>{card.status || (card.pass ? t("ev.passed") : t("ev.failed"))}</span></span>
       </>
@@ -219,11 +219,11 @@ function ThoughtCard({ card, t }) {
     <>
       <button type="button" className={css.thoughtRow} aria-expanded={open} onClick={() => setOpen(!open)}>
         <span className={css.thoughtBar} />
-        <Sparkles size={12} />
+        <Sparkle size={12} />
         <span className={css.thoughtText}>
           {t("ev.thought")}{meta ? ` · ${meta}` : ""}
         </span>
-        {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+        {open ? <CaretDown size={11} /> : <CaretRight size={11} />}
       </button>
       {open && (
         <div className={css.thoughtBody}>
@@ -335,7 +335,7 @@ export default function ChatView({ t, state, actions, kernel, statusLine, setVie
                       className={css.suggestionChip}
                       onClick={() => setDraft("请分析当前项目的架构设计与核心模块划分。")}
                     >
-                      <Sparkles size={12} />
+                      <Sparkle size={12} />
                       <span>分析项目架构</span>
                     </button>
                     <button
@@ -343,7 +343,7 @@ export default function ChatView({ t, state, actions, kernel, statusLine, setVie
                       className={css.suggestionChip}
                       onClick={() => setDraft("请审查当前代码库中的潜在逻辑问题或坏味道。")}
                     >
-                      <Sparkles size={12} />
+                      <Sparkle size={12} />
                       <span>审查代码质量</span>
                     </button>
                     <button
@@ -351,7 +351,7 @@ export default function ChatView({ t, state, actions, kernel, statusLine, setVie
                       className={css.suggestionChip}
                       onClick={() => setDraft("请为最近修改的模块补充完善的单元测试。")}
                     >
-                      <Sparkles size={12} />
+                      <Sparkle size={12} />
                       <span>补充单元测试</span>
                     </button>
                   </div>

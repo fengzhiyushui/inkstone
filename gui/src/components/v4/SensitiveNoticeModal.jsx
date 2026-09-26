@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { ShieldAlert } from "lucide-react";
+import { ShieldWarning } from "@phosphor-icons/react";
 
 // #9.3 敏感文件风险提醒 —— 红色全屏模态。
 //
@@ -25,7 +25,7 @@ export default function SensitiveNoticeModal({ notice, t, onRespond }) {
     <div className="sn-backdrop" role="dialog" aria-modal="true" aria-labelledby="sn-title">
       <div className="sn-card">
         <div className="sn-head">
-          <ShieldAlert size={18} aria-hidden="true" />
+          <ShieldWarning size={18} aria-hidden="true" />
           <span id="sn-title" className="sn-title">{t("sensitive.title")}</span>
         </div>
 

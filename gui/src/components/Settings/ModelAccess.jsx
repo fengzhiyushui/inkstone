@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { KeyRound, Play, PenLine, Trash2, RotateCcw, Plus } from "lucide-react";
+import { Key, Play, PencilSimpleLine, Trash, ArrowCounterClockwise, Plus } from "@phosphor-icons/react";
 import { Row } from "./Form.jsx";
 
 const BLANK = { name: "", baseUrl: "https://api.deepseek.com", apiKey: "" };
@@ -67,7 +67,7 @@ export default function ModelAccess({ t, kernel, profiles, activeProfileId, onCh
 
         {(!profiles || profiles.length === 0) && !form && (
           <div className="empty-note">
-            <span className="en-ic"><KeyRound size={22} /></span>
+            <span className="en-ic"><Key size={22} /></span>
             {t("settings.model.empty")}
           </div>
         )}
@@ -78,7 +78,7 @@ export default function ModelAccess({ t, kernel, profiles, activeProfileId, onCh
           const tr = test[p.id];
           return (
             <div key={p.id} className={`api-item ${active ? "cur" : ""}`} style={{ flexWrap: "wrap" }}>
-              <span className="ai-ic"><KeyRound size={16} /></span>
+              <span className="ai-ic"><Key size={16} /></span>
               <div style={{ minWidth: 0 }}>
                 <div className="an">
                   {p.name}
@@ -93,14 +93,14 @@ export default function ModelAccess({ t, kernel, profiles, activeProfileId, onCh
                   <Play size={12} /> {t("settings.model.activate")}
                 </button>
               )}
-              <button type="button" className="btn ghost" onClick={() => startEdit(p)}><PenLine size={12} /> {t("settings.edit")}</button>
+              <button type="button" className="btn ghost" onClick={() => startEdit(p)}><PencilSimpleLine size={12} /> {t("settings.edit")}</button>
               <button type="button" className="btn ghost" disabled={busy === "del:" + p.id} onClick={() => del(p.id)}>
-                <Trash2 size={12} />
+                <Trash size={12} />
               </button>
 
               <div style={{ flexBasis: "100%", display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
                 <button type="button" className="btn ghost" disabled={busy === "models:" + p.id} onClick={() => fetchModels(p.id)}>
-                  <RotateCcw size={12} /> {t("settings.model.fetch")}
+                  <ArrowCounterClockwise size={12} /> {t("settings.model.fetch")}
                 </button>
                 {Array.isArray(mlist) && (
                   <select className="f-in mid" defaultValue={p.model || ""} onChange={(e) => chooseModel(p, e.target.value)}

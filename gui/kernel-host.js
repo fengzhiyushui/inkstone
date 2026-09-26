@@ -690,21 +690,58 @@ function createKernelHost({
       } catch { continue; }
       for (const group of groups) {
         const prev = merged.get(group.projectDir);
-        if (prev) prev.sessions = prev.sessions.concat(group.sessions);
-        else merged.set(group.projectDir, { projectDir: group.projectDir, sessions: group.sessions.slice() });
+        const mappedSessions = (group.sessions || []).map((s) => ({
+          ...s,
+          projectRoot: root,
+          projectDir: group.projectDir
+        }));
+        if (prev) {
+          prev.sessions = prev.sessions.concat(mappedSessions);
+        } else {
+          merged.set(group.projectDir, {
+            projectDir: group.projectDir,
+            projectRoot: root,
+            sessions: mappedSessions.slice()
+          });
+        }
       }
     }
     return [...merged.values()].map((g) => ({
       projectDir: g.projectDir,
+      projectRoot: g.projectRoot,
       sessions: g.sessions.sort((a, b) => (b.mtime || 0) - (a.mtime || 0))
     }));
+  }
+
+  async function deleteSession(sessionId, options = {}) {
+    const mod = await loadSessionIndexMod();
+    const roots = new Set();
+    if (options.projectRoot) roots.add(options.projectRoot);
+    roots.add(projectRoot);
+    try {
+      const projectMod = await loadProjectMod();
+      for (const p of await projectMod.createProjectRegistry({ dir: registryDir }).list()) {
+        if (p && p.root) roots.add(p.root);
+      }
+    } catch { /* ignore */ }
+
+    let anyDeleted = false;
+    for (const root of roots) {
+      try {
+        const sessionRoot = path.join(root, ".deepseek-code", "v2", "sessions");
+        const idx = mod.createSessionIndex({ sessionRoot });
+        const res = await idx.deleteSession(sessionId, options.projectDir);
+        if (res?.deleted) anyDeleted = true;
+      } catch { /* continue */ }
+    }
+    return { ok: true, deleted: anyDeleted };
   }
 
   return { init, ready, send, approve, interrupt, getTimeline, getSnapshot, getUsage, getConfig, getState, listPaused,
            listBranches, listCheckpoints, rewindPreview, rewindApply, getActiveBranch,
            getPreferences, setPreferences, listTree, readFile, writeFile, listChanges, describeChange,
            getSettings, setConfig, listApiProfiles, saveApiProfile, deleteApiProfile, activateApiProfile,
-           listModels, testConnection, activateBranch, listProjects, addProject, removeProject, switchProject, listSessions,
+           listModels, testConnection, activateBranch, listProjects, addProject, removeProject, switchProject, listSessions, deleteSession,
            getRecoveryList, getRecoveryReport, recoveryResume, recoveryCancel, recoveryClear,
            resolveSensitiveNotice, abortPendingSensitive, dispose };
 }

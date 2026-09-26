@@ -1,9 +1,10 @@
 /* Dock.module.css — 右栏 dock(tab 条 + 面板槽) */
 .dock {
   position: absolute;
-  right: 0;
-  top: 0;
-  bottom: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
   background: var(--bg-base);
   border-left: .5px solid var(--border-l3);
   z-index: 10;
@@ -15,33 +16,46 @@
 
 .tabbar {
   height: 40px;
-  padding: 8px 6px 0 10px;
-  gap: 4px;
+  padding: 8px 6px 0 8px;
+  gap: 2px;
   display: flex;
   align-items: flex-end;
   flex: none;
   background: var(--bg-panel);
   border-bottom: .5px solid var(--border-l2);
   box-sizing: border-box;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.tabbar::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
   height: 28px;
-  padding: 0 10px;
+  padding: 0 8px;
   border-radius: 8px 8px 0 0;
-  font-size: 13px;
+  font-size: 12.5px;
   border: none;
   background: transparent;
   color: var(--text-mut);
   cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--dur-fast) var(--ease);
 }
 .tab:hover { background: var(--hover); color: var(--text); }
 .tabOn {
   background: var(--bg-base);
   color: var(--text);
+  font-weight: 500;
 }
 
-.spacer { flex: 1; }
+.spacer { flex: 1; min-width: 4px; }
 
 .close {
   width: 28px;

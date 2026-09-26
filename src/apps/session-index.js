@@ -90,5 +90,51 @@ export function createSessionIndex({ sessionRoot }) {
     return result;
   }
 
-  return { listByProject };
+  async function deleteSession(sessionId, projectDir) {
+    if (!sessionId) throw new Error("sessionId is required");
+    const rawId = String(sessionId).replace(/^sess_/, "");
+    let targetDirs = [];
+    if (projectDir) {
+      targetDirs.push(path.join(sessionRoot, projectDir));
+    } else {
+      try {
+        const entries = await fsp.readdir(sessionRoot, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isDirectory() && entry.name.startsWith("proj_")) {
+            targetDirs.push(path.join(sessionRoot, entry.name));
+          }
+        }
+      } catch {
+        return { ok: false, deleted: false };
+      }
+    }
+
+    let deleted = false;
+    for (const dir of targetDirs) {
+      const candidates = [
+        `sess_${rawId}.jsonl`,
+        `${rawId}.jsonl`,
+        `sess_${rawId}.branches.json`,
+        `${rawId}.branches.json`
+      ];
+      for (const name of candidates) {
+        const file = path.join(dir, name);
+        try {
+          await fsp.unlink(file);
+          deleted = true;
+        } catch {
+          // ignore non-existent
+        }
+      }
+      try {
+        const remaining = await fsp.readdir(dir);
+        if (remaining.length === 0) {
+          await fsp.rmdir(dir);
+        }
+      } catch { /* ignore */ }
+    }
+    return { ok: true, deleted };
+  }
+
+  return { listByProject, deleteSession };
 }

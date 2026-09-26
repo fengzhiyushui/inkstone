@@ -158,6 +158,6 @@ docs/
 
 ## 版本与里程碑
 
-当前产品版本以 [`package.json`](../package.json) 与 [`CHANGELOG.md`](CHANGELOG.md) 为准（**v1.9.0**，2026-09-24）。`package.json`、`package-lock.json`、`src/theme.js`、`gui/src/App.jsx` 四处版本应一致。
+当前产品版本以 [`package.json`](../package.json) 与 [`CHANGELOG.md`](CHANGELOG.md) 为准（**v1.10.0**，2026-09-26）。`package.json`、`package-lock.json`、`src/theme.js`、`gui/src/App.jsx` 四处版本应一致。
 
 开发历程简记：V1 原型 → V2 干净运行时（内核统一、工具平面、编辑回滚、验证修复、上下文、分支 rewind、持久化恢复、护栏）→ V3 三支柱（语义上下文、多智能体调度、三端前端）→ v1.x 产品化（v1.4 会话优先 UI，v1.8 工学换肤与壳层重构）。

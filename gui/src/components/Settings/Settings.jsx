@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  SlidersHorizontal, Palette, Gauge, KeyRound, Cpu, ShieldCheck, Workflow, Layers, Sparkles, Info
-} from "lucide-react";
+  SlidersHorizontal, Palette, Gauge, Key, Cpu, ShieldCheck, GitFork, Stack, Sparkle, Info
+} from "@phosphor-icons/react";
 import { SETTINGS_GROUPS, getByPath, applyFieldEdit, sanitizeConfigPatch } from "../../state/settings-schema.js";
 import ModelAccess from "./ModelAccess.jsx";
 import Appearance from "./Appearance.jsx";
@@ -10,7 +10,22 @@ import { Row, Switch } from "./Form.jsx";
 import SettingsModal from "./SettingsModal.jsx";
 import css from "./SettingsModal.module.css";
 
-const ICONS = { SlidersHorizontal, Palette, Gauge, KeyRound, Cpu, ShieldCheck, Workflow, Layers, Sparkles, Info };
+const ICONS = {
+  SlidersHorizontal,
+  Palette,
+  Gauge,
+  KeyRound: Key,
+  Key,
+  Cpu,
+  ShieldCheck,
+  Workflow: GitFork,
+  GitFork,
+  Layers: Stack,
+  Stack,
+  Sparkles: Sparkle,
+  Sparkle,
+  Info
+};
 
 function Field({ t, field, value, onChange }) {
   const label = t(field.labelKey);
@@ -140,7 +155,7 @@ export default function SettingsPanels({ t, state, kernel, dispatch, version, op
       nav={SETTINGS_GROUPS.map((g) => {
         const Icon = ICONS[g.icon] || SlidersHorizontal;
         return (
-          <button type="button" key={g.id} className={`item ${css.item} ${active === g.id ? "on" : ""}`}
+          <button type="button" key={g.id} className={`item ${css.item} ${active === g.id ? `${css.on} on` : ""}`}
             aria-current={active === g.id} onClick={() => setActive(g.id)}>
             <Icon size={14} /> {t(g.labelKey)}
           </button>

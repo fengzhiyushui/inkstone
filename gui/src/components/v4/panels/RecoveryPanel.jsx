@@ -1,5 +1,5 @@
 import React from "react";
-import { LifeBuoy } from "lucide-react";
+import { Lifebuoy } from "@phosphor-icons/react";
 import css from "../Dock.module.css";
 
 // B3:RecoveryView 逻辑迁入 dock 面板(kernel recovery 代理零改动)
@@ -11,7 +11,7 @@ export default function RecoveryPanel({ t, recovery, kernel, onRefreshRecovery }
   return (
     <div>
       <div className={css.grp}>{t("recovery.items")}</div>
-      {items.length === 0 && <div className={css.empty}><LifeBuoy size={18} style={{ display: "inline", verticalAlign: "middle", marginRight: 6 }} />{t("recovery.empty")}</div>}
+      {items.length === 0 && <div className={css.empty}><Lifebuoy size={18} style={{ display: "inline", verticalAlign: "middle", marginRight: 6 }} />{t("recovery.empty")}</div>}
       {items.map((it) => (
         <div key={it.id || it.task_id} className={css.row} style={{ height: "auto", padding: "8px", alignItems: "flex-start", flexDirection: "column", gap: 4 }}>
           <div style={{ fontSize: 13, overflowWrap: "anywhere" }}>{it.summary || it.id}</div>

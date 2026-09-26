@@ -1,18 +1,18 @@
 import React from "react";
 import {
-  GitBranch, History, CircleCheck, CircleDashed, CircleAlert, CircleOff,
-  Type, Hash, ChartColumn, Blocks, EyeOff, Timer, FileDiff, Cpu, Palette, Languages
-} from "lucide-react";
+  GitBranch, ClockCounterClockwise, CheckCircle, CircleDashed, WarningCircle, Prohibit,
+  TextAa, Hash, ChartBar, Cube, EyeSlash, Timer, GitDiff, Cpu, Palette, Translate
+} from "@phosphor-icons/react";
 import { metricSegments, dotCells } from "../../state/metrics-view.js";
 
 // v1.4 对话框状态行(.cz-meta):
 //   左段 = 状态标签(分支 / 检查点 / 连接),中段 = 比例指标(5 形态),右段 = 形态切换 + 模型/主题/语言。
 // 形态与开关全部由「设置 › 状态显示」的 statusDisplay 偏好驱动;点形态按钮可临时轮换。
-// 图标一律 lucide,不使用表情符号。
+// 图标一律 phosphor,不使用表情符号。
 
 const FORMS = ["text", "num", "bar", "dots", "off"];
-const FORM_ICON = { text: Type, num: Hash, bar: ChartColumn, dots: Blocks, off: EyeOff };
-const CONN_ICON = { ready: CircleCheck, working: CircleDashed, error: CircleAlert, offline: CircleOff };
+const FORM_ICON = { text: TextAa, num: Hash, bar: ChartBar, dots: Cube, off: EyeSlash };
+const CONN_ICON = { ready: CheckCircle, working: CircleDashed, error: WarningCircle, offline: Prohibit };
 const TONE_CLASS = { accent: "", ok: "oklv", warn: "warnlv" };
 
 export function nextForm(form) {
@@ -85,8 +85,8 @@ export default function MetricsLine({ t, display, usage, status = {}, actions = 
   const segments = metricSegments(usage, d, status.model);
   const idle = status.connection === "ready" && !status.busy;
 
-  const ConnIcon = CONN_ICON[status.connection] || CircleCheck;
-  const FormIcon = FORM_ICON[form] || ChartColumn;
+  const ConnIcon = CONN_ICON[status.connection] || CheckCircle;
+  const FormIcon = FORM_ICON[form] || ChartBar;
   const connText = t(`status.conn.${status.connection || "ready"}`);
 
   const cls = ["cz-meta", d.fadeIdle && idle ? "fade" : "", d.compact ? "compact" : ""].filter(Boolean).join(" ");
@@ -97,7 +97,7 @@ export default function MetricsLine({ t, display, usage, status = {}, actions = 
         <span className="sg"><GitBranch size={12} /> {status.branch}</span>
       )}
       {show.checkpoint !== false && (
-        <span className="sg"><History size={12} /> {t("status.checkpoints").replace("{n}", status.checkpoints ?? 0)}</span>
+        <span className="sg"><ClockCounterClockwise size={12} /> {t("status.checkpoints").replace("{n}", status.checkpoints ?? 0)}</span>
       )}
       {show.connection !== false && (
         <span className={`sg ${status.connection === "ready" ? "okdot" : ""}`}><ConnIcon size={12} /> {connText}</span>
@@ -109,7 +109,7 @@ export default function MetricsLine({ t, display, usage, status = {}, actions = 
         <span className="sg opt"><Timer size={12} /> {status.turnTime}</span>
       )}
       {show.turnChanges !== false && status.turnChanges > 0 && (
-        <span className="sg opt"><FileDiff size={12} /> {t("status.turnChanges").replace("{n}", status.turnChanges)}</span>
+        <span className="sg opt"><GitDiff size={12} /> {t("status.turnChanges").replace("{n}", status.turnChanges)}</span>
       )}
 
       {!inComposer && (
@@ -130,7 +130,7 @@ export default function MetricsLine({ t, display, usage, status = {}, actions = 
           )}
           {show.language !== false && (
             <button type="button" className="sg click" title={t("toggle.lang")} onClick={actions.onToggleLang}>
-              <Languages size={12} /> {status.language === "zh" ? "中文" : "English"}
+              <Translate size={12} /> {status.language === "zh" ? "中文" : "English"}
             </button>
           )}
         </>

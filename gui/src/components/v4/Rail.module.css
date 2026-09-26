@@ -195,6 +195,62 @@
 .row:hover, .row.cur { background: var(--hover); }
 .row .meta { font-size: 11.5px; line-height: 16px; color: var(--text-faint); }
 
+.pdel {
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.row:hover .pdel {
+  opacity: 0.7;
+}
+.pdel:hover {
+  opacity: 1 !important;
+  color: var(--err) !important;
+  background: color-mix(in srgb, var(--err) 15%, transparent) !important;
+}
+
+.sessionWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.sessionBtn {
+  flex: 1;
+  min-width: 0;
+  padding-right: 26px !important;
+}
+.sessionWrap:hover :global(.xx) {
+  opacity: 0 !important;
+}
+.sessionDelBtn {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  color: var(--text-mut);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+  z-index: 2;
+}
+.sessionWrap:hover .sessionDelBtn {
+  opacity: 0.7;
+  pointer-events: auto;
+}
+.sessionDelBtn:hover {
+  opacity: 1 !important;
+  color: var(--err) !important;
+  background: color-mix(in srgb, var(--err) 18%, transparent) !important;
+}
+
 .foot {
   display: flex;
   align-items: center;
@@ -211,6 +267,19 @@
   gap: 8px;
   overflow: hidden;
   white-space: nowrap;
+  background: transparent;
+  border: none;
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--dur-fast) var(--ease);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+}
+.foot .who:hover, .who:hover {
+  background: var(--hover);
 }
 .footActions {
   display: flex;

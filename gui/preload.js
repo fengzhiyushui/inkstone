@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld("deepseek", {
   getUsage: () => ipcRenderer.invoke("model:usage"),
   getPreferences: () => ipcRenderer.invoke("gui:preferences-get"),
   setPreferences: (patch) => ipcRenderer.invoke("gui:preferences-set", patch || {}),
+  setModalActive: (active) => ipcRenderer.invoke("gui:modal-active", Boolean(active)),
   getConfig: () => ipcRenderer.invoke("config:get"),
   getState: () => ipcRenderer.invoke("orchestrator:state"),
   listBranches: () => ipcRenderer.invoke("session:branches"),
@@ -44,6 +45,7 @@ contextBridge.exposeInMainWorld("deepseek", {
   removeProject: (root) => ipcRenderer.invoke("projects:remove", root),
   switchProject: (root) => ipcRenderer.invoke("projects:switch", root),
   listSessions: () => ipcRenderer.invoke("sessions:list"),
+  deleteSession: (sessionId, options) => ipcRenderer.invoke("sessions:delete", sessionId, options || {}),
   pickProjectFolder: () => ipcRenderer.invoke("projects:pick"),
   revealProject: (root) => ipcRenderer.invoke("projects:reveal", root),
   // D-G7 Recovery Center

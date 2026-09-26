@@ -1,5 +1,5 @@
 import React from "react";
-import { PanelRightOpen, PanelRightClose } from "lucide-react";
+import { SidebarSimple } from "@phosphor-icons/react";
 import css from "./SessionHeader.module.css";
 
 export default function SessionHeader({
@@ -48,7 +48,7 @@ export default function SessionHeader({
         aria-label={rightbarOpen ? t("rightbar.close") : t("rightbar.open")}
         onClick={() => onToggleRightbar?.()}
       >
-        {rightbarOpen ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+        <SidebarSimple size={15} mirrored={true} weight={rightbarOpen ? "fill" : "regular"} />
       </button>
       {right}
     </header>

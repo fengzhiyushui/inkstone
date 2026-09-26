@@ -2,7 +2,7 @@
 .backdrop {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: 999;
   background: rgba(0, 0, 0, 0.65);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -56,10 +56,23 @@
   gap: 8px;
   cursor: pointer;
   text-align: left;
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition: all var(--dur-fast) var(--ease);
+  position: relative;
 }
 .item:hover { background: var(--hover); color: var(--text); }
-.item.on { background: var(--hover); color: var(--text); font-weight: 500; }
+.item.on,
+.item:global(.on),
+.item[aria-current="true"] {
+  background: color-mix(in srgb, var(--accent) 12%, var(--hover));
+  color: var(--text);
+  font-weight: 500;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.item.on svg,
+.item:global(.on) svg,
+.item[aria-current="true"] svg {
+  color: var(--accent);
+}
 
 .body {
   padding: 24px 32px 32px;

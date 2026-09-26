@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Plus, Shield, ChevronDown, ArrowUp, Square, KeyRound, Cpu, Check, Settings } from "lucide-react";
+import { Plus, ShieldCheck, CaretDown, ArrowUp, Square, Key, Cpu, Check, Gear } from "@phosphor-icons/react";
 import MetricsLine from "./MetricsLine.jsx";
 import css from "./Composer.module.css";
 
@@ -86,9 +86,9 @@ export default function Composer({
               className={css.permissionChip}
               title={t("chat.autonomy")}
             >
-              <Shield size={12} style={{ color: "var(--accent)" }} />
+              <ShieldCheck size={13} style={{ color: "var(--accent)" }} />
               <span>{autonomyLabel}</span>
-              <ChevronDown size={11} style={{ opacity: 0.7 }} />
+              <CaretDown size={11} style={{ opacity: 0.7 }} />
             </button>
           </div>
 
@@ -102,7 +102,7 @@ export default function Composer({
                 title={t ? t("dock.branch") || "分支" : "分支"}
               >
                 <span>{branch === "br_main" ? "main" : branch}</span>
-                <ChevronDown size={11} style={{ opacity: 0.7 }} />
+                <CaretDown size={11} style={{ opacity: 0.7 }} />
               </button>
             ) : null}
 
@@ -113,7 +113,7 @@ export default function Composer({
                 title={t ? t("composer.needsApiKeyTip") : "尚未配置 API 密钥，点击前往设置"}
                 onClick={() => onOpenSettings?.("api")}
               >
-                <KeyRound size={12} style={{ color: "var(--warn)" }} />
+                <Key size={12} style={{ color: "var(--warn)" }} />
                 <span>{t ? t("composer.configApi") : "配置 API"}</span>
               </button>
             )}
@@ -133,14 +133,14 @@ export default function Composer({
                 ) : null}
                 <Cpu size={12} style={{ color: "var(--accent)" }} />
                 <span>{currentModel}</span>
-                <ChevronDown size={11} style={{ opacity: 0.7 }} />
+                <CaretDown size={11} style={{ opacity: 0.7 }} />
               </button>
               {modelMenuOpen && (
                 <div className={css.modelMenu} role="menu">
                   {!hasApiKey && (
                     <div className={css.modelMenuNotice}>
                       <div className={css.noticeHead}>
-                        <KeyRound size={13} style={{ color: "var(--warn)" }} />
+                        <Key size={13} style={{ color: "var(--warn)" }} />
                         <span>{t ? t("composer.noApiKey") : "未检测到 API 密钥"}</span>
                       </div>
                       <div className={css.noticeBody}>
@@ -191,7 +191,7 @@ export default function Composer({
                       onOpenSettings?.("api");
                     }}
                   >
-                    <Settings size={12} />
+                    <Gear size={12} />
                     <span>配置更多 API 与模型...</span>
                   </button>
                 </div>
@@ -205,7 +205,7 @@ export default function Composer({
                 title={t("chat.interrupt")}
                 onClick={onInterrupt}
               >
-                <Square size={12} />
+                <Square size={12} weight="fill" />
               </button>
             ) : (
               <button
@@ -214,7 +214,7 @@ export default function Composer({
                 title={t("chat.send")}
                 onClick={send}
               >
-                <ArrowUp size={15} />
+                <ArrowUp size={15} weight="bold" />
               </button>
             )}
           </div>

@@ -1,11 +1,11 @@
 import React from "react";
-import { Type, Hash, ChartColumn, Blocks, EyeOff } from "lucide-react";
+import { TextAa, Hash, ChartBar, Cube, EyeSlash } from "@phosphor-icons/react";
 import { STATUS_FORMS, STATUS_POSITIONS, STATUS_TOGGLES } from "../../state/status-display.js";
 import { Row, Switch } from "./Form.jsx";
 
 // 设置 › 状态显示(设计稿 §状态显示,4 组 22 项):形态 / 位置 / 显示哪些 / 数值与格式。
 // 改动即时写入偏好,与对话框底部状态行(MetricsLine)同一份 statusDisplay。
-const FORM_ICON = { text: Type, num: Hash, bar: ChartColumn, dots: Blocks, off: EyeOff };
+const FORM_ICON = { text: TextAa, num: Hash, bar: ChartBar, dots: Cube, off: EyeSlash };
 const PERCENT_DECIMALS = [0, 1, 2];
 const DOTS_COUNTS = [5, 10, 20];
 const WARN_RATIOS = [0.7, 0.8, 0.9, 1];

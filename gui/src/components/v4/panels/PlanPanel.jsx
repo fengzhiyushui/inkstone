@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { Check, Circle, CircleX, ListChecks } from "lucide-react";
+import { Check, Circle, XCircle, ListChecks } from "@phosphor-icons/react";
 import { deriveAgentCards } from "../../../state/agent-cards.js";
 import css from "./PlanPanel.module.css";
 
@@ -47,7 +47,7 @@ export default function PlanPanel({ t, state }) {
               <div className={`${css.stepHeader} ${css[statusClass] || ""}`}>
                 {isDone && <Check size={14} style={{ color: "var(--ok)", flexShrink: 0 }} />}
                 {isRun && <span className="spin" style={{ width: 12, height: 12, borderWidth: 1.5, flexShrink: 0 }} />}
-                {isFailed && <CircleX size={14} style={{ color: "var(--err)", flexShrink: 0 }} />}
+                {isFailed && <XCircle size={14} style={{ color: "var(--err)", flexShrink: 0 }} />}
                 {!isDone && !isRun && !isFailed && <Circle size={14} style={{ color: "var(--text-faint)", flexShrink: 0 }} />}
                 <span>步骤 {idx + 1}：{s.id}</span>
               </div>

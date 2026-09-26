@@ -1,5 +1,5 @@
 import React from "react";
-import { GitCompare, ChevronLeft } from "lucide-react";
+import { GitDiff, CaretLeft } from "@phosphor-icons/react";
 import ChangeDiffView from "../../ChangeDiffView.jsx";
 import css from "../Dock.module.css";
 
@@ -29,7 +29,7 @@ export default function ChangesPanel({ t, state, onOpenChange, onDismissDiff, on
             onClick={() => onDismissDiff?.()}
             title={t("diff.close")}
           >
-            <ChevronLeft size={13} style={{ marginRight: 2 }} />
+            <CaretLeft size={13} style={{ marginRight: 2 }} />
             <span style={{ fontSize: 11 }}>{t("changes.agentChanges")}</span>
           </button>
           <span style={{ fontSize: 11, color: "var(--text-mut)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -73,7 +73,7 @@ export default function ChangesPanel({ t, state, onOpenChange, onDismissDiff, on
         </React.Fragment>
       ))}
       {totalFiles === 0 && (
-        <div className={css.empty}><GitCompare size={18} style={{ display: "inline", verticalAlign: "middle", marginRight: 6 }} />{t("changes.empty")}</div>
+        <div className={css.empty}><GitDiff size={18} style={{ display: "inline", verticalAlign: "middle", marginRight: 6 }} />{t("changes.empty")}</div>
       )}
     </div>
   );

@@ -227,8 +227,26 @@ export function useKernel(dispatch) {
         if (!api?.removeProject) return;
         const r = await api.removeProject(root);
         if (r && r.error) dispatch(errorToAction("projects", new Error(r.error)));
-        else dispatch({ type: "projects_loaded", projects: await (api.listProjects ? api.listProjects() : []) });
+        else {
+          dispatch({ type: "projects_loaded", projects: await (api.listProjects ? api.listProjects() : []) });
+          const sess = await api.listSessions?.();
+          if (sess) dispatch({ type: "sessions_loaded", sessions: Array.isArray(sess) ? sess : [] });
+        }
         return r;
+      },
+      deleteSession: async (sessionId, options) => {
+        if (!api?.deleteSession) return;
+        try {
+          const r = await api.deleteSession(sessionId, options);
+          if (r && r.error) dispatch(errorToAction("sessions", new Error(r.error)));
+          else {
+            const sess = await api.listSessions?.();
+            if (sess) dispatch({ type: "sessions_loaded", sessions: Array.isArray(sess) ? sess : [] });
+          }
+          return r;
+        } catch (err) {
+          dispatch(errorToAction("sessions", err));
+        }
       },
       loadSessions: async () => {
         if (!api?.listSessions) return;
@@ -242,6 +260,9 @@ export function useKernel(dispatch) {
       },
       // 在系统文件管理器中显示项目目录
       revealProject: (root) => api?.revealProject?.(root),
+
+      // 模态框打开/关闭同步窗控透明度与遮罩
+      setModalActive: (active) => (api?.setModalActive ? api.setModalActive(active) : Promise.resolve({ ok: true })),
 
       // 「打开文件夹…」:选目录 → 登记 → 返回 root(取消返回 null,由调用方静默处理)
       pickProjectFolder: async () => {

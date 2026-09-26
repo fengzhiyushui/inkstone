@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { X } from "lucide-react";
+import { X } from "@phosphor-icons/react";
 import css from "./SettingsModal.module.css";
 
 export default function SettingsModal({ t, open, onClose, children, nav, active, onNav }) {

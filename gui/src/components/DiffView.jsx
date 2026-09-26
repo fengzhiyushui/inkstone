@@ -1,6 +1,6 @@
 import React from "react";
 import { DiffEditor } from "@monaco-editor/react";
-import { X } from "lucide-react";
+import { X } from "@phosphor-icons/react";
 import { isLightTheme } from "../state/themes.js";
 
 // Side-by-side original ↔ modified view for a GUI edit (before/after save).

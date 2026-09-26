@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Check } from "lucide-react";
+import { Check } from "@phosphor-icons/react";
 import { TIERS, themesByTier, isLightTheme } from "../../state/themes.js";
 import { contrastRatio } from "../../state/contrast.js";
 import { Switch } from "./Form.jsx";

@@ -79,3 +79,23 @@ test("listByProject:按项目分组、按 mtime 降序、忽略 .branches.json",
   assert.equal(pb.projectDir, "proj_bbb");
   assert.equal(pb.sessions[0].summary, "B 项目");
 });
+
+test("deleteSession:删除指定会话文件(.jsonl 与 .branches.json)", async () => {
+  const base = await mkdtemp(path.join(tmpdir(), "inkstone-sess-del-"));
+  const sessions = path.join(base, ".deepseek-code", "v2", "sessions");
+  const projA = path.join(sessions, "proj_aaa");
+  await mkdir(projA, { recursive: true });
+
+  const sess1 = path.join(projA, "sess_target.jsonl");
+  const branch1 = path.join(projA, "sess_target.branches.json");
+  await writeFile(sess1, line({ type: "session:start" }));
+  await writeFile(branch1, "{}");
+
+  const index = createSessionIndex({ sessionRoot: sessions });
+  const res = await index.deleteSession("target", "proj_aaa");
+  assert.equal(res.ok, true);
+  assert.equal(res.deleted, true);
+
+  const list = await index.listByProject();
+  assert.equal(list.length, 0);
+});

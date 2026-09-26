@@ -14,8 +14,9 @@ import { ProjectsView, McpView, PluginsView } from "./components/v4/SecondaryVie
 import Dock from "./components/v4/Dock.jsx";
 import SettingsPanels from "./components/Settings/Settings.jsx";
 import SensitiveNoticeModal from "./components/v4/SensitiveNoticeModal.jsx";
+import ConfirmModal from "./components/v4/ConfirmModal.jsx";
 
-const VERSION = "1.9.0";
+const VERSION = "1.10.0";
 
 export default function App() {
   const [state, dispatch] = useWorkbench();
@@ -23,6 +24,25 @@ export default function App() {
   const t = makeT(state.language);
   const view = state.view;
   const settingsOpen = Boolean(state.settingsOpen);
+  const [confirmState, setConfirmState] = useState(null);
+
+  const requestConfirm = useCallback((config) => {
+    return new Promise((resolve) => {
+      setConfirmState({
+        ...config,
+        onConfirm: () => {
+          setConfirmState(null);
+          config.onConfirm?.();
+          resolve(true);
+        },
+        onCancel: () => {
+          setConfirmState(null);
+          config.onCancel?.();
+          resolve(false);
+        }
+      });
+    });
+  }, []);
 
   useEffect(() => {
     document.documentElement.setAttribute("theme", state.theme);
@@ -52,11 +72,12 @@ export default function App() {
     if (state.rightbarOpen && state.dockTab === "recovery") refreshRecovery().catch(() => {});
   }, [state.rightbarOpen, state.dockTab, state.currentProject, refreshRecovery]);
   useEffect(() => {
-    if (state.changeDiff && (!state.rightbarOpen || state.dockTab !== "changes")) {
+    if (state.changeDiff) {
+      if (state.view !== "chat") dispatch({ type: "view_changed", view: "chat" });
       if (!state.rightbarOpen) dispatch({ type: "rightbar_toggled", open: true });
       if (state.dockTab !== "changes") dispatch({ type: "dock_tab_changed", tab: "changes" });
     }
-  }, [state.changeDiff, state.rightbarOpen, state.dockTab, dispatch]);
+  }, [state.changeDiff, state.view, state.rightbarOpen, state.dockTab, dispatch]);
 
   const openSettings = useCallback((tab = "general") => dispatch({ type: "settings_toggled", open: true, tab }), [dispatch]);
   const closeSettings = useCallback(() => dispatch({ type: "settings_toggled", open: false }), [dispatch]);
@@ -77,6 +98,23 @@ export default function App() {
     await kernel.addProject(root);
     onSwitchProject(root);
   }, [kernel, onSwitchProject]);
+
+  const onRemoveProject = useCallback(async (root) => {
+    const res = await kernel.removeProject(root);
+    if (root === state.currentProject) {
+      const remaining = (state.projects || []).filter((p) => p.root !== root);
+      if (remaining.length > 0) {
+        onSwitchProject(remaining[0].root);
+      } else {
+        dispatch({ type: "project_switched", root: null });
+      }
+    }
+    return res;
+  }, [kernel, state.currentProject, state.projects, onSwitchProject, dispatch]);
+
+  const onDeleteSession = useCallback(async (sessionId, options) => {
+    return kernel.deleteSession(sessionId, options);
+  }, [kernel]);
 
   const onNewSession = useCallback((root) => {
     if (root && root !== state.currentProject) onSwitchProject(root);
@@ -124,6 +162,7 @@ export default function App() {
   }, [dispatch]);
 
   const openDock = useCallback((tab) => {
+    dispatch({ type: "view_changed", view: "chat" });
     dispatch({ type: "dock_tab_changed", tab });
     if (!state.rightbarOpen) dispatch({ type: "rightbar_toggled", viewport: window.innerWidth });
   }, [dispatch, state.rightbarOpen]);
@@ -148,6 +187,13 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onNewSession, toggleRail, toggleRightbar, openSettings, toggleTheme, state.currentProject, settingsOpen, state.sensitiveNotice]);
+
+  const hasModal = Boolean(settingsOpen || state.sensitiveNotice);
+  useEffect(() => {
+    if (typeof kernel?.setModalActive === "function") {
+      kernel.setModalActive(hasModal).catch(() => {});
+    }
+  }, [hasModal, kernel]);
 
   const statusLine = useMemo(() => ({
     display: state.statusDisplay,
@@ -175,6 +221,8 @@ export default function App() {
     }
   }), [state, dispatch, kernel, cycleTheme, toggleLang]);
 
+  const isWorkspaceView = view === "chat";
+
   return (
     <div className="ide">
       <AppFrame
@@ -182,7 +230,7 @@ export default function App() {
         hideSidebar={false}
         railCollapsed={state.railCollapsed}
         sidebarWidth={state.sidebarWidth}
-        rightbarOpen={Boolean(state.rightbarOpen)}
+        rightbarOpen={Boolean(state.rightbarOpen && isWorkspaceView)}
         rightbarWidth={state.rightbarWidth || 0}
         dispatch={dispatch}
         kernel={kernel}
@@ -190,6 +238,8 @@ export default function App() {
           <Rail t={t} state={state} version={VERSION} setView={setViewOrDock}
             collapsed={state.railCollapsed} onToggleCollapse={toggleRail}
             onSwitchProject={onSwitchProject} onNewSession={onNewSession} onOpenFolder={onOpenFolder}
+            onRemoveProject={onRemoveProject} onDeleteSession={onDeleteSession}
+            onRequestConfirm={requestConfirm}
             onOpenDock={openDock}
             onCycleTheme={cycleTheme} onToggleLang={toggleLang} />
         )}
@@ -209,14 +259,15 @@ export default function App() {
             )}
             {view === "projects" && (
               <ProjectsView t={t} state={state} onSwitchProject={onSwitchProject} onOpenFolder={onOpenFolder}
-                onRemoveProject={(root) => kernel.removeProject(root)}
+                onRemoveProject={onRemoveProject}
+                onRequestConfirm={requestConfirm}
                 onReveal={(root) => kernel.revealProject(root)} />
             )}
             {view === "mcp" && <McpView t={t} />}
             {view === "plugins" && <PluginsView t={t} />}
           </main>
         )}
-        rightbar={state.rightbarOpen ? (
+        rightbar={state.rightbarOpen && isWorkspaceView ? (
           <Dock
             t={t}
             state={state}
@@ -242,6 +293,21 @@ export default function App() {
           dispatch({ type: "sensitive_notice_cleared" });
         }}
       />
+      {confirmState && (
+        <ConfirmModal
+          open={Boolean(confirmState)}
+          title={confirmState.title}
+          message={confirmState.message}
+          subMessage={confirmState.subMessage}
+          confirmText={confirmState.confirmText}
+          cancelText={confirmState.cancelText}
+          danger={confirmState.danger}
+          icon={confirmState.icon}
+          onConfirm={confirmState.onConfirm}
+          onCancel={confirmState.onCancel}
+          t={t}
+        />
+      )}
     </div>
   );
 }

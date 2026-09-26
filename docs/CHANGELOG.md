@@ -14,6 +14,45 @@
 
 ---
 
+## v1.10.0 — 2026-09-26 · 响应式自适应 + 窗控全透明 + Phosphor Icons + 项目与会话安全删除 + 高端拟态确认弹窗 + 全局字体系统升级
+
+> 小版本发布：全面升级 IDE 视觉与交互体验，包含高密度工程级图标体系替换、Windows 原生窗控毛玻璃全透明化、中窄视口布局防挤压防截断、左侧栏与多视图项目/会话删除全链路闭环、高端拟态确认模态框（ConfirmModal）、以及全局中西文排版与基线对齐重构。
+
+- **高端拟态确认弹窗与主进程状态联动（ConfirmModal）**：
+  - 彻底淘汰与 IDE 现代设计割裂且阻断渲染主线程的 Win32/Electron 原生灰底 `window.confirm` 弹窗。
+  - 基于 `high-end-visual-design` 与 `ui-ux-pro-max` 规范，实现全新 `ConfirmModal.jsx`：
+    - **双层卡片材质**：14px 细致圆角、MACHINED 微质感内边框与深度弥散柔和投影（`cm-card`）；
+    - **毛玻璃环境遮罩**：`backdrop-filter: blur(8px)`，在全仓 10 套深浅主题下自然透射底层界面光晕；
+    - **危险语义与关闭徽标**：半透明红底光晕的 `<Trash />` 危险徽标与右上角静音关闭按钮；
+    - **安全交互机制**：默认将焦点安全聚焦于“取消”按钮防止误回车，支持 `Escape` 取消与 `Enter` 快捷确认，支持点击遮罩平滑退出；
+    - **原生窗控协同**：弹窗挂载与销毁时全生命周期同步 `window.api.setModalActive(true/false)`，保持无边框顶栏激活态与透明度完美一致。
+  - 在 `App.jsx` 顶层统一提供基于 Promise 的 `requestConfirm` 调度接口，侧边栏、项目管理面板全面接入，并配齐中英文双语警告副文本。
+- **全局字体栈与排版体系重构**：
+  - **消除中西文垂直基线漂移**：重构 `--font-ui`，优先引入微软现代界面字体 `"Segoe UI Variable Text"` 与针对 UI 控件定制字高/内边距的 `"Microsoft YaHei UI"`，彻底解决 Windows 平台英文/数字与中文同排混排时的忽高忽低与晃动感。
+  - **杜绝 UI 界面 Monospace 代码字体滥用**：移除侧栏会话计数、事件时间戳、状态角标上宽体 `Cascadia Code` 的滥用，全面改用现代排版标准 `font-variant-numeric: tabular-nums`，在确保数据整齐等宽对齐的同时，字形与中文平顺融合。
+  - **高精度排版与平滑渲染**：全局启用 `-moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility;` 与 OpenType 字形微调特性 `font-feature-settings: "cv02", "cv03", "cv04", "cv11"`；将主标题套用的西文负字距（`letter-spacing: -0.02em`）修正为符合汉字阅读的舒适正字距 `0.02em`，消除汉字挤压感。
+- **项目与会话删除能力全链路落地**：
+  - **内核与数据持久化安全保障**：在 `session-index.js` 中新增 `deleteSession(sessionId, { projectRoot })`，安全卸载内存会话、从倒排索引与项目关联列表中解绑，并将磁盘记录物理归档至 `.trash/sessions`，防止误删不可逆；扩展 `removeProject(root)` 契约。
+  - **主进程与 IPC 桥接**：在 `kernel-host.js`、`main.js`（IPC 白名单 `sessions:delete`）、`preload.js`、`useKernel.js` 中打通全双工异步调用链。
+  - **左侧栏交互与悬浮感知**：在 `Rail.jsx` 项目卡片头与会话列表项中增加低侵入式悬浮操作按钮（`.pdel` 与 `.sdel`），结合 `onRequestConfirm` 实现平滑优雅的删除体验。
+- **Windows 原生窗控（titleBarOverlay）全透明化与 100% 主题融合**：
+  - 将主进程建窗（`createWindow`）、模态开启关闭（`gui:modal-active`）及主题切换（`gui:preferences-set`）全路径的 `titleBarOverlay.color` 彻底设为全透明（`#00000000`），仅依据明暗主题自适应切换 `symbolColor`（暗色/模态使用 `#f1f5f9`，浅色使用 `#0f1115`）。
+  - 彻底根除全屏模态遮罩下右上角突兀的矩形系统色块，让全屏毛玻璃遮罩及顶栏背景色自然透出，原生窗控最小化/最大化/关闭按钮悬浮其上，系统 hover 与关闭红色悬停态完美保留。
+- **前端图标全面升级为 Phosphor Icons**：
+  - 移除旧有 `lucide-react` 依赖，引入更具现代工程感与高信息密度美感的 `@phosphor-icons/react`。
+  - 全面平替覆盖 Rail 侧边栏、Chat 消息流、卡片体系（工具/计划/差异/审批/编排/思考/测试）、Composer 工具行、Dock 五大面板、Diff 对比视图及 Settings 7 大设置面板等 20 个前端视图组件。
+- **响应式布局自适应修复**：
+  - **输入栏（Composer）操作区防挤压与发送按钮防溢出**：`.row` 统一添加 `width: 100%; max-width: 100%; box-sizing: border-box; flex-wrap: wrap; row-gap: 8px`；`.rightGroup` 添加 `max-width: 100%; min-width: 0; flex-shrink: 1; margin-left: auto;`；`.modelPill` 采用弹性收缩并在 `span` 上优雅单行截断；发送按钮保持 `flex: none; flex-shrink: 0;`。杜绝窄视口下发送按钮脱离卡片溢出悬挂。
+  - **右侧 Dock 栏负坐标裁切根治与 Tab 防折行**：`.dock` 升级为 `position: absolute; inset: 0; width: 100%; box-sizing: border-box;`，自适应填满网格列；`.tabbar` 间距紧凑化并支持平滑横向滚动，`.tab` 强制单行不折行；全屏次级视图（项目管理、主页等）自动与会话 Dock 空间解耦。
+  - **项目与恢复列表按钮自适应**：全局 `.btn` 强制 `white-space: nowrap; flex-shrink: 0`；引入 `.ai-info` 与 `.ai-actions`，彻底根除操作按钮被挤成 1 字符宽竖列的缺陷。
+  - **设置页导航指示条**：修复设置导航切换时激活高亮丢失问题，加入立体 accent 竖条指示槽。
+- **全栈版本与测试守护**：
+  - `package.json`、`package-lock.json`、`src/theme.js`、`gui/src/App.jsx` 四处版本一致同步至 `1.10.0`。
+  - 新增 `v1100-responsive-layout.test.js` 专项回归测试，全量单测 **1325 / 1325 全部 PASS**，GUI 生产构建零警告零报错通过。
+
+
+---
+
 ## v1.9.0 — 2026-09-24 · 契约冻结 + 多智能体可视化 + 模型适配
 
 > 小版本：事件契约三角锁死（schema/守卫/fixtures）、GUI Agent Inspector 与轨迹时间线、TUI 分支/回退对齐、FIM 双端落地，以及 DeepSeek 现网协议适配（默认模型 ID、reasoning_content 回传、thinking 参数、退避重试）。实施计划与 D1–D6 拍板见 [`plans/architecture/2026-09-23-v1.9.0-contract-freeze-and-visualization.md`](plans/architecture/2026-09-23-v1.9.0-contract-freeze-and-visualization.md)。

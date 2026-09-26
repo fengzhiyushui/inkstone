@@ -50,14 +50,21 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
+  row-gap: 8px;
+  flex-wrap: wrap;
   padding-top: 10px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .leftGroup {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .plusBtn {
@@ -71,6 +78,7 @@
   place-items: center;
   cursor: pointer;
   padding: 0;
+  flex-shrink: 0;
   transition: all var(--dur-fast) var(--ease);
 }
 .plusBtn:hover {
@@ -91,6 +99,8 @@
   align-items: center;
   gap: 5px;
   cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: all var(--dur-fast) var(--ease);
   user-select: none;
 }
@@ -99,17 +109,23 @@
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border-l2));
 }
 
-.spacer { flex: 1; }
+.spacer { flex: 1; min-width: 4px; }
 
 .rightGroup {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  margin-left: auto;
 }
 
 .snapshotPill {
   height: 28px;
-  padding: 0 10px;
+  padding: 0 8px;
   border-radius: 999px;
   background: var(--hover);
   border: 1px solid var(--border-l1);
@@ -118,8 +134,10 @@
   font-family: var(--font-mono);
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: all var(--dur-fast) var(--ease);
   user-select: none;
 }
@@ -131,11 +149,14 @@
 .modelMenuWrap {
   position: relative;
   display: inline-flex;
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 180px;
 }
 
 .modelPill {
   height: 28px;
-  padding: 0 10px;
+  padding: 0 8px;
   border-radius: 999px;
   background: var(--hover);
   border: 1px solid var(--border-l1);
@@ -144,10 +165,21 @@
   font-family: var(--font-mono);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 100%;
   transition: all var(--dur-fast) var(--ease);
   user-select: none;
+}
+.modelPill span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 90px;
+  min-width: 0;
 }
 .modelPill:hover {
   background: color-mix(in srgb, var(--text) 12%, transparent);
@@ -170,7 +202,7 @@
 
 .apiNoticePill {
   height: 28px;
-  padding: 0 10px;
+  padding: 0 8px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--warn) 10%, var(--bg-panel));
   border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
@@ -179,8 +211,10 @@
   font-weight: 500;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: all var(--dur-fast) var(--ease);
   user-select: none;
 }
@@ -330,6 +364,7 @@
   place-items: center;
   cursor: pointer;
   flex: none;
+  flex-shrink: 0;
   box-shadow: 0 2px 6px color-mix(in srgb, var(--purple-send) 40%, transparent);
   transition: all var(--dur-fast) var(--ease);
 }

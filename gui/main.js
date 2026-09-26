@@ -23,8 +23,9 @@ const IPC_CHANNELS = [
   "session:rewind-preview", "session:rewind-apply",
   "context:snapshot", "model:usage",
   "gui:preferences-get", "gui:preferences-set",
+  "gui:modal-active",
   "config:get", "orchestrator:state",
-  "projects:list", "projects:add", "projects:remove", "projects:switch", "sessions:list",
+  "projects:list", "projects:add", "projects:remove", "projects:switch", "sessions:list", "sessions:delete",
   "projects:reveal", "projects:pick",
   "sensitive:respond",
   "recovery:list", "recovery:report", "recovery:resume", "recovery:cancel", "recovery:clear"
@@ -88,9 +89,11 @@ async function createWindow() {
     bootTheme = lightIds.has(prefs.theme) ? "light" : "dark";
   } catch { /* 默认暗 */ }
   const isLightBoot = bootTheme === "light";
-  const overlay = isLightBoot
-    ? { height: 40, color: "#f9fafb", symbolColor: "#0f1115" }
-    : { height: 40, color: "#151517", symbolColor: "#f1f5f9" };
+  const overlay = {
+    height: 40,
+    color: "#00000000",
+    symbolColor: isLightBoot ? "#0f1115" : "#f1f5f9"
+  };
 
   win = new BrowserWindow({
     width: smoke ? 1440 : 1280,
@@ -406,6 +409,30 @@ function registerIpcHandlers() {
     try { return await host.getPreferences(); }
     catch (error) { return { error: error.message }; }
   });
+  let modalActive = false;
+  handle("gui:modal-active", async (_event, active) => {
+    try {
+      modalActive = Boolean(active);
+      const targetWin = (mainWindow && !mainWindow.isDestroyed()) ? mainWindow : BrowserWindow.getAllWindows()[0];
+      if (targetWin && !targetWin.isDestroyed() && typeof targetWin.setTitleBarOverlay === "function") {
+        if (modalActive) {
+          // 模态框打开时全屏具有深色遮罩(rgba(0,0,0,0.65))，原生窗控透明背景让遮罩与模糊自然透出，保持主题与视觉一致性
+          targetWin.setTitleBarOverlay({ height: 40, color: "#00000000", symbolColor: "#f1f5f9" });
+        } else {
+          const prefs = await host.getPreferences().catch(() => ({}));
+          const lightIds = new Set(["snow", "sand", "lotus", "latte", "paper"]);
+          const isLight = lightIds.has(prefs.theme);
+          targetWin.setTitleBarOverlay({
+            height: 40,
+            color: "#00000000",
+            symbolColor: isLight ? "#0f1115" : "#f1f5f9"
+          });
+        }
+      }
+      return { ok: true };
+    } catch (error) { return { error: error.message }; }
+  });
+
   handle("gui:preferences-set", async (_event, patch) => {
     try {
       const res = await host.setPreferences(patch || {});
@@ -413,13 +440,17 @@ function registerIpcHandlers() {
       if (patch && typeof patch.theme === "string" && targetWin && !targetWin.isDestroyed() && typeof targetWin.setTitleBarOverlay === "function") {
         const lightIds = new Set(["snow", "sand", "lotus", "latte", "paper"]);
         const isLight = lightIds.has(patch.theme);
-        const nextOverlay = isLight
-          ? { height: 40, color: "#f9fafb", symbolColor: "#0f1115" }
-          : { height: 40, color: "#151517", symbolColor: "#f1f5f9" };
-        try {
-          targetWin.setTitleBarOverlay(nextOverlay);
-          targetWin.setBackgroundColor(isLight ? "#f9fafb" : "#151517");
-        } catch { /* ignore */ }
+        if (!modalActive) {
+          const nextOverlay = {
+            height: 40,
+            color: "#00000000",
+            symbolColor: isLight ? "#0f1115" : "#f1f5f9"
+          };
+          try {
+            targetWin.setTitleBarOverlay(nextOverlay);
+            targetWin.setBackgroundColor(isLight ? "#f9fafb" : "#151517");
+          } catch { /* ignore */ }
+        }
       }
       return res;
     }
@@ -432,6 +463,10 @@ function registerIpcHandlers() {
   handle("projects:remove", async (_event, root) => { try { return await host.removeProject(root); } catch (error) { return { error: error.message }; } });
   handle("projects:switch", async (_event, root) => { try { return await host.switchProject(root); } catch (error) { return { error: error.message }; } });
   handle("sessions:list", async () => { try { return await host.listSessions(); } catch (error) { return { error: error.message }; } });
+  handle("sessions:delete", async (_event, sessionId, options) => {
+    try { return await host.deleteSession(sessionId, options || {}); }
+    catch (error) { return { error: error.message }; }
+  });
   // 在系统文件管理器中显示项目目录(设计稿的「在终端打开」在无终端面板时降级为此)。
   handle("projects:reveal", async (_event, root) => {
     try { const err = await shell.openPath(String(root || "")); return err ? { error: err } : { ok: true }; }

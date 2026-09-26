@@ -1,8 +1,8 @@
 import React from "react";
 import {
-  FolderKanban, FolderOpen, Trash2, ChevronLeft, GitCompare, Network, Puzzle,
-  FolderSearch, PenLine, LifeBuoy
-} from "lucide-react";
+  Folders, FolderOpen, Trash, CaretLeft, GitDiff, ShareNetwork, PuzzlePiece,
+  MagnifyingGlass, PencilSimpleLine, Lifebuoy
+} from "@phosphor-icons/react";
 import ChangeDiffView from "../ChangeDiffView.jsx";
 
 function formatChangeTime(time) {
@@ -16,7 +16,7 @@ function formatChangeTime(time) {
 // v1.4 次级视图(设计稿 v4 视图 4/5/6/7)。
 // 概念预览(MCP / 插件)只保留设计稿的版式与说明,不虚构服务条目 —— 没有数据就给空态。
 
-export function ProjectsView({ t, state, onSwitchProject, onRemoveProject, onOpenFolder, onReveal }) {
+export function ProjectsView({ t, state, onSwitchProject, onRemoveProject, onOpenFolder, onReveal, onRequestConfirm }) {
   const projects = state.projects || [];
   const current = projects.find((p) => p.root === state.currentProject) || null;
   const others = projects.filter((p) => p.root !== state.currentProject);
@@ -27,19 +27,35 @@ export function ProjectsView({ t, state, onSwitchProject, onRemoveProject, onOpe
 
   const Card = ({ p, isCurrent }) => (
     <div className={`api-item ${isCurrent ? "cur" : ""}`}>
-      <span className="ai-ic"><FolderKanban size={16} /></span>
-      <div style={{ minWidth: 0 }}>
+      <span className="ai-ic"><Folders size={16} /></span>
+      <div className="ai-info" style={{ minWidth: 0 }}>
         <div className="an">{p.name}{isCurrent && <span className="badge">{t("rail.current")}</span>}</div>
         <div className="ad">{p.root} · {t("projects.sessions").replace("{n}", sessionCount(p.id))}</div>
       </div>
       <div className="spacer" />
-      {onReveal && <button type="button" className="btn ghost" onClick={() => onReveal(p.root)}><FolderOpen size={12} /> {t("projects.reveal")}</button>}
-      {!isCurrent && <button type="button" className="btn ghost" onClick={() => onSwitchProject(p.root)}>{t("projects.open")}</button>}
-      {!isCurrent && onRemoveProject && (
-        <button type="button" className="btn ghost" title={t("projects.remove")} onClick={() => onRemoveProject(p.root)}>
-          <Trash2 size={12} />
-        </button>
-      )}
+      <div className="ai-actions">
+        {onReveal && <button type="button" className="btn ghost" onClick={() => onReveal(p.root)}><FolderOpen size={12} /> {t("projects.reveal")}</button>}
+        {!isCurrent && <button type="button" className="btn ghost" onClick={() => onSwitchProject(p.root)}>{t("projects.open")}</button>}
+        {onRemoveProject && (
+          <button type="button" className="btn ghost" title={t("projects.remove")} onClick={() => {
+            if (onRequestConfirm) {
+              onRequestConfirm({
+                title: t ? t("rail.removeProject") : "移除项目",
+                message: t ? t("rail.removeProjectConfirm") : "确定从侧栏列表中移除该项目吗？",
+                subMessage: t ? t("rail.removeProjectSub") : "仅从列表中解绑，不会删除磁盘上的任何代码文件。",
+                confirmText: t ? t("confirm.remove") : "移除",
+                cancelText: t ? t("confirm.cancel") : "取消",
+                danger: true,
+                onConfirm: () => onRemoveProject(p.root)
+              });
+            } else {
+              onRemoveProject(p.root);
+            }
+          }}>
+            <Trash size={12} />
+          </button>
+        )}
+      </div>
     </div>
   );
 
@@ -63,7 +79,7 @@ export function ProjectsView({ t, state, onSwitchProject, onRemoveProject, onOpe
           {others.map((p) => <Card key={p.id} p={p} isCurrent={false} />)}
           {others.length === 0 && (
             <div className="empty-note">
-              <span className="en-ic"><FolderSearch size={24} /></span>
+              <span className="en-ic"><MagnifyingGlass size={24} /></span>
               {t("projects.emptyRecent")}
             </div>
           )}
@@ -112,7 +128,7 @@ export function ChangesView({ t, state, theme, onOpenChange, onDismissDiff, onRe
           ))}
           {totalFiles === 0 && (
             <div className="empty-note">
-              <span className="en-ic"><GitCompare size={22} /></span>
+              <span className="en-ic"><GitDiff size={22} /></span>
               {t("changes.empty")}
             </div>
           )}
@@ -122,7 +138,7 @@ export function ChangesView({ t, state, theme, onOpenChange, onDismissDiff, onRe
           {openDiff ? (
             <>
               <div className="cv-h">
-                <button type="button" className="iconbtn" title={t("diff.close")} onClick={onDismissDiff}><ChevronLeft size={15} /></button>
+                <button type="button" className="iconbtn" title={t("diff.close")} onClick={onDismissDiff}><CaretLeft size={15} /></button>
                 <span className="fp">{openPath}</span>
                 {openDiff.meta.rolledBack && <span className="mini warn">{t("changes.rolledBack")}</span>}
                 <span className="mini">{openDiff.meta.id}</span>
@@ -133,7 +149,7 @@ export function ChangesView({ t, state, theme, onOpenChange, onDismissDiff, onRe
             </>
           ) : (
             <div className="empty-note" style={{ marginTop: 60 }}>
-              <span className="en-ic"><PenLine size={24} /></span>
+              <span className="en-ic"><PencilSimpleLine size={24} /></span>
               {t("changes.pickFile")}
             </div>
           )}
@@ -172,12 +188,12 @@ function ConceptView({ t, title, subtitle, icon, note, emptyKey }) {
 
 export function McpView({ t }) {
   return <ConceptView t={t} title={t("rail.mcp")} subtitle={t("concept.mcpSub")}
-    icon={<Network size={26} />} note={t("concept.mcp")} emptyKey="concept.mcpEmpty" />;
+    icon={<ShareNetwork size={26} />} note={t("concept.mcp")} emptyKey="concept.mcpEmpty" />;
 }
 
 export function PluginsView({ t }) {
   return <ConceptView t={t} title={t("rail.plugins")} subtitle={t("concept.pluginsSub")}
-    icon={<Puzzle size={26} />} note={t("concept.plugins")} emptyKey="concept.pluginsEmpty" />;
+    icon={<PuzzlePiece size={26} />} note={t("concept.plugins")} emptyKey="concept.pluginsEmpty" />;
 }
 
 // D-G7 Recovery Center:列表 + report 摘要 + 动作。recovery 未启用时展示空态说明。
@@ -194,12 +210,12 @@ export function RecoveryView({ t, items = [], report = null, busy = null, onResu
         <span className="ttl">{t("recovery.title")}</span>
         <span className="sub">{t("recovery.subtitle")}</span>
         <div className="spacer" />
-        <button type="button" className="btn ghost" onClick={onRefresh}><FolderSearch size={13} /> {t("recovery.refresh")}</button>
+        <button type="button" className="btn ghost" onClick={onRefresh}><MagnifyingGlass size={13} /> {t("recovery.refresh")}</button>
       </header>
       <div className="s-body"><div className="s-in" style={{ maxWidth: 760 }}>
         {disabled && (
           <div className="empty-note">
-            <span className="en-ic"><LifeBuoy size={24} /></span>
+            <span className="en-ic"><Lifebuoy size={24} /></span>
             {t("recovery.disabled")}
           </div>
         )}
@@ -220,7 +236,7 @@ export function RecoveryView({ t, items = [], report = null, busy = null, onResu
               <div className="fg-t">{t("recovery.items")}</div>
               {items.length === 0 && (
                 <div className="empty-note">
-                  <span className="en-ic"><LifeBuoy size={24} /></span>
+                  <span className="en-ic"><Lifebuoy size={24} /></span>
                   {t("recovery.empty")}
                 </div>
               )}
@@ -228,23 +244,25 @@ export function RecoveryView({ t, items = [], report = null, busy = null, onResu
                 const id = item.id || item.approval_id || item.key || "";
                 return (
                   <div key={id || String(Math.random())} className="api-item">
-                    <div style={{ minWidth: 0 }}>
+                    <div className="ai-info" style={{ minWidth: 0 }}>
                       <div className="an">{id}</div>
                       <div className="ad">{item.kind || item.status || item.type || ""}{item.summary ? ` · ${item.summary}` : ""}</div>
                     </div>
                     <div className="spacer" />
-                    {onResume && (
-                      <button type="button" className="btn ghost" disabled={busy === id}
-                        onClick={() => onResume(id)}>{t("recovery.resume")}</button>
-                    )}
-                    {onCancel && (
-                      <button type="button" className="btn ghost" disabled={busy === id}
-                        onClick={() => onCancel(id)}>{t("recovery.cancel")}</button>
-                    )}
-                    {onClear && (
-                      <button type="button" className="btn ghost" disabled={busy === id}
-                        onClick={() => onClear(id)}>{t("recovery.clear")}</button>
-                    )}
+                    <div className="ai-actions">
+                      {onResume && (
+                        <button type="button" className="btn ghost" disabled={busy === id}
+                          onClick={() => onResume(id)}>{t("recovery.resume")}</button>
+                      )}
+                      {onCancel && (
+                        <button type="button" className="btn ghost" disabled={busy === id}
+                          onClick={() => onCancel(id)}>{t("recovery.cancel")}</button>
+                      )}
+                      {onClear && (
+                        <button type="button" className="btn ghost" disabled={busy === id}
+                          onClick={() => onClear(id)}>{t("recovery.clear")}</button>
+                      )}
+                    </div>
                   </div>
                 );
               })}

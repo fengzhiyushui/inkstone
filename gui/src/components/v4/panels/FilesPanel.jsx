@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from "react";
-import { File, Folder, FolderOpen } from "lucide-react";
+import { File, Folder, FolderOpen } from "@phosphor-icons/react";
 import { treeFromPaths } from "../../../state/file-tree.js";
 import css from "../Dock.module.css";
 

@@ -417,4 +417,12 @@ test("kernel host exposes project registry + session index delegates", async () 
   await host.switchProject(root);
   assert.equal(disposed.length, 1, "switchProject 应重建 kernel(dispose 一次)");
   assert.equal((await host.listSessions()).length, 0);
+
+  const delRes = await host.deleteSession("dummy-sess-id");
+  assert.equal(delRes.ok, true);
+  assert.equal(delRes.deleted, false);
+
+  const remRes = await host.removeProject(root);
+  assert.equal(remRes.ok, true);
+  assert.deepEqual(await host.listProjects(), []);
 });

@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { X } from "lucide-react";
+import { X } from "@phosphor-icons/react";
 import FilesPanel from "./panels/FilesPanel.jsx";
 import ChangesPanel from "./panels/ChangesPanel.jsx";
 import RecoveryPanel from "./panels/RecoveryPanel.jsx";
@@ -38,7 +38,7 @@ export default function Dock({
   if (!rightbarWidth || rightbarWidth < 300) return null;
 
   return (
-    <div className={css.dock} style={{ width: rightbarWidth }} role="complementary" aria-label="dock">
+    <div className={css.dock} role="complementary" aria-label="dock">
       <div className={css.tabbar} role="tablist" aria-label="dock tabs">
         {TABS.map(({ id, labelKey }) => (
           <button
