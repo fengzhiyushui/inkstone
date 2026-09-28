@@ -13,6 +13,7 @@ import { createEditService } from "./edits/edit-service.js";
 import { createBuiltinTools } from "./tools/builtin/index.js";
 import { createToolRegistry } from "./tools/registry.js";
 import { createToolExecutor } from "./tools/executor.js";
+import { McpHub } from "./tools/mcp/mcp-hub.js";
 import { createPermissionEngine } from "./tools/permissions/permission-engine.js";
 import { createApprovalCache } from "./tools/permissions/approval-cache.js";
 import { createPolicyContext } from "./tools/permissions/policy-loader.js";
@@ -138,6 +139,14 @@ export async function createKernel(root, options = {}) {
   const editService = mainPlane.editService;
   const toolRegistry = mainPlane.toolRegistry;
   const toolExecutor = mainPlane.toolExecutor;
+  const mcpHub = options.mcpHub || new McpHub({
+    config: { mcpServers: options.mcpServers || options.config?.mcpServers || {} },
+    toolRegistry,
+    cwd: root
+  });
+  if (options.autoInitMcp !== false && mcpHub.serverConfigs.size > 0) {
+    await mcpHub.initAll().catch(() => {});
+  }
   const contextEngine = options.contextEngine || createContextEngine({
     root,
     eventBus,
@@ -383,6 +392,7 @@ export async function createKernel(root, options = {}) {
   };
 
   const tools = {
+    registry: toolRegistry,
     list(filter = {}) {
       return toolRegistry.listTools(filter);
     },
@@ -460,8 +470,16 @@ export async function createKernel(root, options = {}) {
       kernelDisposed = true;
       try { await orchestrator.flushExperience?.(); } catch { /* best-effort */ }
       try { await experienceStore?.flush?.(); } catch { /* best-effort */ }
+      try { await mcpHub?.stopAll?.(); } catch { /* best-effort */ }
       try { sessionManager.dispose?.(); } catch { /* best-effort */ }
       try { await projectLock?.release?.(); } catch { /* best-effort */ }
+    },
+    mcp: {
+      hub: mcpHub,
+      listServers: () => mcpHub.listServers(),
+      restartServer: (serverId) => mcpHub.restartServer(serverId),
+      toggleServer: (serverId, enabled) => mcpHub.toggleServer(serverId, enabled),
+      callTool: (namespacedName, params) => mcpHub.callTool(namespacedName, params)
     },
     metrics: {
       getUsage() {

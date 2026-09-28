@@ -38,6 +38,7 @@ kernel facade：
 - `dispose()` 幂等：flush 经验 + 释放项目锁
 - `recovery.*`：list / resume / cancel / clear / report；恢复启用时另有 `abortJournal()` / `commitJournal()`
 - `experience.*`（C4，见 §14.4）
+- `mcp.*`（v1.11.0）：listServers / restartServer / toggleServer / callTool
 - `metrics.*`：用量与上下文统计
 
 ### turn 生命周期
@@ -117,6 +118,24 @@ ToolCall
 ```
 
 工具超时：`executor` 支持 `defaultToolTimeoutMs` / `context.toolTimeoutMs`；超时落为 `status:"error"`（`metadata.timeout = true`），不抛错、不强杀进程。
+
+### 3.1 MCP (Model Context Protocol) 外部工具接入（v1.11.0）
+
+Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座：
+
+- **纯原生 JSON-RPC 2.0 与 Stdio 传输**：
+  - [`jsonrpc-client.js`](../src/tools/mcp/jsonrpc-client.js)：标准 JSON-RPC 2.0 请求响应状态机，支持请求映射、超时熔断与连接断开自愈。
+  - [`stdio-transport.js`](../src/tools/mcp/stdio-transport.js)：子进程 Stdio 管道与 `readline` 逐行分帧（彻底杜绝粘包/半包）；跨平台进程防孤儿管理（Windows 下任务树清理，POSIX 下优雅退出）；敏感环境变量隔离。
+  - [`mcp-client.js`](../src/tools/mcp/mcp-client.js)：完成 MCP `initialize` 握手与能力协商，支持 `tools/list` 与 `tools/call`。
+- **宿主管理与动态装载**：
+  - [`mcp-hub.js`](../src/tools/mcp/mcp-hub.js)：多服务生命周期并发调度、一键重启与故障隔离。
+  - [`schema-converter.js`](../src/tools/mcp/schema-converter.js)：两级命名空间隔离（`mcp__<serverId>__<toolName>`），自动将 MCP inputSchema 转为 DeepSeek Function Calling Schema。
+  - [`registry.js`](../src/tools/registry.js)：扩展 `mountExternalTools` / `unmountExternalTools` 动态装载点。
+- **权限护栏统一收敛**：
+  - 外部工具分类推导（`read` 自动放行，`mutate` 高危写操作默认要求审批）；支持 `mcpServers[id].autoApprove` 显式白名单。
+- **三端可视化与运维**：
+  - GUI 壳层实装 `McpView`（服务卡片、健康状态灯、工具目录抽屉、一键启停/重启）。
+  - CLI 提供 `inkstone mcp [list|check]` 子命令。
 
 ---
 

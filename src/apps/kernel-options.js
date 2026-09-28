@@ -25,6 +25,7 @@ export async function buildKernelOptions(root, overrides = {}, loadConfigImpl = 
   if (config.edits) result.edits = config.edits;
   // M1 A1a:events.strictSchema 透传——不接就是死配置(重蹈 #8 languages 空转)。
   if (config.events) result.events = config.events;
+  if (config.mcpServers) result.mcpServers = config.mcpServers;
   if (overrides.context?.semantic) {
     result.context = {
       ...config.context,

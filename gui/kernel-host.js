@@ -737,12 +737,25 @@ function createKernelHost({
     return { ok: true, deleted: anyDeleted };
   }
 
+  function listMcpServers() {
+    return ready() && kernel?.mcp ? kernel.mcp.listServers() : [];
+  }
+
+  async function restartMcpServer(serverId) {
+    return ready() && kernel?.mcp ? await kernel.mcp.restartServer(serverId) : null;
+  }
+
+  async function toggleMcpServer(serverId, enabled) {
+    return ready() && kernel?.mcp ? await kernel.mcp.toggleServer(serverId, enabled) : null;
+  }
+
   return { init, ready, send, approve, interrupt, getTimeline, getSnapshot, getUsage, getConfig, getState, listPaused,
            listBranches, listCheckpoints, rewindPreview, rewindApply, getActiveBranch,
            getPreferences, setPreferences, listTree, readFile, writeFile, listChanges, describeChange,
            getSettings, setConfig, listApiProfiles, saveApiProfile, deleteApiProfile, activateApiProfile,
            listModels, testConnection, activateBranch, listProjects, addProject, removeProject, switchProject, listSessions, deleteSession,
            getRecoveryList, getRecoveryReport, recoveryResume, recoveryCancel, recoveryClear,
+           listMcpServers, restartMcpServer, toggleMcpServer,
            resolveSensitiveNotice, abortPendingSensitive, dispose };
 }
 

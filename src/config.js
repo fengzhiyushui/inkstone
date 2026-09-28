@@ -62,7 +62,8 @@ export const DEFAULT_CONFIG = {
   // violations + 触发 onSchemaViolation 回调,绝不抛错绝不阻断 appendFile(热路径零风险)。
   events: {
     strictSchema: false
-  }
+  },
+  mcpServers: {}
 };
 
 export async function loadConfig(root, options = {}) {
@@ -89,7 +90,8 @@ export async function loadConfig(root, options = {}) {
     limits: limitsFromEnv(normalizeLimits(fileConfig.limits)),
     context: normalizeContext(fileConfig.context),
     edits: normalizeEdits(fileConfig.edits),
-    events: normalizeEvents(fileConfig.events)
+    events: normalizeEvents(fileConfig.events),
+    mcpServers: normalizeMcpServers(fileConfig.mcpServers)
   };
 
   if (!config.apiKey && !options.allowMissingKey) {
@@ -134,7 +136,8 @@ export function normalizeConfig(config) {
     context: normalizeContext(config.context),
     orchestration: normalizeOrchestration(config.orchestration),
     edits: normalizeEdits(config.edits),
-    events: normalizeEvents(config.events)
+    events: normalizeEvents(config.events),
+    mcpServers: normalizeMcpServers(config.mcpServers)
   };
 }
 
@@ -342,4 +345,28 @@ function toNumber(value, fallback) {
 
 function stripTrailingSlash(value) {
   return value.replace(/\/+$/, "");
+}
+
+export function normalizeMcpServers(raw = {}) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return {};
+  }
+  const result = {};
+  for (const [key, val] of Object.entries(raw)) {
+    if (!key || typeof key !== "string" || !val || typeof val !== "object") {
+      continue;
+    }
+    const command = String(val.command || "").trim();
+    if (!command) continue;
+    result[key] = {
+      command,
+      args: Array.isArray(val.args) ? val.args.map(String) : [],
+      env: val.env && typeof val.env === "object" && !Array.isArray(val.env) ? { ...val.env } : {},
+      disabled: Boolean(val.disabled),
+      autoApprove: Array.isArray(val.autoApprove) ? val.autoApprove.map(String) : [],
+      ...(typeof val.cwd === "string" && val.cwd.trim() ? { cwd: val.cwd.trim() } : {}),
+      timeoutMs: typeof val.timeoutMs === "number" && val.timeoutMs > 0 ? val.timeoutMs : 60000
+    };
+  }
+  return result;
 }

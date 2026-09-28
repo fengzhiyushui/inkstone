@@ -14,6 +14,34 @@
 
 ---
 
+## v1.11.0 — 2026-09-28 · MCP (Model Context Protocol) 外部工具接入体系
+
+> 小版本发布：全面落地行业标准 MCP 协议，构建零外部依赖原生生态扩展底座。支持 stdio 进程管道通道、两级命名空间隔离与 DeepSeek Function Calling Schema 自动转换、外部工具统一接入权限护栏与人工审批挂起、同构 `config.json` 中的 `mcpServers` 配置，并在 GUI 侧边栏落地全新交互式 `McpView` 可视化中枢与 CLI `inkstone mcp` 运维子命令。
+
+- **零依赖原生协议与传输通道（M1）**：
+  - 手写实现标准 JSON-RPC 2.0 客户端（`src/tools/mcp/jsonrpc-client.js`），支持 Request/Notification/Response/Error 帧分发、递增序列 ID、超限超时熔断与连接断开自愈。
+  - 封装跨平台 Stdio 进程管道传输层（`src/tools/mcp/stdio-transport.js`），通过 `readline` 换行分帧彻底根除粘包/半包；实施跨平台防孤儿进程清理（Windows 下递归清理进程树，POSIX 下 SIGTERM/SIGKILL 退避）；严格隔离系统敏感环境变量，防 API Key 凭证泄露；提供环形缓冲区捕获最近 100 行 `stderr` 诊断日志。
+  - 实现标准 MCP 客户端连接实体（`src/tools/mcp/mcp-client.js`），严格遵循 MCP 规范完成 `initialize` 握手与 `notifications/initialized` 确认；提供 `listTools()` 与 `callTool()` 标准操作。
+- **宿主管理器与动态工具注册（M2）**：
+  - 实现多服务宿主管理器（`src/tools/mcp/mcp-hub.js`），统一调度多个 MCP Server 的生命周期、探活与一键重启，单服务崩溃异常隔离不影响主运行时。
+  - 实现 Schema 转换器（`src/tools/mcp/schema-converter.js`）：实行两级命名空间隔离（`mcp__<serverId>__<toolName>`），校验函数名安全正则，清洗非标 JSON Schema 关键字并安全映射为 DeepSeek Function Calling 结构；将 MCP 执行结果清洗提取为 Agent 可读文本。
+  - 扩展 `src/tools/registry.js`：提供 `mountExternalTools` 与 `unmountExternalTools` 扩展点，支持外部工具动态装载、查询与无缝执行代理。
+- **统一安全护栏收敛与配置加载（M3）**：
+  - 统一收敛至 `PermissionEngine` 与 `ApprovalCache`，外部工具严禁旁路运行；
+  - 自动词义推导工具风险级别（`read` 自动放行，`mutate` 高危写操作在 `gated` 模式下强制挂起弹出审批卡片）；
+  - 支持配置级 `autoApprove` 白名单机制；
+  - 扩展 `src/config.js`，无缝兼容 Cursor / Claude Desktop 同构的 `mcpServers` 配置节点；在 `kernel-options.js` 打通配置透传链路。
+- **三端协同与 GUI 可视化中枢实装（M4）**：
+  - 重构桌面 GUI `McpView`（`gui/src/components/v4/SecondaryViews.jsx`），淘汰占位空态，提供服务卡片列表、健康状态微光灯、命令展示、动态工具目录展开与一键启停/重启交互。
+  - 打通 Electron IPC 全双工契约（`mcp:list`, `mcp:restart`, `mcp:toggle`）。
+  - 新增 CLI `inkstone mcp [list|check]` 运维子命令，支持快速自检与服务端信息探测。
+- **全量质量与回归验证（M5）**：
+  - 新增 28 项 MCP 专项自动化测试；
+  - 全量 1350+ 测试套件 100% 绿灯通过；
+  - 版本号四处严格同步至 `1.11.0`（`package.json`, `package-lock.json`, `src/theme.js`, `gui/src/App.jsx`）。
+
+---
+
 ## v1.10.0 — 2026-09-26 · 响应式自适应 + 窗控全透明 + Phosphor Icons + 项目与会话安全删除 + 高端拟态确认弹窗 + 全局字体系统升级
 
 > 小版本发布：全面升级 IDE 视觉与交互体验，包含高密度工程级图标体系替换、Windows 原生窗控毛玻璃全透明化、中窄视口布局防挤压防截断、左侧栏与多视图项目/会话删除全链路闭环、高端拟态确认模态框（ConfirmModal）、以及全局中西文排版与基线对齐重构。

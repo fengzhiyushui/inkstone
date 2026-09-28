@@ -792,4 +792,20 @@ select.f-in { min-width: 160px; }
   justify-content: center;
 }
 
-
+/* ══ MCP 视图样式 (v1.11.0) ══ */
+.mcp-stats-bar {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  border-radius: var(--r-8, 8px);
+  background: var(--bg-element, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.06));
+  font-size: 12px;
+  color: var(--text-mut, #888);
+}
+.mcp-servers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}

@@ -16,7 +16,7 @@ import SettingsPanels from "./components/Settings/Settings.jsx";
 import SensitiveNoticeModal from "./components/v4/SensitiveNoticeModal.jsx";
 import ConfirmModal from "./components/v4/ConfirmModal.jsx";
 
-const VERSION = "1.10.0";
+const VERSION = "1.11.0";
 
 export default function App() {
   const [state, dispatch] = useWorkbench();
@@ -263,7 +263,7 @@ export default function App() {
                 onRequestConfirm={requestConfirm}
                 onReveal={(root) => kernel.revealProject(root)} />
             )}
-            {view === "mcp" && <McpView t={t} />}
+            {view === "mcp" && <McpView t={t} kernel={kernel} />}
             {view === "plugins" && <PluginsView t={t} />}
           </main>
         )}

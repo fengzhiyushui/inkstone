@@ -54,4 +54,8 @@ contextBridge.exposeInMainWorld("deepseek", {
   recoveryResume: (id, options) => ipcRenderer.invoke("recovery:resume", id, options || {}),
   recoveryCancel: (id) => ipcRenderer.invoke("recovery:cancel", id),
   recoveryClear: (id) => ipcRenderer.invoke("recovery:clear", id),
+  // MCP 外部服务管理
+  listMcpServers: () => ipcRenderer.invoke("mcp:list"),
+  restartMcpServer: (serverId) => ipcRenderer.invoke("mcp:restart", serverId),
+  toggleMcpServer: (serverId, enabled) => ipcRenderer.invoke("mcp:toggle", serverId, enabled)
 });

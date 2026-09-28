@@ -28,7 +28,8 @@ const IPC_CHANNELS = [
   "projects:list", "projects:add", "projects:remove", "projects:switch", "sessions:list", "sessions:delete",
   "projects:reveal", "projects:pick",
   "sensitive:respond",
-  "recovery:list", "recovery:report", "recovery:resume", "recovery:cancel", "recovery:clear"
+  "recovery:list", "recovery:report", "recovery:resume", "recovery:cancel", "recovery:clear",
+  "mcp:list", "mcp:restart", "mcp:toggle"
 ];
 
 if (process.env.DEEPSEEK_CODE_GUI_SMOKE === "1") {
@@ -483,6 +484,11 @@ function registerIpcHandlers() {
       return { root: result.filePaths[0] };
     } catch (error) { return { error: error.message }; }
   });
+
+  // MCP 外部服务管理通道
+  handle("mcp:list", wrap(() => host.listMcpServers()));
+  handle("mcp:restart", wrap((_e, serverId) => host.restartMcpServer(serverId)));
+  handle("mcp:toggle", wrap((_e, serverId, enabled) => host.toggleMcpServer(serverId, enabled)));
 }
 
 app.whenReady().then(createWindow);

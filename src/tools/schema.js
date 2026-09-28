@@ -23,6 +23,9 @@ export function validateToolParams(toolName, schema = {}, rawParams = {}) {
 }
 
 export function toDeepSeekToolSchema(toolDef) {
+  if (toolDef.rawFunctionSchema) {
+    return toolDef.rawFunctionSchema;
+  }
   const properties = {};
   const required = [];
   for (const [key, spec] of Object.entries(toolDef.params || {})) {

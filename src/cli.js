@@ -61,6 +61,9 @@ export async function runCli(argv) {
     case "resume":
       await runResume(root);
       return;
+    case "mcp":
+      await runMcp(root, args, flags);
+      return;
     default:
       throw new Error(`未知命令 "${command}"。运行 "inkstone help" 查看帮助。`);
   }
@@ -409,6 +412,78 @@ async function runResume(root) {
   }
 }
 
+async function runMcp(root, args, flags) {
+  const action = args[0] || "list";
+  const config = await loadConfig(root, { allowMissingKey: true });
+  const mcpServers = config.mcpServers || {};
+
+  if (action === "list") {
+    const serverKeys = Object.keys(mcpServers);
+    if (!serverKeys.length) {
+      console.log("当前项目未配置任何 MCP 服务。可在 .deepseek-code/config.json 中添加 \"mcpServers\" 配置。");
+      return;
+    }
+
+    console.log(section(`已配置的 MCP 服务 (${serverKeys.length} 个)`));
+    for (const [serverId, srv] of Object.entries(mcpServers)) {
+      const stateBadge = srv.disabled ? color.dim("[已禁用]") : color.green("[已启用]");
+      console.log(`\n• ${color.bold(serverId)} ${stateBadge}`);
+      console.log(`  命令: ${srv.command} ${(srv.args || []).join(" ")}`);
+      if (srv.autoApprove?.length) {
+        console.log(`  免审批工具: ${srv.autoApprove.join(", ")}`);
+      }
+    }
+    console.log("\n提示: 运行 \"inkstone mcp check <serverId>\" 测试特定服务的连通性与可用工具。");
+    return;
+  }
+
+  if (action === "check") {
+    const serverId = args[1];
+    if (!serverId) {
+      throw new Error("请指定要测试的 MCP 服务标识，例如: inkstone mcp check <serverId>");
+    }
+    const srvConfig = mcpServers[serverId];
+    if (!srvConfig) {
+      throw new Error(`未找到名为 "${serverId}" 的 MCP 服务配置。`);
+    }
+
+    console.log(`正在连接 MCP 服务 "${serverId}"...`);
+    const { McpClient } = await import("./tools/mcp/mcp-client.js");
+    const client = new McpClient({
+      serverId,
+      command: srvConfig.command,
+      args: srvConfig.args,
+      env: srvConfig.env,
+      cwd: srvConfig.cwd || root,
+      timeoutMs: srvConfig.timeoutMs || 15000
+    });
+
+    try {
+      await client.connect();
+      console.log(color.green(`✓ 连接成功！服务端信息: ${client.serverInfo?.name || "未知"} (v${client.serverInfo?.version || "未知"})`));
+
+      const tools = await client.listTools();
+      console.log(`\n探测到 ${tools.length} 个可用工具:`);
+      for (const tool of tools) {
+        const desc = tool.description ? ` - ${tool.description}` : "";
+        console.log(`  • ${color.bold(tool.name)}${desc}`);
+      }
+    } catch (err) {
+      console.error(color.red(`✗ 连接失败: ${err.message}`));
+      const stderr = client.getRecentStderr();
+      if (stderr) {
+        console.error(`\n最近进程日志:\n${stderr}`);
+      }
+      throw err;
+    } finally {
+      await client.disconnect().catch(() => {});
+    }
+    return;
+  }
+
+  throw new Error(`未知 MCP 操作 "${action}"。可使用 "mcp list" 或 "mcp check <serverId>"。`);
+}
+
 function commonOptions(flags) {
   return {
     stream: !boolFlag(flags, "no-stream"),
@@ -490,6 +565,7 @@ ${commandLine("inkstone changes list", "查看修改记录")}
 ${commandLine("inkstone changes show latest", "查看修改详情")}
 ${commandLine("inkstone rollback latest", "回退最近修改")}
 ${commandLine("inkstone resume", "查看最近会话记录")}
+${commandLine("inkstone mcp [list|check]", "管理与检查 MCP 外部扩展服务与工具")}
 
 环境变量：
   DEEPSEEK_API_KEY     如果本地配置没有 apiKey，则使用这里的密钥

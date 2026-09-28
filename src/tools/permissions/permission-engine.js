@@ -4,27 +4,32 @@ export const DEFAULT_POLICY_MATRIX = Object.freeze({
   "read-only": {
     read: "allow", read_secret: "ask",
     write_create: "deny", write_update: "deny", write_delete: "deny",
-    execute: "deny", execute_dangerous: "deny", network: "deny", destructive: "deny"
+    execute: "deny", execute_dangerous: "deny", network: "deny", destructive: "deny",
+    mutate: "deny"
   },
   supervised: {
     read: "allow", read_secret: "ask",
     write_create: "ask", write_update: "ask", write_delete: "ask",
-    execute: "ask", execute_dangerous: "ask", network: "ask", destructive: "deny"
+    execute: "ask", execute_dangerous: "ask", network: "ask", destructive: "deny",
+    mutate: "ask"
   },
   gated: {
     read: "allow", read_secret: "ask",
     write_create: "allow", write_update: "allow", write_delete: "ask",
-    execute: "ask", execute_dangerous: "ask", network: "ask", destructive: "deny"
+    execute: "ask", execute_dangerous: "ask", network: "ask", destructive: "deny",
+    mutate: "ask"
   },
   auto: {
     read: "allow", read_secret: "ask",
     write_create: "allow", write_update: "allow", write_delete: "allow",
-    execute: "allow", execute_dangerous: "ask", network: "ask", destructive: "deny"
+    execute: "allow", execute_dangerous: "ask", network: "ask", destructive: "deny",
+    mutate: "allow"
   },
   "full-auto": {
     read: "allow", read_secret: "ask",
     write_create: "allow", write_update: "allow", write_delete: "allow",
-    execute: "allow", execute_dangerous: "ask", network: "allow", destructive: "deny"
+    execute: "allow", execute_dangerous: "ask", network: "allow", destructive: "deny",
+    mutate: "allow"
   }
 });
 
@@ -35,6 +40,10 @@ export function createPermissionEngine() {
 
     if (category === "destructive") {
       return { decision: "deny", matched_rule: "hardcoded:destructive", source: "safety-invariant" };
+    }
+
+    if (toolCall.autoApprove) {
+      return { decision: "allow", matched_rule: "mcp:auto-approve", source: "mcp-server-config" };
     }
 
     const cached = context.approvalCache?.get?.(fingerprint(toolCall, context));
