@@ -96,6 +96,7 @@ docs/
 - [deepseek-code-v2-clean-runtime-design](specs/architecture/2026-05-30-deepseek-code-v2-clean-runtime-design.md) — V2 干净运行时
 - [v3-roadmap-design](specs/architecture/2026-06-24-v3-roadmap-design.md) — V3 路线图：四阶段、三支柱、三层多 agent
 - [post-v3-roadmap-design](specs/architecture/2026-09-17-post-v3-roadmap-design.md) — V3 之后路线图（草案）
+- [v1.11.0-mcp-integration-design](specs/architecture/2026-09-28-v1.11.0-mcp-integration-design.md) — MCP 外部工具接入体系设计规格
 
 ### specs/backend
 - [v2-7 approval-resume](specs/backend/2026-05-30-v2-7-approval-resume-design.md)
@@ -147,7 +148,8 @@ docs/
 
 ### plans/architecture
 - [inkstone-rebrand](plans/architecture/2026-07-31-inkstone-rebrand.md) — DeepSeek Code → Inkstone
-- [v1.9.0 contract-freeze-and-visualization](plans/architecture/2026-09-23-v1.9.0-contract-freeze-and-visualization.md) — 契约冻结 + Inspector + 模型适配（M1-P0/M1/M2 已完工，M3–M5 进行中）
+- [v1.9.0 contract-freeze-and-visualization](plans/architecture/2026-09-23-v1.9.0-contract-freeze-and-visualization.md) — 契约冻结 + Inspector + 模型适配
+- [v1.11.0-mcp-integration](plans/architecture/2026-09-28-v1.11.0-mcp-integration.md) — MCP 外部工具接入实施计划（stdio 管道、动态装配、安全审批、三端协同）
 
 ### plans/backend
 历史计划已收成摘要（目标 / 结果 / 关键决策 / 验证）。全目录见 [`plans/backend/`](plans/backend/)。
