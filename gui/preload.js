@@ -57,5 +57,7 @@ contextBridge.exposeInMainWorld("deepseek", {
   // MCP 外部服务管理
   listMcpServers: () => ipcRenderer.invoke("mcp:list"),
   restartMcpServer: (serverId) => ipcRenderer.invoke("mcp:restart", serverId),
-  toggleMcpServer: (serverId, enabled) => ipcRenderer.invoke("mcp:toggle", serverId, enabled)
+  toggleMcpServer: (serverId, enabled) => ipcRenderer.invoke("mcp:toggle", serverId, enabled),
+  addMcpServer: (serverId, config) => ipcRenderer.invoke("mcp:add", serverId, config),
+  removeMcpServer: (serverId) => ipcRenderer.invoke("mcp:remove", serverId)
 });

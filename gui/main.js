@@ -29,7 +29,7 @@ const IPC_CHANNELS = [
   "projects:reveal", "projects:pick",
   "sensitive:respond",
   "recovery:list", "recovery:report", "recovery:resume", "recovery:cancel", "recovery:clear",
-  "mcp:list", "mcp:restart", "mcp:toggle"
+  "mcp:list", "mcp:restart", "mcp:toggle", "mcp:add", "mcp:remove"
 ];
 
 if (process.env.DEEPSEEK_CODE_GUI_SMOKE === "1") {
@@ -489,6 +489,8 @@ function registerIpcHandlers() {
   handle("mcp:list", wrap(() => host.listMcpServers()));
   handle("mcp:restart", wrap((_e, serverId) => host.restartMcpServer(serverId)));
   handle("mcp:toggle", wrap((_e, serverId, enabled) => host.toggleMcpServer(serverId, enabled)));
+  handle("mcp:add", wrap((_e, serverId, config) => host.addMcpServer(serverId, config)));
+  handle("mcp:remove", wrap((_e, serverId) => host.removeMcpServer(serverId)));
 }
 
 app.whenReady().then(createWindow);

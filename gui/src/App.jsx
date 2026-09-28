@@ -263,7 +263,7 @@ export default function App() {
                 onRequestConfirm={requestConfirm}
                 onReveal={(root) => kernel.revealProject(root)} />
             )}
-            {view === "mcp" && <McpView t={t} kernel={kernel} />}
+            {view === "mcp" && <McpView t={t} kernel={kernel} onRequestConfirm={requestConfirm} />}
             {view === "plugins" && <PluginsView t={t} />}
           </main>
         )}

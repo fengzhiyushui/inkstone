@@ -481,7 +481,86 @@ async function runMcp(root, args, flags) {
     return;
   }
 
-  throw new Error(`未知 MCP 操作 "${action}"。可使用 "mcp list" 或 "mcp check <serverId>"。`);
+  if (action === "add") {
+    const serverId = args[1];
+    if (!serverId || !/^[a-zA-Z0-9_-]+$/.test(serverId)) {
+      throw new Error("请指定有效的 MCP 服务标识（只支持英文字母、数字、下划线与中划线），例如: inkstone mcp add <serverId> --command <cmd>");
+    }
+    const command = flags.get("command");
+    if (!command) {
+      throw new Error("添加 MCP 服务必须指定 --command，例如: inkstone mcp add fs --command npx --args \"-y,@modelcontextprotocol/server-filesystem,./src\"");
+    }
+    const rawArgs = flags.get("args");
+    const parsedArgs = rawArgs
+      ? (rawArgs.includes(",") ? rawArgs.split(",") : rawArgs.split(/\s+/)).map((s) => s.trim()).filter(Boolean)
+      : [];
+    const autoApproveRaw = flags.get("auto-approve") || flags.get("autoApprove");
+    const autoApprove = autoApproveRaw ? autoApproveRaw.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    const disabled = flags.has("disabled");
+    const cwd = flags.get("cwd") || undefined;
+    const timeoutMs = flags.has("timeout") ? Number(flags.get("timeout")) : undefined;
+
+    const srvConfig = {
+      command: command.trim(),
+      ...(parsedArgs.length ? { args: parsedArgs } : {}),
+      ...(autoApprove.length ? { autoApprove } : {}),
+      ...(disabled ? { disabled: true } : {}),
+      ...(cwd ? { cwd } : {}),
+      ...(timeoutMs ? { timeoutMs } : {})
+    };
+
+    const nextMcpServers = { ...mcpServers, [serverId]: srvConfig };
+    const { configureProject } = await import("./config.js");
+    await configureProject(root, { mcpServers: nextMcpServers });
+
+    console.log(color.green(`✓ 已成功添加并保存 MCP 服务 "${serverId}" 到 .deepseek-code/config.json！`));
+    console.log(`  命令: ${command} ${parsedArgs.join(" ")}`);
+    if (autoApprove.length) {
+      console.log(`  免审批工具: ${autoApprove.join(", ")}`);
+    }
+    console.log(`\n提示: 可运行 "inkstone mcp check ${serverId}" 测试连通性。`);
+    return;
+  }
+
+  if (action === "remove" || action === "rm") {
+    const serverId = args[1];
+    if (!serverId) {
+      throw new Error("请指定要移除的 MCP 服务标识，例如: inkstone mcp remove <serverId>");
+    }
+    if (!mcpServers[serverId]) {
+      throw new Error(`未找到名为 "${serverId}" 的 MCP 服务配置。`);
+    }
+    const nextMcpServers = { ...mcpServers };
+    delete nextMcpServers[serverId];
+    const { configureProject } = await import("./config.js");
+    await configureProject(root, { mcpServers: nextMcpServers });
+
+    console.log(color.green(`✓ 已成功从配置文件中移除 MCP 服务 "${serverId}"。`));
+    return;
+  }
+
+  if (action === "toggle") {
+    const serverId = args[1];
+    if (!serverId) {
+      throw new Error("请指定要切换状态的 MCP 服务标识，例如: inkstone mcp toggle <serverId>");
+    }
+    if (!mcpServers[serverId]) {
+      throw new Error(`未找到名为 "${serverId}" 的 MCP 服务配置。`);
+    }
+    const targetDisabled = flags.has("enable") ? false : flags.has("disable") ? true : !mcpServers[serverId].disabled;
+    const nextMcpServers = {
+      ...mcpServers,
+      [serverId]: { ...mcpServers[serverId], disabled: targetDisabled }
+    };
+    const { configureProject } = await import("./config.js");
+    await configureProject(root, { mcpServers: nextMcpServers });
+
+    const badge = targetDisabled ? color.dim("已禁用") : color.green("已启用");
+    console.log(color.green(`✓ 已将 MCP 服务 "${serverId}" 切换为 ${badge}。`));
+    return;
+  }
+
+  throw new Error(`未知 MCP 操作 "${action}"。可使用 "mcp list"、"mcp check <id>"、"mcp add <id>"、"mcp remove <id>" 或 "mcp toggle <id>"。`);
 }
 
 function commonOptions(flags) {

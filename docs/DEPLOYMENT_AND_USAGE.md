@@ -272,14 +272,26 @@ Inkstone 核心按 DeepSeek 官方协议编写。接入 **Ollama / vLLM / OneAPI
 - `autoApprove`：免审批工具名称列表，只读工具默认自动放行，写操作/变更类工具在未配置 autoApprove 时将挂起索要人类审批；
 - `disabled`：设为 `true` 时跳过加载。
 
-命令行快速自检：
+命令行管理命令：
 ```bash
 # 查看所有已配置的 MCP 服务状态
 node ./bin/inkstone.js mcp list
 
 # 测试特定服务连通性与可用工具探测
 node ./bin/inkstone.js mcp check filesystem
+
+# 快速添加并持久化新 MCP 服务配置
+node ./bin/inkstone.js mcp add fs --command npx --args "-y,@modelcontextprotocol/server-filesystem,./src" --auto-approve "read_file,list_directory"
+
+# 切换服务启用/禁用状态
+node ./bin/inkstone.js mcp toggle fs
+
+# 从配置文件中安全移除服务
+node ./bin/inkstone.js mcp remove fs
 ```
+
+图形化管理 (GUI)：
+桌面端左侧导航栏点击「MCP」次级视图，可直接查看已连接服务、展开查看暴露的工具参数抽屉，点击右上角「+ 添加服务」即可通过官方推荐模板（Filesystem、Fetch、Memory、SQLite、GitHub）或自定义配置一键热插拔挂载，并提供卡片级服务启停、一键重启与安全删除二次确认。
 
 ### 环境变量
 

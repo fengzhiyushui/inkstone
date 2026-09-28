@@ -746,7 +746,53 @@ function createKernelHost({
   }
 
   async function toggleMcpServer(serverId, enabled) {
-    return ready() && kernel?.mcp ? await kernel.mcp.toggleServer(serverId, enabled) : null;
+    if (!ready() || !kernel?.mcp) return null;
+    const res = await kernel.mcp.toggleServer(serverId, enabled);
+    try {
+      const m = await loadConfigMod();
+      const current = await m.loadConfig(projectRoot, { allowMissingKey: true });
+      const mcpServers = { ...(current.mcpServers || {}) };
+      if (mcpServers[serverId]) {
+        mcpServers[serverId] = { ...mcpServers[serverId], disabled: !enabled };
+        await m.configureProject(projectRoot, { mcpServers });
+      }
+    } catch (e) {
+      console.warn("Failed to persist MCP toggle:", e.message);
+    }
+    return res;
+  }
+
+  async function addMcpServer(serverId, srvConfig) {
+    if (!ready() || !kernel?.mcp) {
+      throw new Error("Kernel is not ready");
+    }
+    const res = await kernel.mcp.addServer(serverId, srvConfig);
+    try {
+      const m = await loadConfigMod();
+      const current = await m.loadConfig(projectRoot, { allowMissingKey: true });
+      const mcpServers = { ...(current.mcpServers || {}), [serverId]: srvConfig };
+      await m.configureProject(projectRoot, { mcpServers });
+    } catch (e) {
+      console.warn("Failed to persist MCP server:", e.message);
+    }
+    return res;
+  }
+
+  async function removeMcpServer(serverId) {
+    if (!ready() || !kernel?.mcp) {
+      throw new Error("Kernel is not ready");
+    }
+    const res = await kernel.mcp.removeServer(serverId);
+    try {
+      const m = await loadConfigMod();
+      const current = await m.loadConfig(projectRoot, { allowMissingKey: true });
+      const mcpServers = { ...(current.mcpServers || {}) };
+      delete mcpServers[serverId];
+      await m.configureProject(projectRoot, { mcpServers });
+    } catch (e) {
+      console.warn("Failed to persist MCP server removal:", e.message);
+    }
+    return res;
   }
 
   return { init, ready, send, approve, interrupt, getTimeline, getSnapshot, getUsage, getConfig, getState, listPaused,
@@ -755,7 +801,7 @@ function createKernelHost({
            getSettings, setConfig, listApiProfiles, saveApiProfile, deleteApiProfile, activateApiProfile,
            listModels, testConnection, activateBranch, listProjects, addProject, removeProject, switchProject, listSessions, deleteSession,
            getRecoveryList, getRecoveryReport, recoveryResume, recoveryCancel, recoveryClear,
-           listMcpServers, restartMcpServer, toggleMcpServer,
+           listMcpServers, restartMcpServer, toggleMcpServer, addMcpServer, removeMcpServer,
            resolveSensitiveNotice, abortPendingSensitive, dispose };
 }
 

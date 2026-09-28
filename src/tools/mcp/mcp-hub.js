@@ -162,6 +162,70 @@ export class McpHub extends EventEmitter {
     }
   }
 
+  async addServer(serverId, srvConfig, { autoStart = true } = {}) {
+    if (!serverId || typeof serverId !== "string" || !/^[a-zA-Z0-9_-]+$/.test(serverId)) {
+      throw new Error(`Invalid MCP server ID: "${serverId}". Only alphanumeric characters, dashes, and underscores are allowed.`);
+    }
+    if (!srvConfig || typeof srvConfig !== "object" || !srvConfig.command || typeof srvConfig.command !== "string") {
+      throw new Error("Invalid MCP server config: 'command' string is required");
+    }
+
+    const normalized = {
+      command: srvConfig.command.trim(),
+      args: Array.isArray(srvConfig.args) ? srvConfig.args.map(String) : [],
+      env: srvConfig.env && typeof srvConfig.env === "object" && !Array.isArray(srvConfig.env) ? { ...srvConfig.env } : {},
+      disabled: Boolean(srvConfig.disabled),
+      autoApprove: Array.isArray(srvConfig.autoApprove) ? srvConfig.autoApprove.map(String) : [],
+      ...(typeof srvConfig.cwd === "string" && srvConfig.cwd.trim() ? { cwd: srvConfig.cwd.trim() } : {}),
+      timeoutMs: typeof srvConfig.timeoutMs === "number" && srvConfig.timeoutMs > 0 ? srvConfig.timeoutMs : 60000
+    };
+
+    if (this.serverConfigs.has(serverId)) {
+      await this.removeServer(serverId);
+    }
+
+    this.serverConfigs.set(serverId, normalized);
+
+    if (normalized.disabled || !autoStart) {
+      this.emit("server_added", { serverId, status: normalized.disabled ? "DISABLED" : "CONFIGURED" });
+      return { serverId, status: normalized.disabled ? "DISABLED" : "CONFIGURED", toolCount: 0 };
+    }
+
+    try {
+      const client = this._createClient(serverId, normalized);
+      await this._connectAndMount(serverId, client, normalized);
+      const toolCount = this.serverTools.get(serverId)?.length || 0;
+      this.emit("server_added", { serverId, status: "CONNECTED", toolCount });
+      return { serverId, status: "CONNECTED", toolCount };
+    } catch (err) {
+      this.emit("server_added", { serverId, status: "ERROR", error: err.message });
+      return { serverId, status: "ERROR", error: err.message, toolCount: 0 };
+    }
+  }
+
+  async removeServer(serverId) {
+    if (!this.serverConfigs.has(serverId)) {
+      return { ok: false, notFound: true };
+    }
+
+    if (this.toolRegistry) {
+      this.toolRegistry.unmountExternalTools(serverId);
+    }
+    this.serverTools.delete(serverId);
+
+    const client = this.clients.get(serverId);
+    if (client) {
+      try {
+        await client.disconnect();
+      } catch { /* ignore */ }
+      this.clients.delete(serverId);
+    }
+
+    this.serverConfigs.delete(serverId);
+    this.emit("server_removed", { serverId });
+    return { ok: true, serverId };
+  }
+
   async stopAll() {
     for (const serverId of this.serverConfigs.keys()) {
       if (this.toolRegistry) {

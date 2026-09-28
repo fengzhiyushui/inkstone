@@ -42,3 +42,30 @@ test("CLI help output includes inkstone mcp command", async () => {
     console.log = origLog;
   }
 });
+
+test("CLI mcp add and remove validate arguments", async () => {
+  await assert.rejects(
+    async () => await runCli(["mcp", "add"]),
+    /请指定有效的 MCP 服务标识/
+  );
+
+  await assert.rejects(
+    async () => await runCli(["mcp", "add", "bad id with space!"]),
+    /请指定有效的 MCP 服务标识/
+  );
+
+  await assert.rejects(
+    async () => await runCli(["mcp", "add", "my_srv"]),
+    /必须指定 --command/
+  );
+
+  await assert.rejects(
+    async () => await runCli(["mcp", "remove"]),
+    /请指定要移除的 MCP 服务标识/
+  );
+
+  await assert.rejects(
+    async () => await runCli(["mcp", "remove", "no_such_server"]),
+    /未找到名为 "no_such_server" 的 MCP 服务配置/
+  );
+});

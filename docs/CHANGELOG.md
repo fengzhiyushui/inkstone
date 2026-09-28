@@ -33,11 +33,13 @@
   - 扩展 `src/config.js`，无缝兼容 Cursor / Claude Desktop 同构的 `mcpServers` 配置节点；在 `kernel-options.js` 打通配置透传链路。
 - **三端协同与 GUI 可视化中枢实装（M4）**：
   - 重构桌面 GUI `McpView`（`gui/src/components/v4/SecondaryViews.jsx`），淘汰占位空态，提供服务卡片列表、健康状态微光灯、命令展示、动态工具目录展开与一键启停/重启交互。
-  - 打通 Electron IPC 全双工契约（`mcp:list`, `mcp:restart`, `mcp:toggle`）。
-  - 新增 CLI `inkstone mcp [list|check]` 运维子命令，支持快速自检与服务端信息探测。
+  - 新增 **高端拟态添加服务弹窗（`AddMcpModal`）** 与常用模版快捷芯片（Filesystem, Fetch, Memory, SQLite, GitHub），支持自定义参数、环境变量与白名单直观配置与错误即时诊断。
+  - 支持卡片级一键删除服务，配合拟态确认弹窗，实现从内核热卸载与 `.deepseek-code/config.json` 的双向持久化同步。
+  - 打通 Electron IPC 全双工契约（`mcp:list`, `mcp:restart`, `mcp:toggle`, `mcp:add`, `mcp:remove`）。
+  - 新增 CLI `inkstone mcp [list|check|add|remove|toggle]` 运维子命令，支持快速自检、参数配置写入与状态切换。
 - **全量质量与回归验证（M5）**：
-  - 新增 28 项 MCP 专项自动化测试；
-  - 全量 1350+ 测试套件 100% 绿灯通过；
+  - 新增 30 项 MCP 专项自动化测试（含协议、传输、生命周期、动态热插拔增删与 CLI 命令验证）；
+  - 全量 1355 项测试套件 100% 绿灯通过；
   - 版本号四处严格同步至 `1.11.0`（`package.json`, `package-lock.json`, `src/theme.js`, `gui/src/App.jsx`）。
 
 ---
