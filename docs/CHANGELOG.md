@@ -14,6 +14,15 @@
 
 ---
 
+## v1.11.3 — 2026-10-01 · 测试脚手架隔离与项目清单健壮性
+
+- **冒烟测试不再污染真实项目清单**：GUI 冒烟此前用 `mkdtemp` 建临时项目后登记进**开发者真实的** `~/.deepseek-code/projects.json`，导致侧栏堆积大量已失效的 `dsc-gui-smoke-*` 死项目。现新增 `DEEPSEEK_CODE_GUI_PROJECT_REGISTRY_DIR`，冒烟模式默认把登记表落到临时目录（显式 env 优先）。
+- **冒烟脚手架退出回收**：新增 `DEEPSEEK_CODE_GUI_SMOKE_CLEANUP_DIRS`，主进程在退出前回收临时项目根与 Electron userData（仅限 `os.tmpdir()` 之内，越界跳过并告警）；测试侧 `t.after` 兜底。
+- **项目清单标记目录缺失**：`project-registry.list()` 新增派生字段 `missing`——MRU 历史中目录已被移动/删除的条目不再静默给出死路径，而是标记出来交由用户决定是否移除；目录恢复后标记自动消解。侧栏对缺失项目弱化显示并给出「目录缺失」标签与完整路径提示（中英双语）。
+- **测试**：`project-registry` 补 3 项（缺失标记、派生状态消解、空 root 脏条目容错）。
+
+---
+
 ## v1.11.2 — 2026-09-29 · MCP 配置作用域与密钥底座
 
 - **多作用域合并**：`mcp/config-loader.js` 支持 session > project > user；兼容 `.mcp.json` 与 VS Code `servers` 键；冲突时项目配置优先并 warn。

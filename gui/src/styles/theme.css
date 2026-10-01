@@ -441,6 +441,10 @@ select.f-in { min-width: 160px; }
   padding: 1px 5px; border-radius: 4px; background: var(--bg-inset); flex: none;
 }
 .proj-h .cnt { font-size: 10px; color: var(--text-faint); font-variant-numeric: tabular-nums; flex: none; }
+/* 目录已缺失的项目(登记表残留):弱化但不隐藏,便于用户自行移除 */
+.proj.miss > .proj-h .nm { color: var(--text-faint); }
+.proj.miss > .proj-h .dot { background: var(--text-faint); opacity: .5; }
+.proj-h .tag.warn { color: var(--warn, #eab308); }
 .pnew { width: 22px; height: 22px; border-radius: 6px; flex: none; display: grid; place-items: center;
   color: var(--text-mut); background: transparent; border: none; cursor: pointer; opacity: 0; transition: opacity .12s ease; }
 .proj-h:hover .pnew, .proj.open > .proj-h .pnew { opacity: 1; }

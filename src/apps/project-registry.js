@@ -38,11 +38,18 @@ export function createProjectRegistry({ dir }) {
 
   async function list() {
     const state = await load();
-    return state.projects.map((p) => ({
-      id: p.id,
-      root: p.root,
-      name: p.name || path.basename(String(p.root || "")),
-      lastOpened: p.lastOpened || 0
+    return await Promise.all(state.projects.map(async (p) => {
+      const root = p.root;
+      // 登记表是 MRU 历史:目录可能已被移动/删除(临时目录、外接盘、手工清理)。
+      // 不过滤也不静默丢弃 —— 标记出来交给界面,由用户决定是否移除。
+      const missing = !(await isDirectory(root));
+      return {
+        id: p.id,
+        root,
+        name: p.name || path.basename(String(root || "")),
+        lastOpened: p.lastOpened || 0,
+        missing
+      };
     }));
   }
 
