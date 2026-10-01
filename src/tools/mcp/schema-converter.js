@@ -1,16 +1,35 @@
 export function sanitizeIdentifier(str) {
   if (!str || typeof str !== "string") return "unknown";
-  return str.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return str.replace(/[^a-zA-Z0-9_.-]/g, "_");
 }
 
+function shortHash(str) {
+  // FNV-1a 32-bit → base36, stable and dependency-free
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i += 1) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(36).padStart(7, "0").slice(-8);
+}
+
+export const MAX_TOOL_NAME_LENGTH = 128;
+
+/**
+ * `mcp__<serverId>__<toolName>` with collision-safe overflow handling.
+ * Spec tool names: 1–128 chars of [A-Za-z0-9_.-].
+ */
 export function formatExternalToolName(serverId, originalName) {
   const cleanServer = sanitizeIdentifier(serverId);
   const cleanName = sanitizeIdentifier(originalName);
   const result = `mcp__${cleanServer}__${cleanName}`;
-  if (result.length > 64) {
-    return result.slice(0, 64);
+  if (result.length <= MAX_TOOL_NAME_LENGTH) {
+    return result;
   }
-  return result;
+  // Stable unique fallback: readable prefix + hash of full name
+  const hash = shortHash(result);
+  const prefix = result.slice(0, MAX_TOOL_NAME_LENGTH - hash.length - 1);
+  return `${prefix}_${hash}`;
 }
 
 export function parseExternalToolName(namespacedName) {
@@ -94,6 +113,8 @@ export function formatToolResult(callResult) {
   }
 
   const isError = Boolean(callResult.isError);
+  // Modern results carry resultType; absent means complete (legacy servers)
+  const resultType = callResult.resultType || "complete";
   let outputText = "";
 
   if (Array.isArray(callResult.content)) {
@@ -101,6 +122,8 @@ export function formatToolResult(callResult) {
     for (const item of callResult.content) {
       if (item && item.type === "text" && typeof item.text === "string") {
         textPieces.push(item.text);
+      } else if (item && item.type === "resource_link" && item.uri) {
+        textPieces.push(`[resource_link] ${item.uri}`);
       } else if (item && item.type === "resource" && item.resource) {
         textPieces.push(JSON.stringify(item.resource));
       } else if (item) {
@@ -114,10 +137,36 @@ export function formatToolResult(callResult) {
     outputText = JSON.stringify(callResult);
   }
 
+  // Prefer structuredContent serialization when text is empty
+  if (!outputText && callResult.structuredContent !== undefined) {
+    try {
+      outputText = JSON.stringify(callResult.structuredContent);
+    } catch {
+      outputText = String(callResult.structuredContent);
+    }
+  }
+
+  if (resultType === "input_required") {
+    return `[MCP Input Required] ${outputText}`;
+  }
+
   if (isError) {
     return `[MCP Error] ${outputText}`;
   }
   return outputText;
+}
+
+/** Attach structured payload metadata for agent/GUI without bloating text. */
+export function summarizeToolResult(callResult) {
+  const text = formatToolResult(callResult);
+  const meta = {
+    isError: Boolean(callResult?.isError),
+    resultType: callResult?.resultType || "complete"
+  };
+  if (callResult?.structuredContent !== undefined) {
+    meta.structuredContent = callResult.structuredContent;
+  }
+  return { text, meta };
 }
 
 export function mcpToolToDeepSeekSchema(serverId, mcpTool) {

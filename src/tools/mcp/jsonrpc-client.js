@@ -7,7 +7,8 @@ export const JSONRPC_ERRORS = Object.freeze({
   INVALID_PARAMS: -32602,
   INTERNAL_ERROR: -32603,
   TIMEOUT: -32000,
-  SERVER_DISCONNECTED: -32001
+  SERVER_DISCONNECTED: -32001,
+  CANCELLED: -32800
 });
 
 export class JsonRpcClient extends EventEmitter {
@@ -49,7 +50,12 @@ export class JsonRpcClient extends EventEmitter {
     return this.pendingRequests.size;
   }
 
-  async request(method, params, { timeoutMs } = {}) {
+  /**
+   * @param {string} method
+   * @param {object} [params]
+   * @param {{ timeoutMs?: number, meta?: object, cancelOnTimeout?: boolean }} [opts]
+   */
+  async request(method, params, { timeoutMs, meta, cancelOnTimeout = true } = {}) {
     if (!this.transport) {
       throw new Error("No transport configured for JSON-RPC client");
     }
@@ -57,11 +63,22 @@ export class JsonRpcClient extends EventEmitter {
     const id = this.nextId();
     const effectiveTimeoutMs = timeoutMs ?? this.defaultTimeoutMs;
 
+    let finalParams = params;
+    if (meta && typeof meta === "object") {
+      finalParams = {
+        ...(params && typeof params === "object" ? params : {}),
+        _meta: {
+          ...(params && typeof params === "object" && params._meta ? params._meta : {}),
+          ...meta
+        }
+      };
+    }
+
     const payload = {
       jsonrpc: "2.0",
       id,
       method,
-      ...(params !== undefined ? { params } : {})
+      ...(finalParams !== undefined ? { params: finalParams } : {})
     };
 
     return new Promise((resolve, reject) => {
@@ -69,8 +86,20 @@ export class JsonRpcClient extends EventEmitter {
       if (effectiveTimeoutMs > 0 && effectiveTimeoutMs !== Infinity) {
         timer = setTimeout(() => {
           this.pendingRequests.delete(id);
+          if (cancelOnTimeout) {
+            try {
+              this.transport?.send({
+                jsonrpc: "2.0",
+                method: "notifications/cancelled",
+                params: { requestId: id, reason: "timeout" }
+              });
+            } catch {
+              /* best-effort */
+            }
+          }
           const err = new Error(`JSON-RPC request timed out after ${effectiveTimeoutMs}ms: ${method}`);
           err.code = JSONRPC_ERRORS.TIMEOUT;
+          err.requestId = id;
           reject(err);
         }, effectiveTimeoutMs);
         if (typeof timer.unref === "function") {
