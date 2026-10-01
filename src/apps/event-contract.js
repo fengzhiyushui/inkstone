@@ -99,6 +99,30 @@ export function describeEvent(event) {
   if (type === "context:semantic_degraded") return d("context-degraded", src, "warn", false, { reason: str(event.reason) });
   if (type.startsWith("context:")) return d("context", src, "info", true, {});
 
+  // MCP host events (v1.11.1) — protocol_mode / server_status / tools_* / auth / errors
+  if (type.startsWith("mcp:") || type.startsWith("server_")) {
+    const payload = event;
+    const status = str(payload.status);
+    const serverId = str(payload.serverId) || str(payload.server);
+    const isError = type.includes("error") || status === "ERROR";
+    const severity = isError ? "danger"
+      : status === "DEGRADED" || type === "mcp:auth_required" || type === "mcp:input_required" ? "warn"
+      : status === "CONNECTED" || status === "CONNECTING" || type === "mcp:tools_mounted" || type === "mcp:tools_changed" ? "success"
+      : "info";
+    const kind = isError ? "mcp-error"
+      : type === "mcp:auth_required" || type === "mcp:input_required" ? "mcp-approval"
+      : type === "mcp:tools_mounted" || type === "mcp:tools_changed" ? "mcp-tools"
+      : "mcp-status";
+    return d(kind, src, severity, status === "CONNECTED" && kind === "mcp-status", {
+      serverId,
+      status,
+      protocolMode: str(payload.protocolMode) || str(payload.protocol_mode),
+      protocolVersion: str(payload.protocolVersion) || str(payload.protocol_version),
+      toolCount: num(payload.toolCount) ?? num(payload.count),
+      message: str(payload.message) || str(payload.error?.message) || (payload.error ? str(String(payload.error)) : null)
+    });
+  }
+
   if (type === "user:message") return d("user", src, "info", true, { text: str(event.content) });
   if (type === "agent:final") return d("final", src, "success", true, { content: str(event.content) });
   if (type === "agent:error") return d("error", src, "danger", true, { message: str(event.message) || str(event.error) });

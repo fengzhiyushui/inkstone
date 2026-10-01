@@ -9,7 +9,9 @@ test("buildKernelOptions bridges legacy config into V2 DeepSeek options", async 
   }));
 
   assert.deepEqual(options, {
-    deepseek: { apiKey: "sk-test", baseUrl: "https://example.invalid" }
+    deepseek: { apiKey: "sk-test", baseUrl: "https://example.invalid" },
+    // v1.11.2:入口默认开启多作用域 MCP 配置加载(.mcp.json / VS Code servers)
+    loadMcpConfigScopes: true
   });
 });
 
@@ -68,4 +70,51 @@ test("buildKernelOptions omits events when config has none (default off stays de
     baseUrl: "https://example.invalid"
   }));
   assert.equal("events" in options, false);
+});
+
+// ── v1.11.2:配置文件里的 inputs 必须与 mcpServers 一同到达内核 ──────────────
+test("buildKernelOptions forwards config inputs alongside mcpServers", async () => {
+  const options = await buildKernelOptions("/repo", {}, async () => ({
+    apiKey: "sk-test",
+    baseUrl: "https://example.invalid",
+    mcpServers: { fs: { command: "node" } },
+    inputs: { tok: { type: "promptString", password: true } }
+  }));
+  assert.deepEqual(options.mcpServers, { fs: { command: "node" } });
+  assert.deepEqual(options.inputs, { tok: { type: "promptString", password: true } });
+});
+
+test("buildKernelOptions omits inputs when config defines none", async () => {
+  const options = await buildKernelOptions("/repo", {}, async () => ({
+    apiKey: "sk-test",
+    baseUrl: "https://example.invalid"
+  }));
+  assert.equal("inputs" in options, false);
+});
+
+test("buildKernelOptions enables MCP config scopes even without an apiKey", async () => {
+  const options = await buildKernelOptions("/repo", {}, async () => ({}));
+  assert.equal(options.loadMcpConfigScopes, true);
+});
+
+test("buildKernelOptions respects an explicit loadMcpConfigScopes override", async () => {
+  const off = await buildKernelOptions("/repo", { loadMcpConfigScopes: false }, async () => ({
+    apiKey: "sk-test",
+    baseUrl: "https://example.invalid"
+  }));
+  assert.equal(off.loadMcpConfigScopes, false);
+
+  const viaGateway = await buildKernelOptions(
+    "/repo",
+    { modelGateway: {}, loadMcpConfigScopes: false },
+    async () => { throw new Error("should not load config"); }
+  );
+  assert.equal(viaGateway.loadMcpConfigScopes, false);
+});
+
+test("buildKernelOptions enables scopes on the explicit-gateway early-return path", async () => {
+  const options = await buildKernelOptions("/repo", { modelGateway: {} }, async () => {
+    throw new Error("should not load config");
+  });
+  assert.equal(options.loadMcpConfigScopes, true);
 });

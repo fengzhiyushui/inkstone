@@ -276,7 +276,17 @@ export function useKernel(dispatch) {
           dispatch(errorToAction("projects", err));
           return null;
         }
-      }
+      },
+
+      // MCP 外部服务管理
+      listMcpServers: () => (api?.listMcpServers ? api.listMcpServers() : Promise.resolve([])),
+      restartMcpServer: (serverId) => (api?.restartMcpServer ? api.restartMcpServer(serverId) : Promise.resolve(null)),
+      toggleMcpServer: (serverId, enabled) => (api?.toggleMcpServer ? api.toggleMcpServer(serverId, enabled) : Promise.resolve(null)),
+      addMcpServer: (serverId, config) => (api?.addMcpServer ? api.addMcpServer(serverId, config) : Promise.resolve(null)),
+      removeMcpServer: (serverId) => (api?.removeMcpServer ? api.removeMcpServer(serverId) : Promise.resolve(null)),
+      // v1.11.2:${input:*} 密钥引用(定义来自 .mcp.json / config.json 的 inputs)
+      listMcpInputs: () => (api?.listMcpInputs ? api.listMcpInputs() : Promise.resolve([])),
+      setMcpInput: (name, value) => (api?.setMcpInput ? api.setMcpInput(name, value) : Promise.resolve(null))
     };
   }, [api, dispatch]);
 }

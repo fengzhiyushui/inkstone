@@ -28,7 +28,8 @@ const IPC_CHANNELS = [
   "projects:list", "projects:add", "projects:remove", "projects:switch", "sessions:list", "sessions:delete",
   "projects:reveal", "projects:pick",
   "sensitive:respond",
-  "recovery:list", "recovery:report", "recovery:resume", "recovery:cancel", "recovery:clear"
+  "recovery:list", "recovery:report", "recovery:resume", "recovery:cancel", "recovery:clear",
+  "mcp:list", "mcp:restart", "mcp:toggle", "mcp:add", "mcp:remove", "mcp:inputs", "mcp:set-input"
 ];
 
 if (process.env.DEEPSEEK_CODE_GUI_SMOKE === "1") {
@@ -156,6 +157,30 @@ async function createWindow() {
             }, 100);
           })
         `);
+        // 并行跑 e2e 时机器负载高,setSize 偶发被丢弃(窗宽停在窄窗的 minWidth≈880),
+        // 且渲染层重渲染滞后:AppFrame 的 viewport 仍按旧窗宽算,右栏拿不到列宽
+        // (cols.rightbar < 300 → dock 不渲染)。故放大后必须确认窗口到位 + 列宽铺满。
+        const settleLayout = async (wantW, tries = 25) => {
+          for (let i = 0; i < tries; i += 1) {
+            const state = await win.webContents.executeJavaScript(`
+              (() => {
+                const s = document.querySelector(".shell");
+                const sum = s
+                  ? getComputedStyle(s).gridTemplateColumns.split(" ").reduce((a, v) => a + parseFloat(v || "0"), 0)
+                  : 0;
+                return { w: window.innerWidth, sum };
+              })()
+            `).catch(() => null);
+            if (state && Math.abs(state.w - wantW) < 4 && Math.abs(state.sum - state.w) < 4) return true;
+            // 窗宽没到位就再推一次(setSize 在高负载下会丢)
+            if (state && Math.abs(state.w - wantW) >= 4) {
+              try { win.setSize(wantW, win.getSize()[1]); } catch { /* 尽力而为 */ }
+            }
+            await new Promise((r) => setTimeout(r, 200));
+          }
+          return false;
+        };
+
         // Best-effort visual QA (§11):七视图逐个取景。capturePage 在无显示表面的 headless
         // 环境下会间歇失败,故带退避重试;失败只记录,不影响 READY 判定。
         // v1.4.7:截图阶段加 8s 总预算——并行跑 e2e 时 capturePage 偶发超时,逐张重试
@@ -210,9 +235,88 @@ async function createWindow() {
           await click(".sn-refuse");
           await win.webContents.executeJavaScript(`(() => { document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true})); window.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true})); return true; })()`);
           await new Promise((r) => setTimeout(r, 200));
+          // 窄窗截图放前面:窗口 minWidth=880,setSize(800,…) 会被钳到 ~881,
+          // 而 AppFrame 的 viewport 测量不会跟着更新(ResizeObserver 尺寸未变),
+          // 于是三列仍按 881 排。此时再开右栏拿不到足够列宽,Inspector 必失败。
           win.setSize(800, 720);
           await new Promise((r) => setTimeout(r, 500));
           await shoot("shell-narrow");
+
+          // M2 Agent Inspector(需足够列宽 + chat 视图)。必须在放大到 1440 后、
+          // 且不再缩窗之前执行,否则右栏会被 layout 挤掉。
+          try {
+            win.setSize(1440, 900);
+            const settled = await settleLayout(1440);
+            if (!settled) {
+              const probe = await win.webContents.executeJavaScript(
+                `({ w: window.innerWidth, vp: document.querySelector(".shell")?.getAttribute("data-viewport"), grid: getComputedStyle(document.querySelector(".shell")).gridTemplateColumns })`
+              ).catch(() => null);
+              console.log("GUI_SMOKE_DIAG:inspector:settle failed " + JSON.stringify({ probe, winSize: win.getSize() }));
+            }
+            // 1) 回到 chat 视图(SessionHeader 只在 chat 视图渲染)
+            await win.webContents.executeJavaScript(`
+              (() => {
+                const hit = (el, ...words) => {
+                  const s = (el.textContent || "").trim();
+                  return words.some((w) => s.includes(w));
+                };
+                const hasChatHeader = Boolean(document.querySelector("[aria-label='打开右栏'], [aria-label='Open right dock'], [aria-label='关闭右栏'], [aria-label='Close right dock']"));
+                if (hasChatHeader) return true;
+                const chatRail = Array.from(document.querySelectorAll(".rail-fn button, .rail-fn .fn-item"))
+                  .find((el) => hit(el, "会话", "Chat", "主页", "Home"));
+                if (chatRail) chatRail.click();
+                return false;
+              })()
+            `);
+            await new Promise((r) => setTimeout(r, 350));
+            // 2) 打开右栏。注意两次点击必须分属不同求值 —— 同一次求值里连点会被
+            //    React 批处理合并成一次切换,右栏拿不到宽度,`cols.rightbar >= 300`
+            //    不成立,dock 依然不渲染。
+            const clickByLabel = (word, en) => win.webContents.executeJavaScript(`
+              (() => {
+                const btn = Array.from(document.querySelectorAll("button")).find((el) => {
+                  const s = (el.getAttribute("aria-label") || "").trim();
+                  return s.includes(${JSON.stringify(word)}) || s.includes(${JSON.stringify(en)});
+                });
+                if (btn) btn.click();
+                return Boolean(btn);
+              })()
+            `);
+            if (await clickByLabel("关闭右栏", "close right dock")) {
+              await new Promise((r) => setTimeout(r, 350));
+            }
+            await clickByLabel("打开右栏", "open right dock");
+            // 3) 等 dock 渲染出来后点检查器 tab(短轮询)
+            let opened = false;
+            let diag = null;
+            for (let i = 0; i < 6 && !opened; i++) {
+              await new Promise((r) => setTimeout(r, 150));
+              const probe = await win.webContents.executeJavaScript(`
+                (() => {
+                  const tabs = Array.from(document.querySelectorAll("[role='tab']"));
+                  const tab = tabs.find((el) => {
+                    const s = (el.textContent || "").trim();
+                    return s.includes("检查器") || s.includes("Inspector");
+                  });
+                  if (tab) tab.click();
+                  return {
+                    tab: Boolean(tab),
+                    tabTexts: tabs.map((el) => (el.textContent || "").trim()),
+                    grid: getComputedStyle(document.querySelector(".shell")).gridTemplateColumns
+                  };
+                })()
+              `);
+              opened = probe.tab;
+              diag = probe;
+            }
+            if (!opened) console.log("GUI_SMOKE_DIAG:inspector:" + JSON.stringify(diag));
+            await new Promise((r) => setTimeout(r, 350));
+            const panel = await win.webContents.executeJavaScript(
+              `Boolean(document.querySelector("[data-testid='inspector-panel']"))`
+            );
+            console.log(opened && panel ? "GUI_SMOKE_STEP:inspector_verified" : `GUI_SMOKE_STEP_ERR:inspector:tab=${opened} panel=${panel}`);
+            await shoot("shell-inspector");
+          } catch (e) { console.log("GUI_SMOKE_STEP_ERR:inspector:" + e.message); }
 
           // G9 Smoke Coverage Enhancements: Plan, Diff, Tool Cards, Project Switch
           try {
@@ -226,30 +330,6 @@ async function createWindow() {
             await new Promise((r) => setTimeout(r, 200));
             console.log("GUI_SMOKE_STEP:plan_verified");
           } catch (e) { console.log("GUI_SMOKE_STEP_ERR:plan:" + e.message); }
-
-          // M2 Agent Inspector(需足够列宽:窄窗后右栏会被布局挤掉)
-          try {
-            win.setSize(1440, 900);
-            await new Promise((r) => setTimeout(r, 400));
-            const opened = await win.webContents.executeJavaScript(`
-              (() => {
-                // 确保右栏打开
-                const toggle = document.querySelector("[aria-label='dock']") || document.querySelector(".rail-foot .iconbtn:last-child");
-                const tab = Array.from(document.querySelectorAll("[role='tab']")).find(el => {
-                  const s = (el.textContent || "").trim();
-                  return s.includes("检查器") || s.includes("Inspector");
-                });
-                if (tab) tab.click();
-                return Boolean(tab);
-              })()
-            `);
-            await new Promise((r) => setTimeout(r, 350));
-            const panel = await win.webContents.executeJavaScript(
-              `Boolean(document.querySelector("[data-testid='inspector-panel']"))`
-            );
-            console.log(opened && panel ? "GUI_SMOKE_STEP:inspector_verified" : `GUI_SMOKE_STEP_ERR:inspector:tab=${opened} panel=${panel}`);
-            await shoot("shell-inspector");
-          } catch (e) { console.log("GUI_SMOKE_STEP_ERR:inspector:" + e.message); }
 
           try {
             await win.webContents.executeJavaScript(`
@@ -483,6 +563,15 @@ function registerIpcHandlers() {
       return { root: result.filePaths[0] };
     } catch (error) { return { error: error.message }; }
   });
+
+  // MCP 外部服务管理通道
+  handle("mcp:list", wrap(() => host.listMcpServers()));
+  handle("mcp:restart", wrap((_e, serverId) => host.restartMcpServer(serverId)));
+  handle("mcp:toggle", wrap((_e, serverId, enabled) => host.toggleMcpServer(serverId, enabled)));
+  handle("mcp:add", wrap((_e, serverId, config) => host.addMcpServer(serverId, config)));
+  handle("mcp:remove", wrap((_e, serverId) => host.removeMcpServer(serverId)));
+handle("mcp:inputs", wrap(() => host.listMcpInputs()));
+handle("mcp:set-input", wrap((_e, name, value) => host.setMcpInput(name, value)));
 }
 
 app.whenReady().then(createWindow);

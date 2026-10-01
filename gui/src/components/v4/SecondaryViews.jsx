@@ -1,7 +1,8 @@
 import React from "react";
 import {
   Folders, FolderOpen, Trash, CaretLeft, GitDiff, ShareNetwork, PuzzlePiece,
-  MagnifyingGlass, PencilSimpleLine, Lifebuoy
+  MagnifyingGlass, PencilSimpleLine, Lifebuoy, ArrowClockwise, Power, CaretDown, CaretRight,
+  Plus, X, Check, Key
 } from "@phosphor-icons/react";
 import ChangeDiffView from "../ChangeDiffView.jsx";
 
@@ -186,9 +187,611 @@ function ConceptView({ t, title, subtitle, icon, note, emptyKey }) {
   );
 }
 
-export function McpView({ t }) {
-  return <ConceptView t={t} title={t("rail.mcp")} subtitle={t("concept.mcpSub")}
-    icon={<ShareNetwork size={26} />} note={t("concept.mcp")} emptyKey="concept.mcpEmpty" />;
+export function AddMcpModal({ open, onClose, onAdd, onAdded, t }) {
+  const [serverId, setServerId] = React.useState("");
+  const [command, setCommand] = React.useState("npx");
+  const [args, setArgs] = React.useState("");
+  const [autoApprove, setAutoApprove] = React.useState("");
+  const [envJson, setEnvJson] = React.useState("");
+  const [submitting, setSubmitting] = React.useState(false);
+  const [error, setError] = React.useState(null);
+  const [activePreset, setActivePreset] = React.useState(null);
+
+  const PRESETS = [
+    {
+      id: "filesystem",
+      label: "本地文件系统",
+      command: "npx",
+      args: "-y @modelcontextprotocol/server-filesystem ./src",
+      autoApprove: "read_file, list_directory",
+      env: ""
+    },
+    {
+      id: "fetch",
+      label: "网页抓取",
+      command: "npx",
+      args: "-y @modelcontextprotocol/server-fetch",
+      autoApprove: "fetch",
+      env: ""
+    },
+    {
+      id: "memory",
+      label: "知识记忆图谱",
+      command: "npx",
+      args: "-y @modelcontextprotocol/server-memory",
+      autoApprove: "create_graph, read_graph",
+      env: ""
+    },
+    {
+      id: "sqlite",
+      label: "SQLite 数据库",
+      command: "npx",
+      args: "-y mcp-server-sqlite --db-path ./data.db",
+      autoApprove: "read_query",
+      env: ""
+    },
+    {
+      id: "github",
+      label: "GitHub 仓库",
+      command: "npx",
+      args: "-y @modelcontextprotocol/server-github",
+      autoApprove: "",
+      env: '{"GITHUB_PERSONAL_ACCESS_TOKEN": ""}'
+    }
+  ];
+
+  const applyPreset = (preset) => {
+    setActivePreset(preset.id);
+    setServerId(preset.id);
+    setCommand(preset.command);
+    setArgs(preset.args);
+    setAutoApprove(preset.autoApprove);
+    setEnvJson(preset.env || "");
+    setError(null);
+  };
+
+  React.useEffect(() => {
+    if (open) {
+      setError(null);
+      setSubmitting(false);
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  const handleSubmit = async (e) => {
+    e?.preventDefault();
+    setError(null);
+
+    const trimmedId = serverId.trim();
+    if (!trimmedId || !/^[a-zA-Z0-9_-]+$/.test(trimmedId)) {
+      setError("服务 ID 格式无效，只支持英文字母、数字、短横线与下划线。");
+      return;
+    }
+    const trimmedCommand = command.trim();
+    if (!trimmedCommand) {
+      setError("执行命令不能为空。");
+      return;
+    }
+
+    let parsedArgs = [];
+    if (args.trim()) {
+      parsedArgs = args.trim().split(/\s+/).filter(Boolean);
+    }
+
+    let parsedAutoApprove = [];
+    if (autoApprove.trim()) {
+      parsedAutoApprove = autoApprove.split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean);
+    }
+
+    let parsedEnv = {};
+    if (envJson.trim()) {
+      try {
+        parsedEnv = JSON.parse(envJson);
+      } catch (err) {
+        setError(`环境变量必须为合法的 JSON 对象: ${err.message}`);
+        return;
+      }
+    }
+
+    setSubmitting(true);
+    try {
+      if (!onAdd) throw new Error("MCP 内核服务未就绪");
+      const res = await onAdd(trimmedId, {
+        command: trimmedCommand,
+        args: parsedArgs,
+        autoApprove: parsedAutoApprove,
+        env: parsedEnv
+      });
+
+      if (res && res.status === "ERROR") {
+        setError(`服务添加成功但连接异常: ${res.error || "未知原因"}`);
+        setSubmitting(false);
+      } else {
+        await onAdded?.();
+        onClose();
+      }
+    } catch (err) {
+      setError(err.message || String(err));
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="cm-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="mcp-modal-card">
+        <button type="button" className="cm-close" onClick={onClose}>
+          <X size={14} />
+        </button>
+
+        <div className="cm-head">
+          <span className="cm-ic">
+            <ShareNetwork size={18} weight="bold" />
+          </span>
+          <span className="cm-title">添加 MCP 外部工具服务</span>
+        </div>
+
+        <div style={{ marginTop: "14px" }}>
+          <div className="mcp-form-label">推荐预设模板</div>
+          <div className="mcp-preset-pills">
+            {PRESETS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className={`mcp-preset-pill ${activePreset === p.id ? "active" : ""}`}
+                onClick={() => applyPreset(p)}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          {error && <div className="mcp-error-banner">{error}</div>}
+
+          <form onSubmit={handleSubmit}>
+            <div className="mcp-form-group">
+              <label className="mcp-form-label">服务标识 (Server ID) *</label>
+              <input
+                type="text"
+                className="mcp-form-input mono"
+                placeholder="例如: filesystem, sqlite, github"
+                value={serverId}
+                onChange={(e) => { setServerId(e.target.value); setActivePreset(null); }}
+                required
+              />
+            </div>
+
+            <div className="mcp-form-group">
+              <label className="mcp-form-label">执行命令 (Command) *</label>
+              <input
+                type="text"
+                className="mcp-form-input mono"
+                placeholder="例如: npx, node, python, uvx"
+                value={command}
+                onChange={(e) => setCommand(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="mcp-form-group">
+              <label className="mcp-form-label">参数列表 (Arguments，空格分隔)</label>
+              <input
+                type="text"
+                className="mcp-form-input mono"
+                placeholder="例如: -y @modelcontextprotocol/server-filesystem ./src"
+                value={args}
+                onChange={(e) => setArgs(e.target.value)}
+              />
+            </div>
+
+            <div className="mcp-form-group">
+              <label className="mcp-form-label">免审批工具白名单 (Auto-Approve，逗号分隔)</label>
+              <input
+                type="text"
+                className="mcp-form-input mono"
+                placeholder="例如: read_file, list_directory"
+                value={autoApprove}
+                onChange={(e) => setAutoApprove(e.target.value)}
+              />
+            </div>
+
+            <div className="mcp-form-group">
+              <label className="mcp-form-label">环境变量 (可选 JSON 格式)</label>
+              <textarea
+                rows={2}
+                className="mcp-form-input mono"
+                placeholder='例如: {"GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_..."}'
+                value={envJson}
+                onChange={(e) => setEnvJson(e.target.value)}
+              />
+            </div>
+
+            <div className="cm-actions" style={{ marginTop: "20px" }}>
+              <button type="button" className="cm-btn cm-cancel" onClick={onClose} disabled={submitting}>
+                取消
+              </button>
+              <button type="submit" className="cm-btn cm-primary" disabled={submitting}>
+                {submitting ? "正在连接..." : "保存并启动"}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function McpView({ t, kernel, onRequestConfirm }) {
+  const [servers, setServers] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [expanded, setExpanded] = React.useState(() => new Set());
+  const [busyId, setBusyId] = React.useState(null);
+  const [showAddModal, setShowAddModal] = React.useState(false);
+  // v1.11.2:${input:*} 密钥引用 —— 定义来自 .mcp.json / config.json 的 inputs,
+  // 值写入 ~/.deepseek-code/credentials(0600),绝不落项目树。
+  const [inputs, setInputs] = React.useState([]);
+  const [inputDraft, setInputDraft] = React.useState({});
+  const [savingInput, setSavingInput] = React.useState(null);
+
+  const refresh = React.useCallback(async () => {
+    if (!kernel?.listMcpServers) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const list = await kernel.listMcpServers();
+      setServers(Array.isArray(list) ? list : []);
+    } catch {
+      setServers([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [kernel]);
+
+  React.useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const refreshInputs = React.useCallback(async () => {
+    if (!kernel?.listMcpInputs) {
+      setInputs([]);
+      return;
+    }
+    try {
+      const list = await kernel.listMcpInputs();
+      setInputs(Array.isArray(list) ? list : []);
+    } catch {
+      setInputs([]);
+    }
+  }, [kernel]);
+
+  React.useEffect(() => {
+    refreshInputs();
+  }, [refreshInputs]);
+
+  const handleSaveInput = async (name) => {
+    if (!kernel?.setMcpInput) return;
+    setSavingInput(name);
+    try {
+      await kernel.setMcpInput(name, inputDraft[name] ?? "");
+      setInputDraft((prev) => {
+        const next = { ...prev };
+        delete next[name];
+        return next;
+      });
+      await refreshInputs();
+    } finally {
+      setSavingInput(null);
+    }
+  };
+
+  const toggleExpand = (id) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleRestart = async (id) => {
+    if (!kernel?.restartMcpServer) return;
+    setBusyId(id);
+    try {
+      await kernel.restartMcpServer(id);
+    } finally {
+      await refresh();
+      setBusyId(null);
+    }
+  };
+
+  const handleToggle = async (id, currentlyDisabled) => {
+    if (!kernel?.toggleMcpServer) return;
+    setBusyId(id);
+    try {
+      await kernel.toggleMcpServer(id, currentlyDisabled);
+    } finally {
+      await refresh();
+      setBusyId(null);
+    }
+  };
+
+  const handleRemove = (id) => {
+    if (!kernel?.removeMcpServer) return;
+    if (onRequestConfirm) {
+      onRequestConfirm({
+        title: "删除 MCP 服务",
+        message: `确定从当前项目中移除 MCP 服务 "${id}" 吗？`,
+        subMessage: "该服务管理的外部工具将立即从 Agent 中卸载，并从 .deepseek-code/config.json 中移除。",
+        confirmText: "移除",
+        cancelText: "取消",
+        danger: true,
+        onConfirm: async () => {
+          setBusyId(id);
+          try {
+            await kernel.removeMcpServer(id);
+          } finally {
+            await refresh();
+            setBusyId(null);
+          }
+        }
+      });
+    } else {
+      kernel.removeMcpServer(id).then(refresh);
+    }
+  };
+
+  const connectedCount = servers.filter((s) => s.status === "CONNECTED").length;
+  const totalTools = servers.reduce((acc, s) => acc + (s.toolCount || 0), 0);
+
+  return (
+    <section className="view on">
+      <header className="pane-head">
+        <span className="ttl">{t("rail.mcp")}</span>
+        <span className="sub">{t("concept.mcpSub")}</span>
+        <div className="spacer" />
+        <button
+          type="button"
+          className="btn accent"
+          onClick={() => setShowAddModal(true)}
+          title="添加 MCP 服务"
+          style={{ marginRight: "8px", display: "inline-flex", alignItems: "center", gap: "5px" }}
+        >
+          <Plus size={13} weight="bold" /> 添加服务
+        </button>
+        <button type="button" className="btn ghost" onClick={() => { refresh(); refreshInputs(); }} title={t("recovery.refresh")}>
+          <ArrowClockwise size={13} className={loading ? "spin" : ""} /> {t("recovery.refresh")}
+        </button>
+      </header>
+
+      <div className="s-body">
+        <div className="s-in" style={{ maxWidth: 760 }}>
+          {/* Stats Bar */}
+          <div className="mcp-stats-bar">
+            <div>已配置服务: <strong style={{ color: "var(--text-main, #eee)" }}>{servers.length}</strong></div>
+            <div>已连接: <strong style={{ color: "var(--accent, #4ade80)" }}>{connectedCount}</strong></div>
+            <div>可用工具: <strong style={{ color: "var(--text-main, #eee)" }}>{totalTools}</strong></div>
+          </div>
+
+          {/* v1.11.2 ${input:*} 密钥引用:项目配置只保留引用名,值存放于凭据库 */}
+          {inputs.length > 0 && (
+            <div className="mcp-inputs-panel">
+              <div className="mcp-inputs-head">
+                <Key size={13} weight="bold" />
+                <span>{t("mcp.inputs.title")}</span>
+                <span className="mcp-inputs-sub">{t("mcp.inputs.sub")}</span>
+              </div>
+              {inputs.map((inp) => {
+                const dirty = Object.prototype.hasOwnProperty.call(inputDraft, inp.name);
+                const missing = !inp.hasValue;
+                return (
+                  <div className="mcp-form-group" key={inp.name}>
+                    <label className="mcp-form-label">
+                      <span className="mono">{inp.name}</span>
+                      <span className={`mcp-input-badge ${missing ? "missing" : "ok"}`}>
+                        {missing ? t("mcp.inputs.missing") : t("mcp.inputs.set")}
+                      </span>
+                    </label>
+                    {inp.description && <div className="mcp-input-desc">{inp.description}</div>}
+                    <div className="mcp-input-row">
+                      <input
+                        type={inp.password ? "password" : "text"}
+                        className="mcp-form-input mono"
+                        autoComplete="off"
+                        placeholder={missing ? t("mcp.inputs.placeholder") : "••••••••"}
+                        value={inputDraft[inp.name] ?? ""}
+                        onChange={(e) => setInputDraft((prev) => ({ ...prev, [inp.name]: e.target.value }))}
+                      />
+                      <button
+                        type="button"
+                        className="btn accent"
+                        disabled={!dirty || savingInput === inp.name}
+                        onClick={() => handleSaveInput(inp.name)}
+                      >
+                        {savingInput === inp.name ? t("mcp.inputs.saving") : t("mcp.inputs.save")}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {servers.length === 0 ? (
+            <div className="empty-note" style={{ textAlign: "center", padding: "32px 16px" }}>
+              <span className="en-ic"><ShareNetwork size={32} /></span>
+              <div style={{ marginTop: "12px", fontWeight: "600", fontSize: "14px" }}>
+                {t("concept.mcpEmpty")}
+              </div>
+              <p style={{ maxWidth: "480px", margin: "8px auto 16px", color: "var(--text-mut)", fontSize: "12px", lineHeight: "1.6" }}>
+                点击右上角「添加服务」即可一键接入文件系统、网络抓取、数据库或 GitHub 等外部工具，赋予 Agent 强大的外部环境操作能力。
+              </p>
+              <button
+                type="button"
+                className="btn accent"
+                onClick={() => setShowAddModal(true)}
+                style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+              >
+                <Plus size={14} weight="bold" /> 添加第一个 MCP 服务
+              </button>
+            </div>
+          ) : (
+            <div className="mcp-servers-list">
+              {servers.map((srv) => {
+                const isExpanded = expanded.has(srv.serverId);
+                const isBusy = busyId === srv.serverId;
+                const statusColor = srv.status === "CONNECTED" ? "#22c55e" : srv.status === "ERROR" ? "#ef4444" : srv.status === "DISABLED" ? "#6b7280" : "#eab308";
+                const statusLabel = srv.status === "CONNECTED" ? "已连接" : srv.status === "ERROR" ? "异常" : srv.status === "DISABLED" ? "已禁用" : "连接中";
+
+                return (
+                  <div key={srv.serverId} className="api-item" style={{ flexDirection: "column", alignItems: "stretch", padding: "12px" }}>
+                    <div style={{ display: "flex", alignItems: "center", width: "100%" }}>
+                      <span className="ai-ic" style={{ color: statusColor }}>
+                        <ShareNetwork size={18} />
+                      </span>
+                      <div className="ai-info" style={{ minWidth: 0, marginLeft: "8px" }}>
+                        <div className="an" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span>{srv.serverId}</span>
+                          <span style={{
+                            display: "inline-flex", alignItems: "center", gap: "4px",
+                            padding: "2px 6px", borderRadius: "10px",
+                            fontSize: "11px", background: `${statusColor}20`, color: statusColor, fontWeight: 500
+                          }}>
+                            <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: statusColor }} />
+                            {statusLabel}
+                          </span>
+                          {srv.serverInfo?.version && (
+                            <span style={{ fontSize: "11px", color: "var(--text-mut)" }}>v{srv.serverInfo.version}</span>
+                          )}
+                        </div>
+                        <div className="ad" style={{ fontFamily: "var(--font-mono, monospace)", fontSize: "11px", marginTop: "2px" }}>
+                          {srv.command} {(srv.args || []).join(" ")}
+                        </div>
+                      </div>
+
+                      <div className="spacer" />
+
+                      <div className="ai-actions" style={{ display: "flex", gap: "6px" }}>
+                        <button
+                          type="button"
+                          className="btn ghost"
+                          disabled={isBusy}
+                          onClick={() => handleRestart(srv.serverId)}
+                          title="重启服务"
+                        >
+                          <ArrowClockwise size={12} className={isBusy ? "spin" : ""} /> 重启
+                        </button>
+                        <button
+                          type="button"
+                          className={`btn ghost ${srv.disabled ? "" : "danger"}`}
+                          disabled={isBusy}
+                          onClick={() => handleToggle(srv.serverId, !srv.disabled)}
+                          title={srv.disabled ? "启用服务" : "禁用服务"}
+                        >
+                          <Power size={12} /> {srv.disabled ? "启用" : "禁用"}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn ghost danger"
+                          disabled={isBusy}
+                          onClick={() => handleRemove(srv.serverId)}
+                          title="删除服务"
+                        >
+                          <Trash size={12} />
+                        </button>
+                        {srv.toolCount > 0 && (
+                          <button
+                            type="button"
+                            className="btn ghost"
+                            onClick={() => toggleExpand(srv.serverId)}
+                            title={isExpanded ? "收起工具" : "展开工具"}
+                          >
+                            {isExpanded ? <CaretDown size={12} /> : <CaretRight size={12} />} {srv.toolCount} 工具
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Error details */}
+                    {srv.error && (
+                      <div style={{
+                        marginTop: "10px", padding: "8px 10px", borderRadius: "4px",
+                        background: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.2)",
+                        fontSize: "12px", color: "#f87171"
+                      }}>
+                        <strong>错误:</strong> {srv.error}
+                        {srv.stderr && (
+                          <pre style={{ marginTop: "4px", fontSize: "11px", whiteSpace: "pre-wrap", maxHeight: "80px", overflowY: "auto" }}>
+                            {srv.stderr}
+                          </pre>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Tools drawer */}
+                    {isExpanded && srv.tools && srv.tools.length > 0 && (
+                      <div style={{
+                        marginTop: "12px", paddingTop: "10px",
+                        borderTop: "1px solid var(--border-color, rgba(255,255,255,0.06))",
+                        display: "flex", flexDirection: "column", gap: "8px"
+                      }}>
+                        <div style={{ fontSize: "12px", fontWeight: "600", color: "var(--text-mut)" }}>
+                          暴露给 Agent 的工具列表:
+                        </div>
+                        {srv.tools.map((tDef) => (
+                          <div key={tDef.name} style={{
+                            display: "flex", alignItems: "flex-start", justifyContent: "space-between",
+                            padding: "6px 8px", borderRadius: "4px",
+                            background: "var(--tool-item-bg, rgba(255,255,255,0.02))",
+                            fontSize: "12px"
+                          }}>
+                            <div>
+                              <div style={{ fontFamily: "var(--font-mono, monospace)", fontWeight: 500, color: "var(--text-main)" }}>
+                                {tDef.originalName || tDef.name}
+                                <span style={{
+                                  marginLeft: "8px", fontSize: "10px", padding: "1px 5px", borderRadius: "4px",
+                                  background: tDef.category === "read" ? "rgba(59, 130, 246, 0.15)" : "rgba(249, 115, 22, 0.15)",
+                                  color: tDef.category === "read" ? "#60a5fa" : "#fb923c"
+                                }}>
+                                  {tDef.category}
+                                </span>
+                                {tDef.autoApprove && (
+                                  <span style={{
+                                    marginLeft: "4px", fontSize: "10px", padding: "1px 5px", borderRadius: "4px",
+                                    background: "rgba(34, 197, 94, 0.15)", color: "#4ade80"
+                                  }}>
+                                    免审批
+                                  </span>
+                                )}
+                              </div>
+                              {tDef.description && (
+                                <div style={{ color: "var(--text-mut)", fontSize: "11px", marginTop: "2px" }}>
+                                  {tDef.description}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <AddMcpModal
+        open={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onAdd={kernel?.addMcpServer}
+        onAdded={refresh}
+        t={t}
+      />
+    </section>
+  );
 }
 
 export function PluginsView({ t }) {

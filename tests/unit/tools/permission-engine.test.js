@@ -7,8 +7,8 @@ import {
 } from "../../../src/tools/permissions/permission-engine.js";
 import { createPolicyContext } from "../../../src/tools/permissions/policy-loader.js";
 
-test("default matrix covers 9 categories across 5 autonomy levels", () => {
-  const categories = ["read", "read_secret", "write_create", "write_update", "write_delete", "execute", "execute_dangerous", "network", "destructive"];
+test("default matrix covers 10 categories across 5 autonomy levels", () => {
+  const categories = ["read", "read_secret", "write_create", "write_update", "write_delete", "execute", "execute_dangerous", "network", "destructive", "mutate"];
   for (const autonomy of ["read-only", "supervised", "gated", "auto", "full-auto"]) {
     assert.deepEqual(Object.keys(DEFAULT_POLICY_MATRIX[autonomy]).sort(), categories.sort());
   }
@@ -25,7 +25,8 @@ test("read-only allows reads, asks for secrets, and denies mutations and side ef
     execute: "deny",
     execute_dangerous: "deny",
     network: "deny",
-    destructive: "deny"
+    destructive: "deny",
+    mutate: "deny"
   };
 
   for (const [category, decision] of Object.entries(expected)) {

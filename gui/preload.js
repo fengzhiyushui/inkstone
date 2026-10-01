@@ -54,4 +54,13 @@ contextBridge.exposeInMainWorld("deepseek", {
   recoveryResume: (id, options) => ipcRenderer.invoke("recovery:resume", id, options || {}),
   recoveryCancel: (id) => ipcRenderer.invoke("recovery:cancel", id),
   recoveryClear: (id) => ipcRenderer.invoke("recovery:clear", id),
+  // MCP 外部服务管理
+  listMcpServers: () => ipcRenderer.invoke("mcp:list"),
+  restartMcpServer: (serverId) => ipcRenderer.invoke("mcp:restart", serverId),
+  toggleMcpServer: (serverId, enabled) => ipcRenderer.invoke("mcp:toggle", serverId, enabled),
+  addMcpServer: (serverId, config) => ipcRenderer.invoke("mcp:add", serverId, config),
+  removeMcpServer: (serverId) => ipcRenderer.invoke("mcp:remove", serverId),
+  // v1.11.2:${input:*} 密钥引用(值不落项目树)
+  listMcpInputs: () => ipcRenderer.invoke("mcp:inputs"),
+  setMcpInput: (name, value) => ipcRenderer.invoke("mcp:set-input", name, value)
 });

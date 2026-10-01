@@ -241,6 +241,58 @@ Inkstone 核心按 DeepSeek 官方协议编写。接入 **Ollama / vLLM / OneAPI
 
 现象与处置：思考不显示 → 网关吞了 `thinking`；工具循环第二轮 400 → 网关吞了 `reasoning_content`；用量缺列 → 网关重写了 usage。自建网关可用 `betaBase` 单独指定 FIM 端点根地址；无法升级网关时建议对 agent 类任务直连官方端点。
 
+### MCP (Model Context Protocol) 外部工具扩展
+
+自 `v1.11.0` 起，Inkstone 原生支持标准 MCP (Model Context Protocol) 协议，可在 `./.deepseek-code/config.json` 或 `~/.deepseek-code/config.json` 中配置 `mcpServers`：
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "d:/workspace"],
+      "env": { "NODE_ENV": "production" },
+      "autoApprove": ["read_file", "list_directory"],
+      "disabled": false
+    },
+    "sqlite": {
+      "command": "uvx",
+      "args": ["mcp-server-sqlite", "--db-path", "test.db"],
+      "autoApprove": ["read_query"],
+      "disabled": false
+    }
+  }
+}
+```
+
+字段说明：
+- `command`：子进程启动命令（如 `npx`, `uvx`, `node`, `python` 等）；
+- `args`：参数数组；
+- `env`：自定义环境变量；
+- `autoApprove`：免审批工具名称列表，只读工具默认自动放行，写操作/变更类工具在未配置 autoApprove 时将挂起索要人类审批；
+- `disabled`：设为 `true` 时跳过加载。
+
+命令行管理命令：
+```bash
+# 查看所有已配置的 MCP 服务状态
+node ./bin/inkstone.js mcp list
+
+# 测试特定服务连通性与可用工具探测
+node ./bin/inkstone.js mcp check filesystem
+
+# 快速添加并持久化新 MCP 服务配置
+node ./bin/inkstone.js mcp add fs --command npx --args "-y,@modelcontextprotocol/server-filesystem,./src" --auto-approve "read_file,list_directory"
+
+# 切换服务启用/禁用状态
+node ./bin/inkstone.js mcp toggle fs
+
+# 从配置文件中安全移除服务
+node ./bin/inkstone.js mcp remove fs
+```
+
+图形化管理 (GUI)：
+桌面端左侧导航栏点击「MCP」次级视图，可直接查看已连接服务、展开查看暴露的工具参数抽屉，点击右上角「+ 添加服务」即可通过官方推荐模板（Filesystem、Fetch、Memory、SQLite、GitHub）或自定义配置一键热插拔挂载，并提供卡片级服务启停、一键重启与安全删除二次确认。
+
 ### 环境变量
 
 | 变量 | 对应配置 | 默认 |

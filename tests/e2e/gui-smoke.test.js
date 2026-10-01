@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { once } from "node:events";
 
-test("gui electron shell starts against a temp project", { timeout: 20000 }, async (t) => {
+test("gui electron shell starts against a temp project", { timeout: 40000 }, async (t) => {
   const electronCli = path.resolve("gui", "node_modules", "electron", "cli.js");
   try {
     await access(electronCli);
@@ -46,7 +46,7 @@ test("gui electron shell starts against a temp project", { timeout: 20000 }, asy
   child.stdout.on("data", (chunk) => { output += chunk.toString(); });
   child.stderr.on("data", (chunk) => { output += chunk.toString(); });
 
-  const timer = setTimeout(() => child.kill(), 15000);
+  const timer = setTimeout(() => child.kill(), 30000);
   await once(child, "exit");
   clearTimeout(timer);
 
