@@ -2,6 +2,7 @@
 const { app, BrowserWindow, ipcMain, Menu, dialog, shell } = require("electron");
 const path = require("path");
 const fs = require("node:fs");
+const os = require("node:os");
 const { createKernelHost, resolveProjectRoot } = require("./kernel-host.js");
 
 // Remove Electron's default native menu bar (File/Edit/View/Window/Help) — the app
@@ -10,6 +11,10 @@ Menu.setApplicationMenu(null);
 
 let host = null;
 let mainWindow = null;
+// 冒烟模式下指向临时登记表目录(见下方 DEEPSEEK_CODE_GUI_SMOKE 块);非冒烟为 null。
+let smokeRegistryDir = null;
+// 冒烟模式下待回收的脚手架路径(临时登记表;以及测试自己建的临时项目根)。
+let smokeCleanupPaths = [];
 let ipcRegistered = false;
 
 // IPC 白名单(唯一权威清单):registerIpcHandlers 里任何未登记 channel 的 handle
@@ -32,9 +37,47 @@ const IPC_CHANNELS = [
   "mcp:list", "mcp:restart", "mcp:toggle", "mcp:add", "mcp:remove", "mcp:inputs", "mcp:set-input"
 ];
 
+// 冒烟脚手架回收:登记表临时目录 + 测试自建的临时项目根 / userData。
+// 只在冒烟会话里删(路径均由测试或本进程在 os.tmpdir() 下创建),失败仅告警。
+let smokeCleaned = false;
+function cleanupSmokeScaffolding() {
+  if (smokeCleaned) return;
+  smokeCleaned = true;
+  if (process.env.DEEPSEEK_CODE_GUI_SMOKE !== "1") return;
+  for (const p of smokeCleanupPaths.splice(0)) {
+    const resolved = path.resolve(String(p));
+    const tmp = path.resolve(os.tmpdir()) + path.sep;
+    if (!resolved.startsWith(tmp)) {
+      console.log("SMOKE_CLEANUP_SKIPPED:" + resolved + "(outside temp)");
+      continue;
+    }
+    try {
+      fs.rmSync(resolved, { recursive: true, force: true });
+    } catch (err) {
+      console.log("SMOKE_CLEANUP_FAILED:" + resolved + ":" + err.message);
+    }
+  }
+}
+
 if (process.env.DEEPSEEK_CODE_GUI_SMOKE === "1") {
   if (process.env.DEEPSEEK_CODE_GUI_USER_DATA) {
     app.setPath("userData", process.env.DEEPSEEK_CODE_GUI_USER_DATA);
+  }
+  // 冒烟必须隔离全局项目 MRU 登记表:否则每跑一次测试就把临时项目写进开发者
+  // 真实的 ~/.deepseek-code/projects.json,并在界面上堆积成一片死项目。
+  // 优先级:显式 env(测试用它指向自己的临时目录并回收)> 冒烟模式自带临时目录。
+  if (process.env.DEEPSEEK_CODE_GUI_PROJECT_REGISTRY_DIR) {
+    smokeRegistryDir = process.env.DEEPSEEK_CODE_GUI_PROJECT_REGISTRY_DIR;
+  } else {
+    smokeRegistryDir = path.join(os.tmpdir(), `inkstone-smoke-registry-${process.pid}`);
+  }
+  smokeCleanupPaths.push(smokeRegistryDir);
+  if (process.env.DEEPSEEK_CODE_GUI_SMOKE_CLEANUP_DIRS) {
+    // 测试自己 mkdtemp 出来的脚手架路径(临时项目根、Electron userData),
+    // 以 path.delimiter 分隔;冒烟退出时一并回收,避免长期堆积。
+    for (const p of process.env.DEEPSEEK_CODE_GUI_SMOKE_CLEANUP_DIRS.split(path.delimiter)) {
+      if (p && p.trim()) smokeCleanupPaths.push(p.trim());
+    }
   }
   app.disableHardwareAcceleration();
   app.commandLine.appendSwitch("disable-gpu");
@@ -71,6 +114,8 @@ async function createWindow() {
   let win = null;
   host = createKernelHost({
     projectRoot,
+    // 冒烟:登记表落到临时目录,避免污染开发者真实项目列表
+    ...(smokeRegistryDir ? { projectRegistryDir: smokeRegistryDir } : {}),
     pushEvent: (event) => {
       if (win && !win.isDestroyed()) win.webContents.send("kernel:event", event);
     }
@@ -381,7 +426,7 @@ async function createWindow() {
       } catch (err) {
         console.log("GUI_SMOKE_FAILED:" + err.message);
       }
-      try { fs.rmSync(seededChangePath, { force: true }); } catch { /* best-effort */ }
+      cleanupSmokeScaffolding();
       app.quit();
     });
   }
@@ -577,5 +622,6 @@ handle("mcp:set-input", wrap((_e, name, value) => host.setMcpInput(name, value))
 app.whenReady().then(createWindow);
 app.on("window-all-closed", () => {
   host?.dispose?.();
+  cleanupSmokeScaffolding();
   app.quit();
 });

@@ -211,7 +211,7 @@ export default function Rail({
             const open = !closedProject[p.id];
             const groups = groupSessionsByDate(sessions, now);
             return (
-              <div key={p.id} className={`proj ${p.root === currentRoot ? "cur" : ""} ${open ? "open" : ""}`}>
+              <div key={p.id} className={`proj ${p.root === currentRoot ? "cur" : ""} ${open ? "open" : ""} ${p.missing ? "miss" : ""}`}>
                 <div className={`proj-h ${css.row} ${p.root === currentRoot ? "cur" : ""}`}>
                   <button
                     type="button"
@@ -221,11 +221,13 @@ export default function Rail({
                   >
                     <span className="chev">{open ? <CaretDown size={11} /> : <CaretRight size={11} />}</span>
                     <span className="dot" />
-                    <span className="nm" title={p.root}>{p.name}</span>
+                    <span className="nm" title={p.missing ? t("rail.projectMissing").replace("{path}", p.root) : p.root}>{p.name}</span>
                   </button>
-                  {p.root === currentRoot
-                    ? <span className="tag">{t("rail.current")}</span>
-                    : <span className="cnt">{sessions.length}</span>}
+                  {p.missing
+                    ? <span className="tag warn" title={t("rail.projectMissing").replace("{path}", p.root)}>{t("rail.projectMissingTag")}</span>
+                    : p.root === currentRoot
+                      ? <span className="tag">{t("rail.current")}</span>
+                      : <span className="cnt">{sessions.length}</span>}
                   <button type="button" className={`pnew ${css.iconbtn}`} title={t("rail.newInProject")}
                     onClick={() => onNewSession(p.root)}><Plus size={12} /></button>
                   {onRemoveProject && (
