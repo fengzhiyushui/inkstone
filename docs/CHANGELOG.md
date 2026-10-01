@@ -14,6 +14,27 @@
 
 ---
 
+## v1.11.2 — 2026-09-29 · MCP 配置作用域与密钥底座
+
+- **多作用域合并**：`mcp/config-loader.js` 支持 session > project > user；兼容 `.mcp.json` 与 VS Code `servers` 键；冲突时项目配置优先并 warn。
+- **`${input:*}` 密钥引用**：env/headers/args/url 可引用 `inputs`；`bindInputs` 优先显式 value → 凭据库 → default。
+- **密钥卫生**：`auditConfigSecrets` 对项目/user 配置里的高熵字面量告警；凭据库 `~/.deepseek-code/credentials/`（0600），绝不进项目树。
+- **Hub**：`loadConfigScopes` 可选装载、`setInputValue`/`listInputs`、工具级 `tools.enabled/disabled` 过滤；`kernel.mcp` 暴露 inputs API。
+- **版本**：四处同步 `1.11.2`。
+
+---
+
+## v1.11.1 — 2026-09-29 · MCP dual-era 与可靠性加固
+
+- **协议 dual-era**：`server/discover` 探测 Modern（`2026-07-28`）并自动回退 Legacy（`2025-11-25`…`2024-11-05`）；Modern 请求携带 `_meta` 版本/客户端元数据；处理 `UnsupportedProtocolVersionError` 重试；`clientInfo.version` 读 `package.json`。
+- **结果语义**：识别 `resultType`、保留 `structuredContent`、`resource_link` 占位、`input_required` 前缀。
+- **可靠性**：`list_changed` 增量 remount；超时发 `notifications/cancelled`；hub 有界并行初始化；曾成功连接后的指数退避重连（主动 stop/remove 不重连）。
+- **命名**：工具名按规范 1–128 与 `A-Za-z0-9_.-`；超长 hash 唯一后缀，消除 64 截断碰撞。
+- **事件**：`event-contract` 映射 `mcp:*` / `server_*`（status/tools/auth/error）。
+- **版本**：四处同步 `1.11.1`。
+
+---
+
 ## v1.11.0 — 2026-09-28 · MCP (Model Context Protocol) 外部工具接入体系
 
 > 小版本发布：全面落地行业标准 MCP 协议，构建零外部依赖原生生态扩展底座。支持 stdio 进程管道通道、两级命名空间隔离与 DeepSeek Function Calling Schema 自动转换、外部工具统一接入权限护栏与人工审批挂起、同构 `config.json` 中的 `mcpServers` 配置，并在 GUI 侧边栏落地全新交互式 `McpView` 可视化中枢与 CLI `inkstone mcp` 运维子命令。

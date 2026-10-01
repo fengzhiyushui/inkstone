@@ -11,7 +11,13 @@ test("McpHub initializes enabled servers, mounts tools to registry, and skips di
     rl.on('line', (line) => {
       try {
         const msg = JSON.parse(line);
-        if (msg.method === 'initialize') {
+        if (msg.method === 'server/discover') {
+          process.stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
+            id: msg.id,
+            error: { code: -32601, message: 'Method not found' }
+          }) + '\\n');
+        } else if (msg.method === 'initialize') {
           process.stdout.write(JSON.stringify({
             jsonrpc: '2.0',
             id: msg.id,
@@ -103,7 +109,13 @@ test("McpHub.addServer and removeServer support dynamic hot-plugging", async () 
     rl.on('line', (line) => {
       try {
         const msg = JSON.parse(line);
-        if (msg.method === 'initialize') {
+        if (msg.method === 'server/discover') {
+          process.stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
+            id: msg.id,
+            error: { code: -32601, message: 'Method not found' }
+          }) + '\\n');
+        } else if (msg.method === 'initialize') {
           process.stdout.write(JSON.stringify({
             jsonrpc: '2.0',
             id: msg.id,
@@ -138,7 +150,7 @@ test("McpHub.addServer and removeServer support dynamic hot-plugging", async () 
 
   await assert.rejects(async () => {
     await hub.addServer("valid_id", { command: "" });
-  }, /'command' string is required/);
+  }, /'command' or 'url' is required/);
 
   // Dynamically add server
   const addRes = await hub.addServer("dynamic_srv", {

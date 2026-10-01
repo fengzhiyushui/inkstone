@@ -15,7 +15,13 @@ test("createKernel integrates McpHub, exposes kernel.mcp facet, and cleans up on
     rl.on('line', (line) => {
       try {
         const msg = JSON.parse(line);
-        if (msg.method === 'initialize') {
+        if (msg.method === 'server/discover') {
+          process.stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
+            id: msg.id,
+            error: { code: -32601, message: 'Method not found' }
+          }) + '\\n');
+        } else if (msg.method === 'initialize') {
           process.stdout.write(JSON.stringify({
             jsonrpc: '2.0',
             id: msg.id,

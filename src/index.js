@@ -140,9 +140,14 @@ export async function createKernel(root, options = {}) {
   const toolRegistry = mainPlane.toolRegistry;
   const toolExecutor = mainPlane.toolExecutor;
   const mcpHub = options.mcpHub || new McpHub({
-    config: { mcpServers: options.mcpServers || options.config?.mcpServers || {} },
+    config: {
+      mcpServers: options.mcpServers || options.config?.mcpServers || {},
+      inputs: options.config?.inputs || options.mcpInputs || {}
+    },
     toolRegistry,
-    cwd: root
+    cwd: root,
+    projectRoot: root,
+    loadConfigScopes: options.loadMcpConfigScopes === true
   });
   if (options.autoInitMcp !== false && mcpHub.serverConfigs.size > 0) {
     await mcpHub.initAll().catch(() => {});
@@ -477,6 +482,8 @@ export async function createKernel(root, options = {}) {
     mcp: {
       hub: mcpHub,
       listServers: () => mcpHub.listServers(),
+      listInputs: () => mcpHub.listInputs(),
+      setInputValue: (name, value) => mcpHub.setInputValue(name, value),
       restartServer: (serverId) => mcpHub.restartServer(serverId),
       toggleServer: (serverId, enabled) => mcpHub.toggleServer(serverId, enabled),
       callTool: (namespacedName, params) => mcpHub.callTool(namespacedName, params)

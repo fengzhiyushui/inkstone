@@ -57,6 +57,7 @@ export default function AppFrame({
       className={`${css.frame}${className ? ` ${className}` : ""}`}
       data-windows-titlebar=""
       data-dragging={dragging ? "true" : undefined}
+      data-viewport={viewport}
       style={{ gridTemplateColumns: `${cols.sidebar}px ${cols.center}px ${cols.rightbar}px` }}
     >
       {titlebar ? <div className={css.chrome}>{titlebar}</div> : null}

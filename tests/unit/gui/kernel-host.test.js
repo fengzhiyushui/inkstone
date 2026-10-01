@@ -109,7 +109,9 @@ test("buildKernelOptions bridges legacy config into V2 DeepSeek options", async 
   }));
 
   assert.deepEqual(options, {
-    deepseek: { apiKey: "sk-gui", baseUrl: "https://example.invalid" }
+    deepseek: { apiKey: "sk-gui", baseUrl: "https://example.invalid" },
+    // v1.11.2:GUI 入口默认开启多作用域 MCP 配置(.mcp.json / VS Code servers)
+    loadMcpConfigScopes: true
   });
 });
 
@@ -126,7 +128,8 @@ test("buildKernelOptions passes orchestration and context config through shared 
     deepseek: { apiKey: "sk-gui", baseUrl: "https://example.invalid" },
     limits: { maxModelCalls: 3 },
     orchestration: { maxRounds: 4, router: { model: { enabled: false } } },
-    context: { semantic: { enabled: true, hops: 3 } }
+    context: { semantic: { enabled: true, hops: 3 } },
+    loadMcpConfigScopes: true
   });
 });
 
@@ -300,6 +303,40 @@ test("kernel host exposes active branch delegate", async () => {
   await host.init();
 
   assert.deepEqual(await host.getActiveBranch(), { branch_id: "br_child" });
+});
+
+// ── v1.11.2:MCP 密钥引用必须能从 GUI host 读写 ──────────────────────────────
+test("kernel host exposes MCP input delegates and degrades before init", async () => {
+  const calls = [];
+  const host = createKernelHost({
+    projectRoot: "/repo",
+    kernelFactory: async () => ({
+      session: { subscribe: () => ({ unsubscribe() {} }), getTimeline: async () => [] },
+      agent: { send: async () => ({ status: "complete" }), approve: () => {}, interrupt: () => {} },
+      context: { snapshot: async () => ({ units: [] }) },
+      metrics: { getUsage: () => zeroUsage() },
+      config: { getPublicConfig: () => ({}) },
+      runtime: { getState: () => ({ current: "idle" }) },
+      mcp: {
+        listServers: () => [],
+        listInputs: () => [{ name: "tok", password: true, hasValue: false }],
+        setInputValue: (name, value) => {
+          calls.push([name, value]);
+          return { name, hasValue: true };
+        }
+      }
+    }),
+    configLoader: async () => ({})
+  });
+
+  // 未 init 前安全降级,不抛错
+  assert.deepEqual(host.listMcpInputs(), []);
+  assert.equal(host.setMcpInput("tok", "v"), null);
+
+  await host.init();
+  assert.deepEqual(host.listMcpInputs(), [{ name: "tok", password: true, hasValue: false }]);
+  assert.deepEqual(host.setMcpInput("tok", "secret-v"), { name: "tok", hasValue: true });
+  assert.deepEqual(calls, [["tok", "secret-v"]]);
 });
 
 test("gui preferences normalize invalid values to safe defaults", () => {

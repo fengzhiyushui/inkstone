@@ -2,7 +2,7 @@ import React from "react";
 import {
   Folders, FolderOpen, Trash, CaretLeft, GitDiff, ShareNetwork, PuzzlePiece,
   MagnifyingGlass, PencilSimpleLine, Lifebuoy, ArrowClockwise, Power, CaretDown, CaretRight,
-  Plus, X, Check
+  Plus, X, Check, Key
 } from "@phosphor-icons/react";
 import ChangeDiffView from "../ChangeDiffView.jsx";
 
@@ -427,6 +427,11 @@ export function McpView({ t, kernel, onRequestConfirm }) {
   const [expanded, setExpanded] = React.useState(() => new Set());
   const [busyId, setBusyId] = React.useState(null);
   const [showAddModal, setShowAddModal] = React.useState(false);
+  // v1.11.2:${input:*} 密钥引用 —— 定义来自 .mcp.json / config.json 的 inputs,
+  // 值写入 ~/.deepseek-code/credentials(0600),绝不落项目树。
+  const [inputs, setInputs] = React.useState([]);
+  const [inputDraft, setInputDraft] = React.useState({});
+  const [savingInput, setSavingInput] = React.useState(null);
 
   const refresh = React.useCallback(async () => {
     if (!kernel?.listMcpServers) {
@@ -447,6 +452,39 @@ export function McpView({ t, kernel, onRequestConfirm }) {
   React.useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const refreshInputs = React.useCallback(async () => {
+    if (!kernel?.listMcpInputs) {
+      setInputs([]);
+      return;
+    }
+    try {
+      const list = await kernel.listMcpInputs();
+      setInputs(Array.isArray(list) ? list : []);
+    } catch {
+      setInputs([]);
+    }
+  }, [kernel]);
+
+  React.useEffect(() => {
+    refreshInputs();
+  }, [refreshInputs]);
+
+  const handleSaveInput = async (name) => {
+    if (!kernel?.setMcpInput) return;
+    setSavingInput(name);
+    try {
+      await kernel.setMcpInput(name, inputDraft[name] ?? "");
+      setInputDraft((prev) => {
+        const next = { ...prev };
+        delete next[name];
+        return next;
+      });
+      await refreshInputs();
+    } finally {
+      setSavingInput(null);
+    }
+  };
 
   const toggleExpand = (id) => {
     setExpanded((prev) => {
@@ -522,7 +560,7 @@ export function McpView({ t, kernel, onRequestConfirm }) {
         >
           <Plus size={13} weight="bold" /> 添加服务
         </button>
-        <button type="button" className="btn ghost" onClick={refresh} title={t("recovery.refresh")}>
+        <button type="button" className="btn ghost" onClick={() => { refresh(); refreshInputs(); }} title={t("recovery.refresh")}>
           <ArrowClockwise size={13} className={loading ? "spin" : ""} /> {t("recovery.refresh")}
         </button>
       </header>
@@ -535,6 +573,50 @@ export function McpView({ t, kernel, onRequestConfirm }) {
             <div>已连接: <strong style={{ color: "var(--accent, #4ade80)" }}>{connectedCount}</strong></div>
             <div>可用工具: <strong style={{ color: "var(--text-main, #eee)" }}>{totalTools}</strong></div>
           </div>
+
+          {/* v1.11.2 ${input:*} 密钥引用:项目配置只保留引用名,值存放于凭据库 */}
+          {inputs.length > 0 && (
+            <div className="mcp-inputs-panel">
+              <div className="mcp-inputs-head">
+                <Key size={13} weight="bold" />
+                <span>{t("mcp.inputs.title")}</span>
+                <span className="mcp-inputs-sub">{t("mcp.inputs.sub")}</span>
+              </div>
+              {inputs.map((inp) => {
+                const dirty = Object.prototype.hasOwnProperty.call(inputDraft, inp.name);
+                const missing = !inp.hasValue;
+                return (
+                  <div className="mcp-form-group" key={inp.name}>
+                    <label className="mcp-form-label">
+                      <span className="mono">{inp.name}</span>
+                      <span className={`mcp-input-badge ${missing ? "missing" : "ok"}`}>
+                        {missing ? t("mcp.inputs.missing") : t("mcp.inputs.set")}
+                      </span>
+                    </label>
+                    {inp.description && <div className="mcp-input-desc">{inp.description}</div>}
+                    <div className="mcp-input-row">
+                      <input
+                        type={inp.password ? "password" : "text"}
+                        className="mcp-form-input mono"
+                        autoComplete="off"
+                        placeholder={missing ? t("mcp.inputs.placeholder") : "••••••••"}
+                        value={inputDraft[inp.name] ?? ""}
+                        onChange={(e) => setInputDraft((prev) => ({ ...prev, [inp.name]: e.target.value }))}
+                      />
+                      <button
+                        type="button"
+                        className="btn accent"
+                        disabled={!dirty || savingInput === inp.name}
+                        onClick={() => handleSaveInput(inp.name)}
+                      >
+                        {savingInput === inp.name ? t("mcp.inputs.saving") : t("mcp.inputs.save")}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {servers.length === 0 ? (
             <div className="empty-note" style={{ textAlign: "center", padding: "32px 16px" }}>

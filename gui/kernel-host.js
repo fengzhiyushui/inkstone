@@ -741,6 +741,17 @@ function createKernelHost({
     return ready() && kernel?.mcp ? kernel.mcp.listServers() : [];
   }
 
+  // v1.11.2:${input:*} 密钥引用。定义来自 .mcp.json / config.json 的 inputs,
+  // 值优先显式 value → 凭据库(~/.deepseek-code/credentials,0600)→ default。
+  function listMcpInputs() {
+    return ready() && kernel?.mcp?.listInputs ? kernel.mcp.listInputs() : [];
+  }
+
+  function setMcpInput(name, value) {
+    if (!ready() || !kernel?.mcp?.setInputValue) return null;
+    return kernel.mcp.setInputValue(name, value);
+  }
+
   async function restartMcpServer(serverId) {
     return ready() && kernel?.mcp ? await kernel.mcp.restartServer(serverId) : null;
   }
@@ -802,6 +813,7 @@ function createKernelHost({
            listModels, testConnection, activateBranch, listProjects, addProject, removeProject, switchProject, listSessions, deleteSession,
            getRecoveryList, getRecoveryReport, recoveryResume, recoveryCancel, recoveryClear,
            listMcpServers, restartMcpServer, toggleMcpServer, addMcpServer, removeMcpServer,
+    listMcpInputs, setMcpInput,
            resolveSensitiveNotice, abortPendingSensitive, dispose };
 }
 
