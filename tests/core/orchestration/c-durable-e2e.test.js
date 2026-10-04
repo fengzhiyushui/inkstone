@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import os from "node:os"; import path from "node:path"; import { promises as fs } from "node:fs";
 import { createKernel } from "../../../src/index.js";
 import { createOrchestrationPersistence } from "../../../src/core/recovery/orchestration-persistence.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 function mockGateway(counters) {
   return {
@@ -23,7 +24,7 @@ function mockGateway(counters) {
 const exists = async (p) => { try { await fs.stat(p); return true; } catch (e) { if (e.code === "ENOENT") return false; throw e; } };
 
 test("cross-instance: worker pauses in A, resumes to completion in B (plan once, edit merged, budget persisted)", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "c-durable-e2e-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "c-durable-e2e-"));
   await fs.writeFile(path.join(root, "a.js"), "base a\n");
   const cA = { plan: 0 }, cB = { plan: 0 };
 
@@ -54,7 +55,7 @@ test("cross-instance: worker pauses in A, resumes to completion in B (plan once,
 });
 
 test("recovery off: orchestration pause stays in-memory (C5), no durable sidecar, same-process approve completes", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "c-durable-off-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "c-durable-off-"));
   await fs.writeFile(path.join(root, "a.js"), "base a\n");
   const counters = { plan: 0 };
   const kernel = await createKernel(root, { modelGateway: mockGateway(counters), eventBus: { publish() {}, subscribe: () => () => {} }, sessionLog: null, branchStore: null, verifyMode: "off", projectId: "proj" });

@@ -1,8 +1,8 @@
 // tests/unit/tui/helpers.js — TUI 全链路测试共用的注入桩。
 import { PassThrough } from "node:stream";
-import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 export function makeIO() {
   const input = new PassThrough();
@@ -43,5 +43,6 @@ export async function until(fn, ms = 3000) {
 }
 
 export async function tmpRoot() {
-  return fs.mkdtemp(path.join(os.tmpdir(), "dsc-tui-"));
+  // 经 tests/helpers/tmp.js:进程退出时统一回收,避免每轮测试堆一批 dsc-tui-*
+  return mkdtemp(path.join(os.tmpdir(), "dsc-tui-"));
 }

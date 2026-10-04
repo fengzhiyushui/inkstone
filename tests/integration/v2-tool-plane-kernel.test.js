@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createKernel } from "../../src/index.js";
 import { createToolCall } from "../../src/core/protocol/index.js";
+import { mkdtemp } from "../helpers/tmp.js";
 
 test("kernel exposes V2 tool list and executes read tool", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "dsc-kernel-tools-"));

@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { applyUnifiedDiff } from "../../src/patch.js";
 import { captureChangePlan, finalizeChange, rollbackChange } from "../../src/changes.js";
 import { createRollbackService } from "../../src/edits/rollback-service.js";
+import { mkdtemp } from "../helpers/tmp.js";
 
 // 200 行、每行 ~25 字符 → 约 5KB 的「大文件」,改动第 1 行
 const BIG_LINES = Array.from({ length: 200 }, (_, i) => `line-${i}-${"x".repeat(20)}`);

@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createTransactionJournal } from "../../../../src/core/recovery/transaction-journal.js";
+import { mkdtemp } from "../../../helpers/tmp.js";
 
 test("transaction journal captures binary preimage before mutation", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "dsc-journal-binary-"));

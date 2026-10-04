@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -13,6 +13,7 @@ import {
   normalizeServersMap,
   bindInputs
 } from "../../src/tools/mcp/config-loader.js";
+import { mkdtempSync } from "../helpers/tmp.js";
 
 function tmpProject() {
   const root = mkdtempSync(join(tmpdir(), "inkstone-mcp-cfg-"));

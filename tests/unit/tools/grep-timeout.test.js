@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createGrepTool } from "../../../src/tools/builtin/grep.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 test("grep tool skips a file when per-file budget is exhausted and keeps searching", async () => {
   const root = await timeoutFixtureWorkspace();

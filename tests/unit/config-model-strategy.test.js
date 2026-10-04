@@ -3,10 +3,11 @@
 // none 等价关思考,但「关不禁用」由通道层 thinking 开关决定,配置层只校验 + 透传。
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { normalizeReasoningEffort, normalizeConfig, DEFAULT_CONFIG, loadConfig } from "../../src/config.js";
+import { mkdtemp } from "../helpers/tmp.js";
 
 test("normalizeReasoningEffort passes the whole legal set through untouched", () => {
   // 降档必须真的降档:fold-to-high 会把 low/medium 变成死配置。

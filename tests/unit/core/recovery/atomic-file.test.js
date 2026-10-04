@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -10,6 +10,7 @@ import {
   cleanupAtomicTemps,
   safeRecoverySegment
 } from "../../../../src/core/recovery/atomic-file.js";
+import { mkdtemp } from "../../../helpers/tmp.js";
 
 test("atomicWriteJson writes readable JSON and ignores temp leftovers", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "dsc-atomic-json-"));

@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os"; import path from "node:path"; import { promises as fs } from "node:fs";
 import { createKernel } from "../../../src/index.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 // Confidently-complex message (score >= 3) so the router short-circuits to orchestrate
 // without a model triage call; carries auth/login cues for cross-task retrieval.
@@ -34,7 +35,7 @@ function capturingBus(events) {
 }
 
 test("on: task1 consolidates a lesson; task2 retrieves it into the planner prompt", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "c4-e2e-on-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "c4-e2e-on-"));
   const counters = { plan: 0, distill: 0 };
   const prompts = [];
   const events = [];
@@ -61,7 +62,7 @@ test("on: task1 consolidates a lesson; task2 retrieves it into the planner promp
 });
 
 test("off (default): zero regression — no consolidation, no experience dir, no experience events", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "c4-e2e-off-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "c4-e2e-off-"));
   const counters = { plan: 0, distill: 0 };
   const prompts = [];
   const events = [];

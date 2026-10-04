@@ -2,8 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os"; import path from "node:path"; import { promises as fs } from "node:fs";
 import { fsCopyWorkspace, hashTree, changedPaths } from "../../../src/core/orchestration/workspace-snapshot.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
-async function tmp() { return fs.mkdtemp(path.join(os.tmpdir(), "ws-snap-")); }
+async function tmp() { return mkdtemp(path.join(os.tmpdir(), "ws-snap-")); }
 const exists = (p) => fs.access(p).then(() => true, () => false);
 
 test("copy excludes .git/node_modules/.deepseek-code; hashTree captures dirty content", async () => {

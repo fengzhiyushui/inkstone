@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -8,6 +8,7 @@ import {
   restoreRewindSnapshots,
   safeRewindError
 } from "../../../src/sessions/rewind-transaction.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 test("captureRewindSnapshots captures existing and missing files without leaking content in metadata", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "dsc-rewind-tx-"));

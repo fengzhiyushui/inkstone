@@ -5,9 +5,10 @@ import { createSymbolCache } from "../../../src/context/semantic/symbol-cache.js
 import { createWasmTreeSitterProvider } from "../../../src/context/semantic/wasm-tree-sitter-provider.js";
 import { createLanguageRegistry } from "../../../src/context/semantic/language-registry.js";
 import { indexSymbols } from "../../../src/context/semantic/symbol-indexer.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 test("indexes only supported files; populates symbol table; reuses cache", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "symidx-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "symidx-"));
   const provider = createWasmTreeSitterProvider();
   await provider.load();
   const registry = createLanguageRegistry();

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createRecoveryService } from "../../src/core/recovery/recovery-service.js";
@@ -8,6 +8,7 @@ import { createTransactionJournal } from "../../src/core/recovery/transaction-jo
 import { createRecoveryInbox } from "../../src/core/recovery/recovery-inbox.js";
 import { acquireProjectLock } from "../../src/core/recovery/project-lock.js";
 import { createPausedTurnPersistence } from "../../src/core/recovery/paused-turn-persistence.js";
+import { mkdtemp } from "../helpers/tmp.js";
 
 test("recovery service scans and exposes open transaction journals", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "dsc-recovery-svc-"));

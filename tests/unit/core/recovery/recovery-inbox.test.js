@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createRecoveryInbox } from "../../../../src/core/recovery/recovery-inbox.js";
+import { mkdtemp } from "../../../helpers/tmp.js";
 
 test("recovery inbox upserts lists and clears safe items", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "dsc-inbox-"));

@@ -2,10 +2,11 @@
 // 策略:默认关闭;strictSchema 只认显式布尔 true,字符串 "true" / 1 等一律 false。
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { normalizeEvents, normalizeConfig, DEFAULT_CONFIG, loadConfig } from "../../src/config.js";
+import { mkdtemp } from "../helpers/tmp.js";
 
 test("DEFAULT_CONFIG.events.strictSchema defaults to false", () => {
   assert.deepEqual(DEFAULT_CONFIG.events, { strictSchema: false });

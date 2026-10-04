@@ -4,8 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { createSymbolCache } from "../../../src/context/semantic/symbol-cache.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
-async function tmp() { return fs.mkdtemp(path.join(os.tmpdir(), "symcache-")); }
+async function tmp() { return mkdtemp(path.join(os.tmpdir(), "symcache-")); }
 
 test("set/get round-trips only on matching hash", async () => {
   const root = await tmp();

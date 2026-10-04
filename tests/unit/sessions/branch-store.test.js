@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   BR_MAIN,
   createBranchStore
 } from "../../../src/sessions/branch-store.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 test("branch store creates br_main lazily", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "dsc-branch-store-"));

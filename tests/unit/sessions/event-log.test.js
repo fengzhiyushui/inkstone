@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, appendFile } from "node:fs/promises";
+import { appendFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -9,6 +9,7 @@ import {
   projectIdFromRoot,
   verifyEventLog
 } from "../../../src/sessions/event-log.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 test("event log creates session start and strips reserved data fields", async () => {
   const sessionRoot = await mkdtemp(path.join(tmpdir(), "dsc-session-log-"));

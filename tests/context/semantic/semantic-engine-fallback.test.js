@@ -2,9 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os"; import path from "node:path"; import { promises as fs } from "node:fs";
 import { createSemanticEngine } from "../../../src/context/semantic/semantic-engine.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 async function mkProject() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "sem-fallback-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "sem-fallback-"));
   await fs.mkdir(path.join(root, "src"));
   await fs.writeFile(path.join(root, "src", "a.js"), "export function alpha(){ beta(); }\nexport function beta(){}\n");
   return root;

@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createShellTool } from "../../../src/tools/builtin/shell.js";
 import { createTestTool } from "../../../src/tools/builtin/test.js";
 import { createGitTool } from "../../../src/tools/builtin/git.js";
 import { runProcess } from "../../../src/security/shell-policy.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 test("shell tool executes structured argv with shell false", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "dsc-shell-"));

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, writeFile } from "node:fs/promises";
+import { readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createKernel } from "../../../src/index.js";
@@ -9,6 +9,7 @@ import { createChangeStore } from "../../../src/edits/change-store.js";
 import { normalizeEdits, DEFAULT_CONFIG } from "../../../src/config.js";
 import { buildKernelOptions } from "../../../src/apps/kernel-options.js";
 import { createToolCall } from "../../../src/core/protocol/index.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 const DIFF = "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new";
 

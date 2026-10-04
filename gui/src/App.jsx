@@ -16,7 +16,7 @@ import SettingsPanels from "./components/Settings/Settings.jsx";
 import SensitiveNoticeModal from "./components/v4/SensitiveNoticeModal.jsx";
 import ConfirmModal from "./components/v4/ConfirmModal.jsx";
 
-const VERSION = "1.11.3";
+const VERSION = "1.11.4";
 
 export default function App() {
   const [state, dispatch] = useWorkbench();

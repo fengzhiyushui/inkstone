@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createKernel } from "../../src/index.js";
 import { createPausedTurnPersistence } from "../../src/core/recovery/paused-turn-persistence.js";
 import { createRecoveryFaults } from "../../src/core/recovery/recovery-faults.js";
+import { mkdtemp } from "../helpers/tmp.js";
 
 const DIFF = "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new";
 

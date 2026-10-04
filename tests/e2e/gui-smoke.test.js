@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { access, mkdtemp } from "node:fs/promises";
+import { access } from "node:fs/promises";
 import { rmSync } from "node:fs";
 import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { once } from "node:events";
+import { mkdtemp } from "../helpers/tmp.js";
 
 test("gui electron shell starts against a temp project", { timeout: 40000 }, async (t) => {
   const electronCli = path.resolve("gui", "node_modules", "electron", "cli.js");

@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createKernel } from "../../src/index.js";
 import { createTransactionJournal } from "../../src/core/recovery/transaction-journal.js";
+import { mkdtemp } from "../helpers/tmp.js";
 
 test("kernel exposes recovery.abortJournal and recovery.commitJournal", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "dsc-kernel-recovery-"));

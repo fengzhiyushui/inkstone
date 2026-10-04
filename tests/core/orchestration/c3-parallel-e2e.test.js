@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os"; import path from "node:path"; import { promises as fs } from "node:fs";
 import { createKernel } from "../../../src/index.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 const exists = (p) => fs.access(p).then(() => true, () => false);
 
@@ -35,7 +36,7 @@ function mockGateway() {
 }
 
 test("parallel orchestrate: two iso workers edit disjoint files, both merge to main, no residue", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "c3-e2e-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "c3-e2e-"));
   await fs.writeFile(path.join(root, "a.js"), "base a\n");
   await fs.writeFile(path.join(root, "b.js"), "base b\n");
   const events = [];

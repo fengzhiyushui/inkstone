@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, readFile, mkdir, rm } from "node:fs/promises";
+import { writeFile, readFile, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createProjectRegistry, projectIdFromRoot } from "../../../src/apps/project-registry.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 async function withRegistry(fn) {
   const base = await mkdtemp(path.join(tmpdir(), "inkstone-registry-"));

@@ -2,9 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os"; import path from "node:path"; import { promises as fs } from "node:fs";
 import { buildToolPlane } from "../../../src/index.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 test("buildToolPlane returns a plane bound to the given root", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "plane-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "plane-"));
   const plane = buildToolPlane(root, {});
   assert.equal(typeof plane.execute, "function");
   assert.ok(plane.toolRegistry.toDeepSeekTools().some((s) => s.function.name === "read"));

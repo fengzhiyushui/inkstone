@@ -4,12 +4,13 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 const require = createRequire(import.meta.url);
 const { createKernelHost } = require("../../../gui/kernel-host.js");
 
 async function tmpProject() {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "dsc-fs-"));
+  const dir = await mkdtemp(path.join(os.tmpdir(), "dsc-fs-"));
   await fs.mkdir(path.join(dir, "src"), { recursive: true });
   await fs.writeFile(path.join(dir, "src", "index.js"), "export const x = 1;\n");
   await fs.writeFile(path.join(dir, "README.md"), "# hi\n");

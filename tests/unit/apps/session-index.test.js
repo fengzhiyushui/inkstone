@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createSessionIndex, parseSessionEvents, summarizeUserMessage } from "../../../src/apps/session-index.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 function line(obj) { return `${JSON.stringify(obj)}\n`; }
 

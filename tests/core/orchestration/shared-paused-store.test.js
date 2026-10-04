@@ -4,6 +4,7 @@ import os from "node:os"; import path from "node:path"; import { promises as fs 
 import { createAgentRuntime } from "../../../src/core/runtime/agent-runtime.js";
 import { createPausedTurnStore } from "../../../src/core/approval/paused-turn-store.js";
 import { createKernel } from "../../../src/index.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 const REC = { approval_id: "ap1", turn_id: "t1", approval: { id: "ap1" }, turn: {}, resume_state: {} };
 
@@ -40,7 +41,7 @@ function mockGateway() {
   };
 }
 async function fixture() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "m3-shared-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "m3-shared-"));
   await fs.writeFile(path.join(root, "a.js"), "base a\n");
   return root;
 }

@@ -5,9 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import { createConsolidator } from "../../../src/core/memory/experience-consolidator.js";
 import { createExperienceStore } from "../../../src/core/memory/experience-store.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 const NOW = () => Date.parse("2026-02-01T00:00:00Z");
-async function tmpDir() { return fs.mkdtemp(path.join(os.tmpdir(), "exp-con-")); }
+async function tmpDir() { return mkdtemp(path.join(os.tmpdir(), "exp-con-")); }
 const cfg = { maxLessonsPerTask: 5, cap: 200, thresholds: { T1: 0.7, T2: 0.4, T3: 0.2 }, decayPerDay: 0.02, dedupThreshold: 0.6 };
 const entry = (id, over = {}) => ({
   id, kind: "procedural", lesson: "L" + id, cues: ["auth", "login"], provenance: { taskId: "t" },

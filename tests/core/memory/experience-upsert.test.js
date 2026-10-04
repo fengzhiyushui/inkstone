@@ -5,11 +5,12 @@ import os from "node:os";
 import path from "node:path";
 import { upsert } from "../../../src/core/memory/experience-upsert.js";
 import { createExperienceStore } from "../../../src/core/memory/experience-store.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 const T = { T1: 0.7, T2: 0.4, T3: 0.2 };
 const NOW = () => Date.parse("2026-01-01T00:00:00Z");
 const cfg = (over = {}) => ({ now: NOW, cap: 200, thresholds: T, decayPerDay: 0.02, dedupThreshold: 0.6, ...over });
-async function tmpDir() { return fs.mkdtemp(path.join(os.tmpdir(), "exp-up-")); }
+async function tmpDir() { return mkdtemp(path.join(os.tmpdir(), "exp-up-")); }
 const cand = (id, over = {}) => ({
   id, kind: "procedural", lesson: "L" + id, cues: ["c" + id, "common"], provenance: { taskId: "t" },
   confidence: 0.5, validations: 0, misleads: 0, created: "2026-01-01T00:00:00Z", lastReinforced: "2026-01-01T00:00:00Z", tier: 3, ...over

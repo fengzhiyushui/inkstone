@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createReadTool } from "../../../src/tools/builtin/read.js";
 import { createLsTool } from "../../../src/tools/builtin/ls.js";
 import { createGrepTool } from "../../../src/tools/builtin/grep.js";
 import { createGlobTool } from "../../../src/tools/builtin/glob.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 test("read tool reads text files inside workspace", async () => {
   const root = await fixtureWorkspace();

@@ -4,13 +4,14 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createExperienceStore } from "../../../src/core/memory/experience-store.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 const mkEntry = (id, over = {}) => ({
   id, kind: "procedural", lesson: "L" + id, cues: ["a" + id, "b"],
   provenance: { taskId: "t" }, confidence: 0.5, validations: 0, misleads: 0,
   created: "2026-01-01T00:00:00Z", lastReinforced: "2026-01-01T00:00:00Z", tier: 3, ...over
 });
-async function tmpDir() { return fs.mkdtemp(path.join(os.tmpdir(), "exp-")); }
+async function tmpDir() { return mkdtemp(path.join(os.tmpdir(), "exp-")); }
 const nowIso = () => "2026-01-01T00:00:00Z";
 
 test("put/get/all/remove round-trip + atomic persistence reloads", async () => {

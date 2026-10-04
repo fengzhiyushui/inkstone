@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -11,6 +11,7 @@ import {
   snapshotTouchedFiles
 } from "../../../src/edits/edit-transaction.js";
 import { parseDiff } from "../../../src/edits/diff-parser.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 test("hashContent returns stable sha256 metadata", () => {
   const result = hashContent("hello\n");

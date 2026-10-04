@@ -2,8 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os"; import path from "node:path"; import { promises as fs } from "node:fs";
 import { createIso, removeIso, sweepOrphans } from "../../../src/core/orchestration/iso-workspace.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
-async function tmp() { return fs.mkdtemp(path.join(os.tmpdir(), "iso-")); }
+async function tmp() { return mkdtemp(path.join(os.tmpdir(), "iso-")); }
 const exists = (p) => fs.access(p).then(() => true, () => false);
 
 test("createIso makes dir + .owner; removeIso deletes it", async () => {

@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createOrchestrationPersistence } from "../../../../src/core/recovery/orchestration-persistence.js";
 import { serializeOrchestrationState } from "../../../../src/core/orchestration/orchestration-recovery-contract.js";
 import { createRecoveryFaults } from "../../../../src/core/recovery/recovery-faults.js";
+import { mkdtemp } from "../../../helpers/tmp.js";
 
 function sidecar(approvalId = "ap1") {
   const state = {

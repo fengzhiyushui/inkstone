@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 const require = createRequire(import.meta.url);
 const { createKernelHost, resolveProjectRoot, zeroUsage, buildKernelOptions } = require("../../../gui/kernel-host.js");
@@ -368,7 +369,7 @@ test("gui preferences normalize invalid values to safe defaults", () => {
 
 test("gui preferences load missing corrupt and save sanitized values", async () => {
   const { loadGuiPreferences, saveGuiPreferences } = require("../../../gui/kernel-host.js");
-  const { mkdtemp, readFile, writeFile } = require("node:fs/promises");
+  const { readFile, writeFile } = require("node:fs/promises");
   const os = require("node:os");
   const path = require("node:path");
 
@@ -401,7 +402,6 @@ test("gui preferences load missing corrupt and save sanitized values", async () 
 
 test("kernel host exposes gui preference delegates", async () => {
   const { createKernelHost } = require("../../../gui/kernel-host.js");
-  const { mkdtemp } = require("node:fs/promises");
   const os = require("node:os");
   const path = require("node:path");
 
@@ -425,7 +425,6 @@ test("kernel host exposes gui preference delegates", async () => {
 
 test("kernel host exposes project registry + session index delegates", async () => {
   const { createKernelHost } = require("../../../gui/kernel-host.js");
-  const { mkdtemp } = require("node:fs/promises");
   const os = require("node:os");
   const path = require("node:path");
 

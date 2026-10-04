@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { runKernelAgentCommand } from "../../src/apps/cli/kernel-runner.js";
+import { mkdtemp } from "../helpers/tmp.js";
 
 test("CLI kernel runner can drive a V2 read tool loop", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "dsc-cli-runner-"));

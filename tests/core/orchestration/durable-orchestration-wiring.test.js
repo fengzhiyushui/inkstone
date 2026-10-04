@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os"; import path from "node:path"; import { promises as fs } from "node:fs";
 import { createKernel } from "../../../src/index.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 function mockGateway() {
   return {
@@ -20,7 +21,7 @@ function mockGateway() {
   };
 }
 const exists = async (p) => { try { await fs.stat(p); return true; } catch (e) { if (e.code === "ENOENT") return false; throw e; } };
-async function fixture() { const root = await fs.mkdtemp(path.join(os.tmpdir(), "m7-wire-")); await fs.writeFile(path.join(root, "a.js"), "base a\n"); return root; }
+async function fixture() { const root = await mkdtemp(path.join(os.tmpdir(), "m7-wire-")); await fs.writeFile(path.join(root, "a.js"), "base a\n"); return root; }
 const sidecars = (root) => ({
   worker: (id) => path.join(root, ".deepseek-code", "v2", "sessions", "proj", "paused", `${id}.json`),
   orch: (id) => path.join(root, ".deepseek-code", "v2", "sessions", "proj", "orchestration-paused", `${id}.json`),

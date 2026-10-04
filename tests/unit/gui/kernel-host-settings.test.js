@@ -4,11 +4,12 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 const require = createRequire(import.meta.url);
 const { createKernelHost } = require("../../../gui/kernel-host.js");
 
-async function tmp() { return fs.mkdtemp(path.join(os.tmpdir(), "dsc-set-")); }
+async function tmp() { return mkdtemp(path.join(os.tmpdir(), "dsc-set-")); }
 
 test("listModels returns ids on ok, throws on error, no default", async () => {
   const host = createKernelHost({ projectRoot: await tmp() });

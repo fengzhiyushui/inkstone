@@ -1,11 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { applyUnifiedDiff } from "../../../src/patch.js";
 import { createChangeStore } from "../../../src/edits/change-store.js";
 import { createRollbackService } from "../../../src/edits/rollback-service.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 const MODIFY_DIFF = "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new";
 

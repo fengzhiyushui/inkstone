@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { acquireProjectLock, requestProjectLockTakeover } from "../../../../src/core/recovery/project-lock.js";
+import { mkdtemp } from "../../../helpers/tmp.js";
 
 function ownerFilePath(root) {
   return path.join(root, ".deepseek-code", "v2", ".lock", "owner.json");

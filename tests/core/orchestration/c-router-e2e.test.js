@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os"; import path from "node:path"; import { promises as fs } from "node:fs";
 import { createKernel } from "../../../src/index.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 // Router triage (purpose=act) is dispatched by the "Classify this coding request" prompt;
 // the orchestrate machinery (planner/reviewer/synth/worker) reuses the c5/c3 e2e mock shape.
@@ -37,7 +38,7 @@ function recordingBus() {
 const AMBIG = "请处理这些校验逻辑";   // weak "这些" → score 1 → ambiguous band
 
 async function tmpRoot() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "c-router-e2e-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "c-router-e2e-"));
   await fs.writeFile(path.join(root, "package.json"), "{\"name\":\"demo\"}\n");
   return root;
 }

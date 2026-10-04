@@ -5,9 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import { query, cuesFromText } from "../../../src/core/memory/experience-retrieval.js";
 import { createExperienceStore } from "../../../src/core/memory/experience-store.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 const NOW = () => Date.parse("2026-01-01T00:00:00Z");
-async function tmpDir() { return fs.mkdtemp(path.join(os.tmpdir(), "exp-ret-")); }
+async function tmpDir() { return mkdtemp(path.join(os.tmpdir(), "exp-ret-")); }
 const entry = (id, over = {}) => ({
   id, kind: "procedural", lesson: "L" + id, cues: ["auth", "login"], provenance: { taskId: "t" },
   confidence: 0.5, validations: 0, misleads: 0, created: "2026-01-01T00:00:00Z", lastReinforced: "2026-01-01T00:00:00Z", tier: 2, ...over

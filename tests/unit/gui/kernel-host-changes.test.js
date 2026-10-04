@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { mkdtemp } from "../../helpers/tmp.js";
 const require = createRequire(import.meta.url);
 const { createKernelHost } = require("../../../gui/kernel-host.js");
 
@@ -19,7 +20,7 @@ const DIFF_A = [
 ].join("\n");
 
 async function tmpProject() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "dsc-chg-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "dsc-chg-"));
   await fs.mkdir(path.join(root, ".deepseek-code", "changes"), { recursive: true });
   return root;
 }
@@ -88,7 +89,7 @@ test("describeChange returns single-file slice with before/after + language", as
 });
 
 test("graceful: no changes dir → [], unparseable diff → null counts", async () => {
-  const empty = await fs.mkdtemp(path.join(os.tmpdir(), "dsc-chg-"));
+  const empty = await mkdtemp(path.join(os.tmpdir(), "dsc-chg-"));
   const host0 = createKernelHost({ projectRoot: empty });
   assert.deepEqual(await host0.listChanges(), []);
 

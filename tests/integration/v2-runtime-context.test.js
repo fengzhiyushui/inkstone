@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createKernel } from "../../src/index.js";
+import { mkdtemp } from "../helpers/tmp.js";
 
 test("runtime first tool-loop model call receives context summary", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "dsc-runtime-context-"));

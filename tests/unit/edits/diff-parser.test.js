@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, symlink } from "node:fs/promises";
+import { mkdir, writeFile, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -10,6 +10,7 @@ import {
   assertDiffPathsSafe
 } from "../../../src/edits/diff-parser.js";
 import { symlinkTraversalSupported, SYMLINK_SKIP_REASON } from "../../helpers/symlink-capability.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 test("normalizeUnifiedDiff extracts fenced unified diff", () => {
   const diff = normalizeUnifiedDiff("```diff\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new\n```");

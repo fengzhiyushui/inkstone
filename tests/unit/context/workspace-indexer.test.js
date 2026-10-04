@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { indexWorkspace, shouldSkipContextPath } from "../../../src/context/workspace-indexer.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 test("indexWorkspace indexes safe text files with context units", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "dsc-context-index-"));

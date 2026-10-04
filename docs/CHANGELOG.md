@@ -14,6 +14,16 @@
 
 ---
 
+## v1.11.4 — 2026-10-04 · 测试夹具回收（临时目录零泄漏）
+
+- **根因**：测试普遍用 `mkdtemp` 建夹具后从不回收，每轮全量测试在系统临时目录里堆 **282 个**孤儿目录；仓库历史上已累积 **13,937 个**（31 MB，最早可追到 2026-09-23）。
+- **统一出口 `tests/helpers/tmp.js`**：导出与 `node:fs` 同签名的 `mkdtemp` / `mkdtempSync` 包装，创建即登记，进程退出（含 `SIGINT`/`SIGTERM`）统一回收；**仅回收 `os.tmpdir()` 之下的路径**，越界一律跳过，避免误删工作区内容。
+- **全量迁移**：90 个测试文件统一改经助手取 `mkdtemp`，覆盖五种导入形态（具名导入 / 命名空间导入 / `promises as fs` / `createRequire` / 同步版）；两个夹具助手（`tests/unit/tui/helpers.js`、`tests/helpers/symlink-capability.js`）改为自清。
+- **防回归闸门 `tests/unit/tmp-hygiene-guard.test.js`**：① 子进程实操验证退出回收真的生效（用隔离 `TMPDIR`，断言退出后无残留）；② 静态扫描全部测试，禁止任何文件绕过助手直连 `node:fs` 的 `mkdtemp`。两条都已做**反向验证**（关掉回收后闸门确实失败）。
+- **结果**：全量测试临时目录泄漏 **282 → 0**（连续 3 轮实测），测试 1390 全绿。
+
+---
+
 ## v1.11.3 — 2026-10-01 · 测试脚手架隔离与项目清单健壮性
 
 - **冒烟测试不再污染真实项目清单**：GUI 冒烟此前用 `mkdtemp` 建临时项目后登记进**开发者真实的** `~/.deepseek-code/projects.json`，导致侧栏堆积大量已失效的 `dsc-gui-smoke-*` 死项目。现新增 `DEEPSEEK_CODE_GUI_PROJECT_REGISTRY_DIR`，冒烟模式默认把登记表落到临时目录（显式 env 优先）。

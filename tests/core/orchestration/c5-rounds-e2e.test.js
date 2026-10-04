@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os"; import path from "node:path"; import { promises as fs } from "node:fs";
 import { createKernel } from "../../../src/index.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 // Worker (singleton in-main, gated) calls diff_apply -> needs approval -> pauses.
 // kernel.agent.approve routes to orchestrator.resume -> worker applies -> completes.
@@ -29,7 +30,7 @@ function mockGateway(counters) {
 }
 
 test("orchestrate worker pauses on gated edit; kernel.approve routes to orchestrator.resume; completes; plan called once", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "c5-e2e-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "c5-e2e-"));
   await fs.writeFile(path.join(root, "a.js"), "base a\n");
   const counters = { plan: 0 };
   const kernel = await createKernel(root, {

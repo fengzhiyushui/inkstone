@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import os from "node:os"; import path from "node:path"; import { promises as fs } from "node:fs";
 import { createSemanticEngine } from "../../../src/context/semantic/semantic-engine.js";
 import { createWasmTreeSitterProvider } from "../../../src/context/semantic/wasm-tree-sitter-provider.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 async function project() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "mhints-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "mhints-"));
   await fs.mkdir(path.join(root, "src"));
   // seed() makes a member call to a uniquely-named function helperUnique
   await fs.writeFile(path.join(root, "src", "a.js"), "export function seed(){ x.helperUnique(); }\nexport function helperUnique(){}\n");

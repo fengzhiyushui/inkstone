@@ -8,11 +8,12 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
+import { rm, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createKernel } from "../../src/index.js";
 import { buildKernelOptions } from "../../src/apps/kernel-options.js";
+import { mkdtemp } from "../helpers/tmp.js";
 
 async function tmpProject() {
   const root = await mkdtemp(path.join(tmpdir(), "inkstone-mcp-scope-e2e-"));

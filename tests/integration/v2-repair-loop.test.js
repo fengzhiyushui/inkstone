@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createKernel } from "../../src/index.js";
@@ -8,6 +8,7 @@ import { createEventBus } from "../../src/shared/event-bus.js";
 import { createEditService } from "../../src/edits/edit-service.js";
 import { createBuiltinTools } from "../../src/tools/builtin/index.js";
 import { createToolRegistry } from "../../src/tools/registry.js";
+import { mkdtemp } from "../helpers/tmp.js";
 
 const BROKEN_DIFF = "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+broken";
 const REPAIR_DIFF = "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-broken\n+fixed";

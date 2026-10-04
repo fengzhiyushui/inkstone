@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createEventBus } from "../../../src/shared/event-bus.js";
 import { createContextEngine } from "../../../src/context/index.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 test("context engine scans and snapshots real workspace files", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "dsc-context-engine-"));

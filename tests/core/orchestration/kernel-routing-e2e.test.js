@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os"; import path from "node:path"; import { promises as fs } from "node:fs";
 import { createKernel } from "../../../src/index.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 // A mock model gateway: planner asks for JSON plan -> 2 subtasks; reviewer -> pass JSON; synth -> final; worker -> generic (no tool calls).
 function mockGateway() {
@@ -24,7 +25,7 @@ function mockGateway() {
 }
 
 test("simple message uses single lane; complex message orchestrates", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "orch-e2e-"));
+  const root = await mkdtemp(path.join(os.tmpdir(), "orch-e2e-"));
   const events = [];
   const kernel = await createKernel(root, {
     modelGateway: mockGateway(),

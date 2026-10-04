@@ -4,8 +4,9 @@ import os from "node:os"; import path from "node:path"; import { promises as fs 
 import { createEditService } from "../../../src/edits/edit-service.js";
 import { makeUnifiedDiff, mergeSubtask } from "../../../src/core/orchestration/merge-back.js";
 import { hashTree } from "../../../src/core/orchestration/workspace-snapshot.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
-async function tmp() { return fs.mkdtemp(path.join(os.tmpdir(), "merge-")); }
+async function tmp() { return mkdtemp(path.join(os.tmpdir(), "merge-")); }
 
 test("makeUnifiedDiff modify roundtrips through the real edit service", async () => {
   const main = await tmp();

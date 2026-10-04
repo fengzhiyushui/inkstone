@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile, symlink, lstat } from "node:fs/promises";
+import { mkdir, rm, writeFile, symlink, lstat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createTransactionJournal } from "../../../../src/core/recovery/transaction-journal.js";
+import { mkdtemp } from "../../../helpers/tmp.js";
 
 test("transaction journal recognizes symlink/junction and restores it as symlink on abort", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "dsc-symlink-rec-"));

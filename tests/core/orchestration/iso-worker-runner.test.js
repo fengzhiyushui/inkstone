@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import os from "node:os"; import path from "node:path"; import { promises as fs } from "node:fs";
 import { createIsoWorkerRunner } from "../../../src/core/orchestration/iso-worker-runner.js";
 import { removeIso } from "../../../src/core/orchestration/iso-workspace.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
-async function tmp() { return fs.mkdtemp(path.join(os.tmpdir(), "iso-run-")); }
+async function tmp() { return mkdtemp(path.join(os.tmpdir(), "iso-run-")); }
 
 test("runIsolatedWorker copies, runs worker in iso, reports actual changes; main untouched", async () => {
   const root = await tmp();

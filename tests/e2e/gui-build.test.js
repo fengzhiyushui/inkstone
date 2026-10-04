@@ -4,8 +4,9 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { mkdtemp, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import os from "node:os";
+import { mkdtemp } from "../helpers/tmp.js";
 
 // Gated: the Vite renderer build needs gui deps installed (network). Without them
 // this skips, so the core suite stays green in a no-deps environment (spec §11).

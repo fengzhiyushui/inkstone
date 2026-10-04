@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -10,6 +10,7 @@ import {
   sanitizeManifestRecord,
   projectRootHash
 } from "../../../src/context/context-manifest.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 test("createEmptyManifest creates schema v1 metadata container", () => {
   const manifest = createEmptyManifest({ root: "/repo", now: "2026-05-31T00:00:00.000Z" });

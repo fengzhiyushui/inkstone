@@ -2,11 +2,12 @@
 // 策略:仅精确键匹配(deepseek-v4-flash → deepseek-flash),未知/第三方端点 id 原样透传。
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { normalizeModels, normalizeConfig, DEFAULT_CONFIG, loadConfig } from "../../src/config.js";
 import { migrateModelId } from "../../src/deepseek/model-ids.js";
+import { mkdtemp } from "../helpers/tmp.js";
 
 test("normalizeModels migrates retired act id to current default", () => {
   const models = normalizeModels({ act: "deepseek-v4-flash" });

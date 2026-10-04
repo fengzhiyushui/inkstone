@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import process from "node:process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createKernel } from "../../src/index.js";
+import { mkdtemp } from "../helpers/tmp.js";
 
 test("createKernel integrates McpHub, exposes kernel.mcp facet, and cleans up on dispose", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "inkstone-mcp-kernel-"));

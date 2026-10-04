@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, symlink } from "node:fs/promises";
+import { mkdir, writeFile, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -10,6 +10,7 @@ import {
   normalizeRelativePath
 } from "../../../src/workspace/path-safety.js";
 import { symlinkTraversalSupported, SYMLINK_SKIP_REASON } from "../../helpers/symlink-capability.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 test("resolveWorkspacePath keeps relative paths inside project root", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "dsc-ws-"));

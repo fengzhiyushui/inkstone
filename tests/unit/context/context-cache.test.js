@@ -1,12 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   hydrateContextRecords,
   scanContextWithCache
 } from "../../../src/context/context-cache.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 test("scanContextWithCache saves metadata-only manifest and reuses unchanged files", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "dsc-context-cache-"));

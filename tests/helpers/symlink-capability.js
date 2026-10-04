@@ -7,9 +7,10 @@
 // 注意:这不是安全回归 —— resolveWorkspacePath / assertDiffPathsSafe 仍会**拒绝**该路径
 // (fail-closed),只是错误类型不是规范化消息。故此处按能力门控 skip,与仓库既有惯例一致
 // (gui-smoke 无 Electron 则 skip、TUI 真 pty smoke 无 node-pty 则 skip)。
-import { mkdtemp, writeFile, symlink, realpath } from "node:fs/promises";
+import { writeFile, symlink, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { mkdtemp } from "./tmp.js";
 
 export const SYMLINK_SKIP_REASON =
   "平台无法解析符号链接/junction(realpath 抛 UNKNOWN),无法构造越界链接前提";
@@ -18,15 +19,22 @@ let cached = null;
 
 export async function symlinkTraversalSupported() {
   if (cached !== null) return cached;
+  let root = null;
+  let outside = null;
   try {
-    const root = await mkdtemp(path.join(tmpdir(), "dsc-symprobe-"));
-    const outside = await mkdtemp(path.join(tmpdir(), "dsc-symprobe-out-"));
+    root = await mkdtemp(path.join(tmpdir(), "dsc-symprobe-"));
+    outside = await mkdtemp(path.join(tmpdir(), "dsc-symprobe-out-"));
     await writeFile(path.join(outside, "probe.txt"), "x");
     await symlink(outside, path.join(root, "link"), "junction");
     await realpath(path.join(root, "link", "probe.txt"));
     cached = true;
   } catch {
     cached = false;
+  } finally {
+    // 探测是一等公民夹具,不能因为"只跑一次"就漏在临时目录里
+    for (const dir of [root, outside]) {
+      if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});
+    }
   }
   return cached;
 }

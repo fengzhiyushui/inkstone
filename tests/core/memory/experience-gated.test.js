@@ -5,10 +5,11 @@ import os from "node:os";
 import path from "node:path";
 import { createConsolidator } from "../../../src/core/memory/experience-consolidator.js";
 import { createExperienceStore } from "../../../src/core/memory/experience-store.js";
+import { mkdtemp } from "../../helpers/tmp.js";
 
 const NOW = () => Date.parse("2026-02-01T00:00:00Z");
 const cfg = { maxLessonsPerTask: 5, cap: 200, thresholds: { T1: 0.7, T2: 0.4, T3: 0.2 }, decayPerDay: 0.02, dedupThreshold: 0.6 };
-async function tmpDir() { return fs.mkdtemp(path.join(os.tmpdir(), "exp-gated-")); }
+async function tmpDir() { return mkdtemp(path.join(os.tmpdir(), "exp-gated-")); }
 const riskLesson = () => JSON.stringify([{ kind: "risk", lesson: "rm -rf wipes the db", cues: ["migrate", "delete"], confidence: 0.5 }]);
 const procLesson = () => JSON.stringify([{ kind: "procedural", lesson: "prefer pooled connections", cues: ["pool", "connection"], confidence: 0.5 }]);
 
