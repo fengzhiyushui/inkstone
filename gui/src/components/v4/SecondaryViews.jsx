@@ -196,6 +196,12 @@ export function AddMcpModal({ open, onClose, onAdd, onAdded, t }) {
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState(null);
   const [activePreset, setActivePreset] = React.useState(null);
+  // v1.12.0:远程 Streamable HTTP / legacy SSE 接入
+  const [transport, setTransport] = React.useState("stdio");
+  const [url, setUrl] = React.useState("");
+  const [remoteType, setRemoteType] = React.useState("streamable-http");
+  const [headersJson, setHeadersJson] = React.useState("");
+  const [allowPrivate, setAllowPrivate] = React.useState("");
 
   const PRESETS = [
     {
@@ -268,6 +274,71 @@ export function AddMcpModal({ open, onClose, onAdd, onAdded, t }) {
       setError("服务 ID 格式无效，只支持英文字母、数字、短横线与下划线。");
       return;
     }
+
+    let parsedAutoApprove = [];
+    if (autoApprove.trim()) {
+      parsedAutoApprove = autoApprove.split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean);
+    }
+
+    // ── v1.12.0:远程(HTTP)分支 ─────────────────────────────────────────────
+    if (transport === "http") {
+      const trimmedUrl = url.trim();
+      if (!trimmedUrl) {
+        setError("远程服务必须填写 URL。");
+        return;
+      }
+      try {
+        const parsedUrl = new URL(trimmedUrl);
+        if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+          setError("URL 只支持 http:// 或 https://。");
+          return;
+        }
+      } catch {
+        setError("URL 格式无效。");
+        return;
+      }
+      let parsedHeaders = {};
+      if (headersJson.trim()) {
+        try {
+          parsedHeaders = JSON.parse(headersJson);
+        } catch (err) {
+          setError(`请求头必须为合法的 JSON 对象: ${err.message}`);
+          return;
+        }
+        if (!parsedHeaders || typeof parsedHeaders !== "object" || Array.isArray(parsedHeaders)) {
+          setError("请求头必须为 JSON 对象。");
+          return;
+        }
+      }
+      const allowlist = allowPrivate
+        .split(/[,，\s]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      setSubmitting(true);
+      try {
+        if (!onAdd) throw new Error("MCP 内核服务未就绪");
+        const res = await onAdd(trimmedId, {
+          url: trimmedUrl,
+          type: remoteType,
+          autoApprove: parsedAutoApprove,
+          headers: parsedHeaders,
+          ...(allowlist.length ? { allowlist } : {})
+        });
+        if (res && res.status === "ERROR") {
+          setError(`服务添加成功但连接异常: ${res.error || "未知原因"}`);
+          setSubmitting(false);
+        } else {
+          await onAdded?.();
+          onClose();
+        }
+      } catch (err) {
+        setError(err.message || "添加失败");
+        setSubmitting(false);
+      }
+      return;
+    }
+
     const trimmedCommand = command.trim();
     if (!trimmedCommand) {
       setError("执行命令不能为空。");
@@ -277,11 +348,6 @@ export function AddMcpModal({ open, onClose, onAdd, onAdded, t }) {
     let parsedArgs = [];
     if (args.trim()) {
       parsedArgs = args.trim().split(/\s+/).filter(Boolean);
-    }
-
-    let parsedAutoApprove = [];
-    if (autoApprove.trim()) {
-      parsedAutoApprove = autoApprove.split(/[,，\s]+/).map((s) => s.trim()).filter(Boolean);
     }
 
     let parsedEnv = {};
@@ -350,6 +416,30 @@ export function AddMcpModal({ open, onClose, onAdd, onAdded, t }) {
 
           <form onSubmit={handleSubmit}>
             <div className="mcp-form-group">
+              <label className="mcp-form-label">接入方式 *</label>
+              <div className="mcp-transport-pick" role="radiogroup" aria-label="接入方式">
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={transport === "stdio"}
+                  className={`mcp-tp ${transport === "stdio" ? "on" : ""}`}
+                  onClick={() => { setTransport("stdio"); setError(null); }}
+                >
+                  本地进程 (stdio)
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={transport === "http"}
+                  className={`mcp-tp ${transport === "http" ? "on" : ""}`}
+                  onClick={() => { setTransport("http"); setError(null); }}
+                >
+                  远程 HTTP
+                </button>
+              </div>
+            </div>
+
+            <div className="mcp-form-group">
               <label className="mcp-form-label">服务标识 (Server ID) *</label>
               <input
                 type="text"
@@ -361,17 +451,69 @@ export function AddMcpModal({ open, onClose, onAdd, onAdded, t }) {
               />
             </div>
 
-            <div className="mcp-form-group">
-              <label className="mcp-form-label">执行命令 (Command) *</label>
-              <input
-                type="text"
-                className="mcp-form-input mono"
-                placeholder="例如: npx, node, python, uvx"
-                value={command}
-                onChange={(e) => setCommand(e.target.value)}
-                required
-              />
-            </div>
+            {transport === "http" && (
+              <>
+                <div className="mcp-form-group">
+                  <label className="mcp-form-label">服务地址 (URL) *</label>
+                  <input
+                    type="text"
+                    className="mcp-form-input mono"
+                    placeholder="例如: https://mcp.example.com/mcp"
+                    value={url}
+                    onChange={(e) => { setUrl(e.target.value); setActivePreset(null); }}
+                  />
+                </div>
+                <div className="mcp-form-group">
+                  <label className="mcp-form-label">传输类型</label>
+                  <select
+                    className="mcp-form-input"
+                    value={remoteType}
+                    onChange={(e) => setRemoteType(e.target.value)}
+                  >
+                    <option value="streamable-http">streamable-http（推荐）</option>
+                    <option value="sse">sse（legacy，已废弃）</option>
+                  </select>
+                </div>
+                <div className="mcp-form-group">
+                  <label className="mcp-form-label">请求头 (Headers，可选 JSON)</label>
+                  <textarea
+                    rows={2}
+                    className="mcp-form-input mono"
+                    placeholder='例如: {"Authorization": "Bearer ${input:tok}"}'
+                    value={headersJson}
+                    onChange={(e) => setHeadersJson(e.target.value)}
+                  />
+                </div>
+                <div className="mcp-form-group">
+                  <label className="mcp-form-label">私网放行 (可选，逗号分隔 IP/CIDR)</label>
+                  <input
+                    type="text"
+                    className="mcp-form-input mono"
+                    placeholder="例如: 127.0.0.1, 10.0.0.0/8"
+                    value={allowPrivate}
+                    onChange={(e) => setAllowPrivate(e.target.value)}
+                  />
+                  <div className="mcp-input-desc">
+                    出于 SSRF 防护，内网与本机地址默认被拒绝；仅在此显式列出的目标才会放行。
+                  </div>
+                </div>
+              </>
+            )}
+
+            {transport === "stdio" && (
+              <>
+                <div className="mcp-form-group">
+                  <label className="mcp-form-label">执行命令 (Command) *</label>
+                  <input
+                    type="text"
+                    className="mcp-form-input mono"
+                    placeholder="例如: npx, node, python, uvx"
+                    value={command}
+                    onChange={(e) => setCommand(e.target.value)}
+                  />
+                </div>
+              </>
+            )}
 
             <div className="mcp-form-group">
               <label className="mcp-form-label">参数列表 (Arguments，空格分隔)</label>
@@ -666,8 +808,15 @@ export function McpView({ t, kernel, onRequestConfirm }) {
                           )}
                         </div>
                         <div className="ad" style={{ fontFamily: "var(--font-mono, monospace)", fontSize: "11px", marginTop: "2px" }}>
-                          {srv.command} {(srv.args || []).join(" ")}
+                          {srv.url
+                            ? <>{srv.url} <span style={{ color: "var(--text-faint)" }}>[{srv.type || "streamable-http"}]</span></>
+                            : <>{srv.command} {(srv.args || []).join(" ")}</>}
                         </div>
+                        {srv.deprecatedTransport && (
+                          <div style={{ fontSize: "10px", color: "#eab308", marginTop: "2px" }}>
+                            legacy SSE 传输已废弃，建议改用 streamable-http
+                          </div>
+                        )}
                       </div>
 
                       <div className="spacer" />

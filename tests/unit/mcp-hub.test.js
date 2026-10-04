@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import process from "node:process";
+import http from "node:http";
+import { once } from "node:events";
 import { McpHub } from "../../src/tools/mcp/mcp-hub.js";
 import { createToolRegistry } from "../../src/tools/registry.js";
 
@@ -185,4 +187,74 @@ test("McpHub.addServer and removeServer support dynamic hot-plugging", async () 
   const notFoundRes = await hub.removeServer("non_existent");
   assert.equal(notFoundRes.ok, false);
   assert.equal(notFoundRes.notFound, true);
+});
+
+// ── v1.12.0:远程 Streamable HTTP 服务经 hub 装配工具 ────────────────────────
+test("McpHub 连接远程 Streamable HTTP 服务并挂载工具", async () => {
+  const server = http.createServer((req, res) => {
+    let body = "";
+    req.setEncoding("utf8");
+    req.on("data", (c) => { body += c; });
+    req.on("end", () => {
+      const msg = JSON.parse(body);
+      const send = (p) => {
+        const t = JSON.stringify(p);
+        res.writeHead(200, { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(t) });
+        res.end(t);
+      };
+      if (msg.id === undefined) { res.writeHead(202); res.end(); return; }
+      if (msg.method === "server/discover") {
+        send({ jsonrpc: "2.0", id: msg.id, result: { era: "modern", protocolVersion: "2026-07-28", supportedVersions: ["2026-07-28"], serverInfo: { name: "hub-remote" }, capabilities: {} } });
+      } else if (msg.method === "tools/list") {
+        send({
+          jsonrpc: "2.0", id: msg.id,
+          result: {
+            tools: [{
+              name: "remote_echo",
+              description: "Echo from remote hub mock",
+              inputSchema: { type: "object", properties: { text: { type: "string" } } }
+            }]
+          }
+        });
+      } else if (msg.method === "tools/call") {
+        send({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text: `echo:${msg.params?.arguments?.text ?? ""}` }] } });
+      } else {
+        send({ jsonrpc: "2.0", id: msg.id, error: { code: -32601, message: "nf" } });
+      }
+    });
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const url = `http://127.0.0.1:${server.address().port}/mcp`;
+
+  const registry = createToolRegistry();
+  const hub = new McpHub({
+    config: { mcpServers: { remote: { url, type: "streamable-http", allowlist: ["127.0.0.1"] } } },
+    toolRegistry: registry
+  });
+
+  try {
+    const results = await hub.initAll();
+    assert.equal(results.length, 1);
+    assert.equal(results[0].status, "CONNECTED", JSON.stringify(results[0]));
+    assert.equal(results[0].toolCount, 1);
+
+    // 工具以 mcp__<server>__<tool> 命名空间挂进注册表
+    const tool = registry.resolve("mcp__remote__remote_echo");
+    assert.ok(tool, "远程工具应挂载到注册表");
+    assert.equal(tool.source, "mcp");
+
+    // 直接经 hub 调用,验证请求真的发出去了
+    const echoed = await hub.callTool("mcp__remote__remote_echo", { text: "hi" });
+    assert.equal(echoed, "echo:hi");
+
+    // listServers 暴露远程元信息
+    const servers = hub.listServers();
+    assert.equal(servers[0].url, url);
+    assert.equal(servers[0].type, "streamable-http");
+    assert.equal(servers[0].protocolMode, "modern");
+  } finally {
+    await hub.stopAll();
+    await new Promise((r) => server.close(r));
+  }
 });

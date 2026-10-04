@@ -46,6 +46,17 @@ export function normalizeServerConfig(serverId, raw = {}) {
   if (raw.headers && typeof raw.headers === "object" && !Array.isArray(raw.headers)) {
     normalized.headers = { ...raw.headers };
   }
+  // v1.12.0:SSRF 私网放行清单必须原样保留 —— 否则远程配置在归一化这一步就被削掉,
+  // 内网自建 Server 永远连不上(且现象是"被安全策略拒绝",很难定位)。
+  if (Array.isArray(raw.allowlist) && raw.allowlist.length) {
+    normalized.allowlist = raw.allowlist.map(String).filter((s) => s.trim());
+  }
+  if (typeof raw.retryOnStreamBreak === "number" && raw.retryOnStreamBreak >= 0) {
+    normalized.retryOnStreamBreak = raw.retryOnStreamBreak;
+  }
+  if (typeof raw.maxRedirects === "number" && raw.maxRedirects >= 0) {
+    normalized.maxRedirects = raw.maxRedirects;
+  }
   if (raw.oauth && typeof raw.oauth === "object") {
     normalized.oauth = { ...raw.oauth };
   }

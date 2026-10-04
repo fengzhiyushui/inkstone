@@ -14,6 +14,23 @@
 
 ---
 
+## v1.12.0 — 2026-10-04 · MCP Streamable HTTP（远程接入）
+
+> 小版本发布：把 MCP 接入从「本地 stdio 子进程」扩展到「远程 HTTP 服务」——统一传输抽象、标准 Streamable HTTP 请求头、请求级 SSE、逐跳 SSRF 校验与私网放行清单，并保留 legacy HTTP+SSE 兼容通道（标注废弃）。三端可配置、可自检。
+
+- **传输抽象（C1）**：新增 `src/tools/mcp/transport.js`，把 stdio / Streamable HTTP / legacy SSE 收敛到同一契约（`start`/`send`/`close`/`getRecentStderr` + `message`/`error`/`close` 事件）。`McpClient` 改经工厂选择传输，**既有 stdio 调用方与测试零改动**。
+- **Streamable HTTP 传输（C2）**：新增 `http-transport.js` + `http-client.js`：POST JSON-RPC、`Accept: application/json, text/event-stream`、标准头 `Mcp-Method` / `Mcp-Name` / `MCP-Protocol-Version`（协商后自动回填）、`Mcp-Session-Id` 会话捕获与回填；响应支持 `application/json`（含数组批应答）与 `text/event-stream`（请求级 SSE，一次 POST 可回流多条消息）。
+- **断流语义（C3）**：新增 `sse.js`（SSE 解析器，支持多行 `data`、注释 keep-alive、跨 chunk 边界）。流中断判定为可重发错误并按 `retryOnStreamBreak` 重试；**不依赖 Last-Event-ID 续传**，而是发出全新 HTTP 请求，服务端不会命中旧请求状态。
+- **legacy SSE（C4）**：新增 `sse-transport.js`，支持长连 `GET` + `event: endpoint` + POST 到 endpoint 的旧协议；标记 `deprecated` 并经 `server_deprecated` 事件、CLI 与 GUI 提示，推荐改用 `streamable-http`。
+- **headers 与超时（C5）**：静态请求头与 `${input:*}` 模板（沿用 v1.11.2 的 inputs 体系）均可用于远程服务；请求级超时经 `AbortController` 中止，关闭时统一 abort 在途请求。
+- **SSRF 加固（C6）**：`src/security/ssrf.js` 新增**私网放行清单**（精确 IP / CIDR / hostname），未列出目标仍 fail-closed；HTTP 客户端**逐跳校验重定向**，跨 origin 时自动剥离 `Authorization` 等凭据头；出站连接沿用 DNS 固定（pinned lookup）防 rebinding。
+- **三端配置与自检（C7）**：`mcp add` 支持 `--url/--type/--headers/--allow-private`；`mcp check` 连通远程服务并显示协商协议；`mcp list` 标注传输类型与 legacy 弃用提示。GUI「添加 MCP 服务」新增**接入方式选择**（本地进程 / 远程 HTTP）与 URL、类型、请求头、私网放行字段，服务卡片展示地址与类型。
+- **修复的接线缺陷（重要）**：`src/config.js` 的 `normalizeMcpServers` 原先只认 `command`，会把 `url` 型服务**静默丢弃**（远程 Server 永远到不了 hub）；`config-loader` 的归一化也会削掉 `allowlist`。两者均已修正并加测试锁定。
+- **测试（C8）**：新增 `mcp-http-transport`（13 项：标准头、JSON/SSE 应答、通知 202、错误分类、断流重发、SSRF 逐跳与凭据剥离、会话 id、SSE 解析）与 `mcp-http-e2e`（7 项：mock Streamable HTTP 走通 discover→tools/list→tools/call、-32022 版本回退、SSRF 拒绝、工厂契约）；`mcp-hub` 增远程装配用例，`mcp-cli` 增 6 项远程命令用例，`mcp-config-loader` 增 2 项字段保留用例。
+- **顺带修复**：`src/theme.js` 的 CLI 标语存在一处**已入库的编码损坏** ——「面向 DeepSeek 的本地 AI 编程 Agent」里「地」字丢失一个末位字节，导致该处渲染为替换字符（U+FFFD）。已按原始语义修复，并全库扫描确认无其它残留替换字符。
+
+---
+
 ## v1.11.4 — 2026-10-04 · 测试夹具回收（临时目录零泄漏）
 
 - **根因**：测试普遍用 `mkdtemp` 建夹具后从不回收，每轮全量测试在系统临时目录里堆 **282 个**孤儿目录；仓库历史上已累积 **13,937 个**（31 MB，最早可追到 2026-09-23）。

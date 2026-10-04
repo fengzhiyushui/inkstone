@@ -2,7 +2,7 @@
 
 - 类型：实施计划 (Plan)
 - 日期：2026-09-29
-- 状态：进行中（v1.11.1 / v1.11.2 已收口，2026-09-30；v1.11.3+ 未开工）
+- 状态：进行中（v1.11.1 / v1.11.2 / v1.12.0 已收口，2026-10-04；v1.13.0+ 未开工）
 - 关联：[MCP Client v2 设计规格](../../specs/architecture/2026-09-29-mcp-client-v2-design.md) · [v1.11.0 MCP 首版](../../specs/architecture/2026-09-28-v1.11.0-mcp-integration-design.md) · [post-V3 路线图](../../specs/architecture/2026-09-17-post-v3-roadmap-design.md) · [权限引擎](../../specs/backend/2026-05-30-v2-7-approval-resume-design.md)
 
 > 协议事实以 modelcontextprotocol.io **2026-07-28** 为准（2026-09-29 联网核对）：Modern 无握手、per-request `_meta`；Legacy `initialize`；标准 transport = stdio + Streamable HTTP。
@@ -124,7 +124,11 @@
 | C7 | CLI/GUI | 远程 `check`；url/type 字段 |
 | C8 | 测试 | mock HTTP、重发、SSRF 拒绝 |
 
-**验收**：连 mock Streamable HTTP 完成 discover/tools/call；恶意 URL 被拒。
+**结果（2026-10-04）**：C1–C8 全部落地。新增 `transport.js`（统一传输工厂）、`http-client.js`（DNS 固定 + 逐跳校验 + 跨 origin 剥凭据头）、`http-transport.js`（POST JSON-RPC + 请求级 SSE + 标准头 + 断流重发）、`sse.js`（SSE 解析器）、`sse-transport.js`（legacy 兼容，标记 deprecated）；`ssrf.js` 增私网放行清单（精确 IP / CIDR / hostname，未列出仍 fail-closed）。
+
+**收口时发现并修复的接线缺陷（重要）**：`src/config.js` 的 `normalizeMcpServers` 只认 `command`，会把 `url` 型服务**静默丢弃** —— 远程 Server 永远到不了 McpHub；`config-loader.normalizeServerConfig` 也会削掉 `allowlist`（现象是"被安全策略拒绝"，难以定位）。两者已改为委托统一归一化并加测试锁定。关键决策：断流重发**不**用 Last-Event-ID 续传，而是发全新 HTTP 请求（服务端不命中旧请求状态）；legacy SSE 保留但明确标废弃。
+
+**验收**：连 mock Streamable HTTP 完成 discover/tools/call；恶意 URL 被拒。（已达成：`mcp-http-e2e` 覆盖 JSON 与 SSE 两种应答、-32022 版本回退、SSRF 拒绝；全量测试 1424 通过）
 
 ---
 
@@ -256,7 +260,7 @@ git diff --check
 |------|------|
 | v1.11.1 | **已完成**（2026-09-29，dual-era + 可靠性） |
 | v1.11.2 | **已完成**（2026-09-29 落地 / 2026-09-30 收口补齐 B7 + 入口接线） |
-| v1.12.0 | 未开工 |
+| v1.12.0 | **已完成**（2026-10-04，Streamable HTTP + 逐跳 SSRF + legacy SSE 兼容） |
 | v1.13.0 | 未开工 |
 | v1.14.0 | 未开工 |
 | v1.15.0 | 未开工 |

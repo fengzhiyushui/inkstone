@@ -4,7 +4,8 @@ import {
   validateFetchUrl,
   validateResolvedAddress,
   isPrivateIPv4,
-  isReservedIPv4
+  isReservedIPv4,
+  isAllowedByList
 } from "../../../src/security/ssrf.js";
 import { redactSecrets } from "../../../src/security/redactor.js";
 
@@ -66,8 +67,7 @@ test("isPrivateIPv4 checks exact private ranges", () => {
   assert.equal(isPrivateIPv4("10.2.3.4"), true);
   assert.equal(isPrivateIPv4("172.16.0.1"), true);
   assert.equal(isPrivateIPv4("172.32.0.1"), false);
-  assert.equal(isPrivateIPv4("192.168.1.1"), true);
-  assert.equal(isPrivateIPv4("8.8.8.8"), false);
+  assert.equal(isPrivateIPv4("192.168.1.1"), true);  assert.equal(isPrivateIPv4("8.8.8.8"), false);
 });
 
 test("redactSecrets redacts common secret assignment forms", () => {
@@ -121,4 +121,63 @@ test("redactSecrets handles undefined and circular values without throwing", () 
 test("redactSecrets does not redact ordinary hashes or short source literals", () => {
   const hash = "9f86d081884c7d659a2feaa0c55ad015";
   assert.equal(redactSecrets(`sha256=${hash} const token = \"short\";`), `sha256=${hash} const token = \"short\";`);
+});
+
+// ── v1.12.0:私网 allowlist(MCP 自建内网 Server 场景) ────────────────────────
+test("allowlist 精确放行列出的私网地址,其余仍 fail-closed", async () => {
+  const opts = { allowlist: ["127.0.0.1", "192.168.1.10"] };
+  assert.equal((await validateFetchUrl("http://127.0.0.1:8080/mcp", opts)).href, "http://127.0.0.1:8080/mcp");
+  assert.equal((await validateFetchUrl("http://192.168.1.10/mcp", opts)).href, "http://192.168.1.10/mcp");
+  // 未列出的内网/环回依然被拒 —— allowlist 不是全局开关
+  await assert.rejects(() => validateFetchUrl("http://127.0.0.2/mcp", opts), /blocked/i);
+  await assert.rejects(() => validateFetchUrl("http://192.168.1.11/mcp", opts), /blocked/i);
+  await assert.rejects(() => validateFetchUrl("http://10.0.0.1/mcp", opts), /blocked/i);
+});
+
+test("allowlist 支持 CIDR 段", async () => {
+  const opts = { allowlist: ["127.0.0.0/8", "10.1.0.0/16"] };
+  assert.equal((await validateFetchUrl("http://127.0.0.5:9/mcp", opts)).href, "http://127.0.0.5:9/mcp");
+  assert.equal((await validateFetchUrl("http://10.1.2.3/mcp", opts)).href, "http://10.1.2.3/mcp");
+  await assert.rejects(() => validateFetchUrl("http://10.2.0.1/mcp", opts), /blocked private network/);
+});
+
+test("allowlist 可放行 hostname,并覆盖其解析结果", async () => {
+  const opts = { allowlist: ["mcp.internal"] };
+  const resolved = await validateFetchUrl("http://mcp.internal:3000/mcp", {
+    lookup: async () => ({ address: "10.0.0.9" }),
+    ...opts
+  });
+  assert.equal(resolved.href, "http://mcp.internal:3000/mcp");
+  // 同一 allowlist 不影响别的 hostname
+  await assert.rejects(
+    () => validateFetchUrl("http://other.internal:3000/mcp", {
+      lookup: async () => ({ address: "10.0.0.9" }),
+      ...opts
+    }),
+    /blocked private network/
+  );
+});
+
+test("allowlist 不因命中而放行非 http(s) 协议", async () => {
+  await assert.rejects(
+    () => validateFetchUrl("file:///etc/passwd", { allowlist: ["127.0.0.1"] }),
+    /unsupported protocol/
+  );
+});
+
+test("非法 allowlist CIDR 立即报错(配置错误不静默降级)", async () => {
+  await assert.rejects(
+    () => validateFetchUrl("http://127.0.0.1/mcp", { allowlist: ["127.0.0.0/33"] }),
+    /invalid SSRF allowlist CIDR/
+  );
+});
+
+test("isAllowedByList 精确匹配与 CIDR 边界", () => {
+  assert.equal(isAllowedByList("127.0.0.1", ["127.0.0.1"]), true);
+  assert.equal(isAllowedByList("127.0.0.1", ["127.0.0.2"]), false);
+  assert.equal(isAllowedByList("10.0.0.255", ["10.0.0.0/24"]), true);
+  assert.equal(isAllowedByList("10.0.1.0", ["10.0.0.0/24"]), false);
+  assert.equal(isAllowedByList("8.8.8.8", ["0.0.0.0/0"]), true);
+  assert.equal(isAllowedByList("8.8.8.8", []), false);
+  assert.equal(isAllowedByList("8.8.8.8"), false);
 });

@@ -11,6 +11,7 @@ import {
   looksLikeSecret,
   auditConfigSecrets,
   normalizeServersMap,
+  normalizeServerConfig,
   bindInputs
 } from "../../src/tools/mcp/config-loader.js";
 import { mkdtempSync } from "../helpers/tmp.js";
@@ -139,6 +140,31 @@ test("normalizeServersMap requires command or url and accepts type http alias", 
   assert.equal(map.a.type, "stdio");
   assert.equal(map.b.type, "streamable-http");
   assert.throws(() => normalizeServersMap({ bad: {} }), /command' or 'url'/);
+});
+
+// ── v1.12.0:远程传输相关字段必须原样保留 ────────────────────────────────────
+test("normalizeServerConfig 保留 url/type/headers/allowlist(远程接入不丢字段)", () => {
+  const cfg = normalizeServerConfig("remote", {
+    url: "https://mcp.example/mcp",
+    type: "streamable-http",
+    headers: { Authorization: "Bearer ${input:tok}" },
+    allowlist: ["127.0.0.1", "10.0.0.0/8"],
+    retryOnStreamBreak: 2,
+    maxRedirects: 3
+  });
+  assert.equal(cfg.type, "streamable-http");
+  assert.equal(cfg.url, "https://mcp.example/mcp");
+  assert.deepEqual(cfg.headers, { Authorization: "Bearer ${input:tok}" });
+  assert.deepEqual(cfg.allowlist, ["127.0.0.1", "10.0.0.0/8"]);
+  assert.equal(cfg.retryOnStreamBreak, 2);
+  assert.equal(cfg.maxRedirects, 3);
+});
+
+test("normalizeServerConfig 推断类型并接受 sse(legacy)", () => {
+  assert.equal(normalizeServerConfig("a", { url: "https://x/mcp" }).type, "streamable-http");
+  assert.equal(normalizeServerConfig("b", { url: "https://x/mcp", type: "sse" }).type, "sse");
+  assert.equal(normalizeServerConfig("c", { command: "node" }).type, "stdio");
+  assert.throws(() => normalizeServerConfig("d", { url: "https://x", type: "nope" }), /unknown type/);
 });
 
 test("bindInputs prefers value then credentials-less default", () => {

@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { CURRENT_MODELS, migrateModelId } from "./deepseek/model-ids.js";
+import { normalizeServerConfig } from "./tools/mcp/config-loader.js";
 
 const DEFAULT_ORCH_MARKERS = [
   "这几个", "这些", "分别", "各自", "逐个", "逐一", "重构整个", "迁移", "跨多个文件", "跨文件",
@@ -356,17 +357,15 @@ export function normalizeMcpServers(raw = {}) {
     if (!key || typeof key !== "string" || !val || typeof val !== "object") {
       continue;
     }
-    const command = String(val.command || "").trim();
-    if (!command) continue;
-    result[key] = {
-      command,
-      args: Array.isArray(val.args) ? val.args.map(String) : [],
-      env: val.env && typeof val.env === "object" && !Array.isArray(val.env) ? { ...val.env } : {},
-      disabled: Boolean(val.disabled),
-      autoApprove: Array.isArray(val.autoApprove) ? val.autoApprove.map(String) : [],
-      ...(typeof val.cwd === "string" && val.cwd.trim() ? { cwd: val.cwd.trim() } : {}),
-      timeoutMs: typeof val.timeoutMs === "number" && val.timeoutMs > 0 ? val.timeoutMs : 60000
-    };
+    // v1.12.0:委托给统一的归一化实现,而不是在这里重写一份。
+    // 旧实现只认 `command`,会把 `url` 型(Streamable HTTP / legacy SSE)服务**静默丢弃**,
+    // 导致远程 Server 永远到不了 McpHub。
+    try {
+      result[key] = normalizeServerConfig(key, val);
+    } catch {
+      // 单条非法配置不应让整份配置加载失败;跳过它,其余照常生效。
+      continue;
+    }
   }
   return result;
 }

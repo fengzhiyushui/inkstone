@@ -412,6 +412,30 @@ async function runResume(root) {
   }
 }
 
+/**
+ * v1.12.0:私网放行清单的收集。
+ *
+ * SSRF 默认拒绝私网/环回;自建内网 MCP Server 需显式放行。三个来源按优先级:
+ *   --allow-private 命令行(可重复) > server 配置的 allowlist > 项目配置的 httpAllowlist
+ */
+function collectFlagAllowlist(flags) {
+  const raw = flags?.get?.("allow-private");
+  if (!raw) return [];
+  const list = Array.isArray(raw) ? raw : [raw];
+  return list.flatMap((v) => String(v).split(",")).map((s) => s.trim()).filter(Boolean);
+}
+
+function collectHttpAllowlist(srvConfig = {}, config = {}, flags = null) {
+  const fromFlag = collectFlagAllowlist(flags);
+  if (fromFlag.length) return fromFlag;
+  // 合并而非覆盖:server 级 + 项目级都生效,任一条目命中即放行
+  const merged = [
+    ...(Array.isArray(srvConfig.allowlist) ? srvConfig.allowlist : []),
+    ...(Array.isArray(config.httpAllowlist) ? config.httpAllowlist : [])
+  ].map((s) => String(s).trim()).filter(Boolean);
+  return [...new Set(merged)];
+}
+
 async function runMcp(root, args, flags) {
   const action = args[0] || "list";
   const config = await loadConfig(root, { allowMissingKey: true });
@@ -427,8 +451,16 @@ async function runMcp(root, args, flags) {
     console.log(section(`已配置的 MCP 服务 (${serverKeys.length} 个)`));
     for (const [serverId, srv] of Object.entries(mcpServers)) {
       const stateBadge = srv.disabled ? color.dim("[已禁用]") : color.green("[已启用]");
-      console.log(`\n• ${color.bold(serverId)} ${stateBadge}`);
-      console.log(`  命令: ${srv.command} ${(srv.args || []).join(" ")}`);
+      const type = srv.type || (srv.url ? "streamable-http" : "stdio");
+      console.log(`\n• ${color.bold(serverId)} ${stateBadge} ${color.dim(`[${type}]`)}`);
+      if (srv.url) {
+        console.log(`  地址: ${srv.url}`);
+        if (type === "sse") {
+          console.log(`  ${color.yellow("注意: legacy SSE 传输已废弃,建议改用 streamable-http")}`);
+        }
+      } else {
+        console.log(`  命令: ${srv.command} ${(srv.args || []).join(" ")}`);
+      }
       if (srv.autoApprove?.length) {
         console.log(`  免审批工具: ${srv.autoApprove.join(", ")}`);
       }
@@ -447,7 +479,8 @@ async function runMcp(root, args, flags) {
       throw new Error(`未找到名为 "${serverId}" 的 MCP 服务配置。`);
     }
 
-    console.log(`正在连接 MCP 服务 "${serverId}"...`);
+    const type = srvConfig.type || (srvConfig.url ? "streamable-http" : "stdio");
+    console.log(`正在连接 MCP 服务 "${serverId}" (${type})...`);
     const { McpClient } = await import("./tools/mcp/mcp-client.js");
     const client = new McpClient({
       serverId,
@@ -455,12 +488,24 @@ async function runMcp(root, args, flags) {
       args: srvConfig.args,
       env: srvConfig.env,
       cwd: srvConfig.cwd || root,
-      timeoutMs: srvConfig.timeoutMs || 15000
+      timeoutMs: srvConfig.timeoutMs || 15000,
+      // v1.12.0:远程传输 —— url/type/headers 透传;私网放行沿用配置,
+      // 也允许 --allow-private 临时放行(便于本机自建 Server 自检)。
+      url: srvConfig.url,
+      type: srvConfig.type,
+      headers: srvConfig.headers,
+      allowlist: collectHttpAllowlist(srvConfig, config, flags)
     });
 
     try {
       await client.connect();
       console.log(color.green(`✓ 连接成功！服务端信息: ${client.serverInfo?.name || "未知"} (v${client.serverInfo?.version || "未知"})`));
+      if (client.getProtocolMode) {
+        console.log(color.dim(`  协议: ${client.getProtocolMode()} / ${client.protocolVersion || "未协商"}`));
+      }
+      if (client.deprecatedTransport) {
+        console.log(color.yellow(`  注意: ${client.deprecatedTransport}`));
+      }
 
       const tools = await client.listTools();
       console.log(`\n探测到 ${tools.length} 个可用工具:`);
@@ -487,8 +532,9 @@ async function runMcp(root, args, flags) {
       throw new Error("请指定有效的 MCP 服务标识（只支持英文字母、数字、下划线与中划线），例如: inkstone mcp add <serverId> --command <cmd>");
     }
     const command = flags.get("command");
-    if (!command) {
-      throw new Error("添加 MCP 服务必须指定 --command，例如: inkstone mcp add fs --command npx --args \"-y,@modelcontextprotocol/server-filesystem,./src\"");
+    const url = flags.get("url");
+    if (!command && !url) {
+      throw new Error("添加 MCP 服务必须指定 --command（stdio）或 --url（远程），例如: inkstone mcp add fs --command npx --args \"-y,@modelcontextprotocol/server-filesystem,./src\"");
     }
     const rawArgs = flags.get("args");
     const parsedArgs = rawArgs
@@ -499,14 +545,34 @@ async function runMcp(root, args, flags) {
     const disabled = flags.has("disabled");
     const cwd = flags.get("cwd") || undefined;
     const timeoutMs = flags.has("timeout") ? Number(flags.get("timeout")) : undefined;
+    // v1.12.0:远程类型/请求头/私网放行
+    const rawType = flags.get("type");
+    const type = rawType ? String(rawType).trim().toLowerCase() : (url ? "streamable-http" : undefined);
+    const rawHeaders = flags.get("headers");
+    let headers = null;
+    if (rawHeaders) {
+      try {
+        headers = JSON.parse(rawHeaders);
+      } catch {
+        throw new Error('--headers 必须是 JSON 对象，例如: --headers "{\\"Authorization\\":\\"Bearer ${input:tok}\\"}"');
+      }
+      if (!headers || typeof headers !== "object" || Array.isArray(headers)) {
+        throw new Error("--headers 必须是 JSON 对象");
+      }
+    }
+    const allowPrivate = collectFlagAllowlist(flags);
 
     const srvConfig = {
-      command: command.trim(),
+      ...(command ? { command: command.trim() } : {}),
+      ...(url ? { url: url.trim() } : {}),
       ...(parsedArgs.length ? { args: parsedArgs } : {}),
       ...(autoApprove.length ? { autoApprove } : {}),
       ...(disabled ? { disabled: true } : {}),
       ...(cwd ? { cwd } : {}),
-      ...(timeoutMs ? { timeoutMs } : {})
+      ...(timeoutMs ? { timeoutMs } : {}),
+      ...(type ? { type } : {}),
+      ...(headers ? { headers } : {}),
+      ...(allowPrivate.length ? { allowlist: allowPrivate } : {})
     };
 
     const nextMcpServers = { ...mcpServers, [serverId]: srvConfig };
@@ -514,9 +580,19 @@ async function runMcp(root, args, flags) {
     await configureProject(root, { mcpServers: nextMcpServers });
 
     console.log(color.green(`✓ 已成功添加并保存 MCP 服务 "${serverId}" 到 .deepseek-code/config.json！`));
-    console.log(`  命令: ${command} ${parsedArgs.join(" ")}`);
+    if (url) {
+      console.log(`  地址: ${url} (${type || "streamable-http"})`);
+      if (type === "sse") {
+        console.log(`  ${color.yellow("注意: legacy SSE 已废弃,建议改用 --type streamable-http")}`);
+      }
+    } else {
+      console.log(`  命令: ${command} ${parsedArgs.join(" ")}`);
+    }
     if (autoApprove.length) {
       console.log(`  免审批工具: ${autoApprove.join(", ")}`);
+    }
+    if (allowPrivate.length) {
+      console.log(`  私网放行: ${allowPrivate.join(", ")}`);
     }
     console.log(`\n提示: 可运行 "inkstone mcp check ${serverId}" 测试连通性。`);
     return;

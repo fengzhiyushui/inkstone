@@ -866,6 +866,32 @@ select.f-in { min-width: 160px; }
   min-width: 0;
 }
 
+/* v1.12.0:接入方式选择(本地 stdio / 远程 HTTP) */
+.mcp-transport-pick {
+  display: flex;
+  gap: 8px;
+}
+.mcp-tp {
+  flex: 1;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--text-mut);
+  background: var(--bg-element);
+  border: 1px solid var(--border);
+  transition: color .12s ease, border-color .12s ease, background .12s ease;
+}
+.mcp-tp:hover {
+  color: var(--text);
+}
+.mcp-tp.on {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--accent-soft);
+}
+
 /* ══ 添加 MCP 服务拟态弹窗 (AddMcpModal) ══ */
 .mcp-modal-card {
   position: relative;

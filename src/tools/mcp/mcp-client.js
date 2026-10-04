@@ -2,8 +2,8 @@ import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { StdioTransport } from "./stdio-transport.js";
 import { JsonRpcClient, JSONRPC_ERRORS } from "./jsonrpc-client.js";
+import { createTransport } from "./transport.js";
 import {
   MODERN_PROTOCOL_VERSION,
   LEGACY_PROTOCOL_VERSION,
@@ -50,7 +50,16 @@ export class McpClient extends EventEmitter {
     /** auto | modern | legacy */
     protocolMode = "auto",
     /** ms for server/discover probe before Legacy fallback */
-    discoverTimeoutMs = 500
+    discoverTimeoutMs = 500,
+    /** v1.12.0:远程传输(streamable-http / sse) */
+    url = "",
+    type = null,
+    headers = {},
+    allowlist = [],
+    lookup,
+    maxRedirects,
+    retryOnStreamBreak,
+    maxBodyBytes
   } = {}) {
     super();
     if (!serverId) {
@@ -64,6 +73,16 @@ export class McpClient extends EventEmitter {
     this.timeoutMs = timeoutMs;
     this.requestedProtocolMode = protocolMode;
     this.discoverTimeoutMs = discoverTimeoutMs;
+
+    // v1.12.0:传输选择。显式注入的 transport 优先;否则按 url/type 走统一工厂 ——
+    // stdio 仍是默认,既有调用方与测试迁移不破。
+    this.transportConfig = {
+      command, args: this.args, env: this.env, cwd,
+      url, type, headers, timeoutMs,
+      allowlist, lookup, maxRedirects, retryOnStreamBreak, maxBodyBytes
+    };
+    this.requestedTransportType = (url || type) ? (type || "streamable-http") : "stdio";
+    this.deprecatedTransport = null;
 
     this.status = "DISCONNECTED";
     this.protocolMode = PROTOCOL_MODE.UNKNOWN;
@@ -90,7 +109,14 @@ export class McpClient extends EventEmitter {
     this._onTransportError = (err) => {
       this.status = "ERROR";
       this.lastError = err;
-      this.emit("error", err);
+      // 有监听者才 emit:EventEmitter 在没有 'error' 监听者时会直接抛出,
+      // 把一个可上报的传输失败变成进程崩溃。同时延到微任务,让 connect() 的
+      // catch 分支先跑完(否则 emit 会快过 caller 的 reject 处理)。
+      if (this.listenerCount("error") > 0) {
+        queueMicrotask(() => {
+          if (this.listenerCount("error") > 0) this.emit("error", err);
+        });
+      }
     };
 
     this._onNotification = (message) => {
@@ -102,6 +128,33 @@ export class McpClient extends EventEmitter {
         this.emit("cancelled", message?.params);
       }
     };
+  }
+
+  /**
+   * v1.12.0:握手中的传输错误必须立即让 connect() 失败。
+   *
+   * 传输错误是**事件**(如 SSRF 目标被拒、连接被重置),原本只经 'error' 上报,
+   * 而握手在等 JSON-RPC 响应 —— 结果要等满超时才失败,且错误语义被超时掩盖。
+   * 这里把事件竞争进 Promise:先到者胜,监听器始终清理,不泄漏。
+   */
+  _raceTransportError(promise) {
+    if (!this.transport || typeof this.transport.once !== "function") return promise;
+
+    let onError;
+    let onClose;
+    const failure = new Promise((_, reject) => {
+      onError = (err) => reject(err);
+      onClose = (info) => reject(new Error(
+        `MCP transport closed during handshake (code: ${info?.code}, signal: ${info?.signal})`
+      ));
+      this.transport.once("error", onError);
+      this.transport.once("close", onClose);
+    });
+
+    return Promise.race([promise, failure]).finally(() => {
+      this.transport?.removeListener?.("error", onError);
+      this.transport?.removeListener?.("close", onClose);
+    });
   }
 
   getStatus() {
@@ -118,6 +171,19 @@ export class McpClient extends EventEmitter {
 
   getRecentStderr() {
     return this.transport?.getRecentStderr?.() || "";
+  }
+
+  /**
+   * v1.12.0:协议协商结果必须同步给传输层 —— Streamable HTTP 的每个请求都要带
+   * `MCP-Protocol-Version` 头,而协商发生在客户端。stdio 传输无此方法,安全降级。
+   */
+  setProtocolVersion(version) {
+    this.protocolVersion = version;
+    try {
+      this.transport?.setProtocolVersion?.(version);
+    } catch {
+      /* 传输不支持则忽略 */
+    }
   }
 
   _buildMeta() {
@@ -147,29 +213,47 @@ export class McpClient extends EventEmitter {
 
     try {
       if (!this.transport) {
-        this.transport = new StdioTransport({
-          command: this.command,
-          args: this.args,
-          env: this.env,
-          cwd: this.cwd
-        });
+        // v1.12.0:统一经工厂选择传输(stdio / streamable-http / legacy sse)
+        this.transport = createTransport(this.transportConfig);
       }
 
       this.transport.on("close", this._onTransportClose);
       this.transport.on("error", this._onTransportError);
+      if (typeof this.transport.on === "function") {
+        // legacy SSE 是已废弃通道:透出标记,供事件契约与诊断提示
+        this.transport.on("deprecated", ({ reason }) => {
+          this.deprecatedTransport = reason;
+          this.emit("deprecated", { reason });
+        });
+        if (this.transport.deprecated) this.deprecatedTransport = "legacy transport";
+      }
 
       this.rpc.setTransport(this.transport);
       this.rpc.on("notification", this._onNotification);
+      // JsonRpcClient 会把传输错误再 emit 一次;没有监听者时 EventEmitter 会把它
+      // 当未处理异常抛出 → 进程级崩溃。这里必须接住,转成本客户端的 error 事件。
+      this.rpc.on("error", this._onTransportError);
+
+      // v1.12.0:传输是在这里才创建的,协商结果要重新回填一次
+      // (connect() 开头已把 protocolVersion 置空,但那时 transport 还不存在)。
+      this.setProtocolVersion(this.protocolVersion);
 
       if (typeof this.transport.start === "function") {
         this.transport.start();
       }
 
-      const wantModern = this.requestedProtocolMode !== "legacy";
+      // legacy SSE:长连建立后要先拿到 endpoint 才能发帧
+      if (typeof this.transport.waitForEndpoint === "function") {
+        await this.transport.waitForEndpoint(this.timeoutMs);
+      }
+
+      // legacy SSE 通道不存在 Modern 时代语义,直接走 Legacy initialize
+      const legacyOnlyTransport = this.transport.deprecated === true;
+      const wantModern = !legacyOnlyTransport && this.requestedProtocolMode !== "legacy";
       const wantLegacy = this.requestedProtocolMode !== "modern";
 
       if (wantModern && (this.requestedProtocolMode === "modern" || this.requestedProtocolMode === "auto")) {
-        const probed = await this._tryModernConnect();
+        const probed = await this._raceTransportError(this._tryModernConnect());
         if (probed) {
           this.status = "CONNECTED";
           this.emit("connected", {
@@ -186,7 +270,7 @@ export class McpClient extends EventEmitter {
       }
 
       if (wantLegacy) {
-        await this._legacyConnect();
+        await this._raceTransportError(this._legacyConnect());
         this.status = "CONNECTED";
         this.emit("connected", {
           protocolMode: this.protocolMode,
@@ -201,7 +285,9 @@ export class McpClient extends EventEmitter {
     } catch (err) {
       this.status = "ERROR";
       this.lastError = err;
-      await this.disconnect().catch(() => {});
+      // 保留 ERROR 状态:失败后的清理不应把"最近一次连接失败"抹成 DISCONNECTED,
+      // 否则调用方与界面无法区分"从未连过"和"连过但失败"。
+      await this.disconnect({ keepStatus: true }).catch(() => {});
       throw err;
     }
   }
@@ -257,14 +343,14 @@ export class McpClient extends EventEmitter {
     // Modern only (2026-07-28+); if negotiated a legacy version fall through
     if (version === MODERN_PROTOCOL_VERSION || discover.era === "modern") {
       this.protocolMode = PROTOCOL_MODE.MODERN;
-      this.protocolVersion = version;
+      this.setProtocolVersion(version);
       this.serverInfo = discover.serverInfo || discover.server || null;
       this.serverCapabilities = discover.capabilities || {};
       return true;
     }
 
     // discover answered but only legacy versions — still use modern meta? No: use legacy handshake with negotiated version
-    this.protocolVersion = version;
+    this.setProtocolVersion(version);
     await this._legacyConnect(version);
     return true;
   }
@@ -275,7 +361,7 @@ export class McpClient extends EventEmitter {
     if (!version || version !== MODERN_PROTOCOL_VERSION) {
       // Can't speak modern with this server
       if (version) {
-        this.protocolVersion = version;
+        this.setProtocolVersion(version);
         await this._legacyConnect(version);
         this.protocolMode = PROTOCOL_MODE.LEGACY;
         return true;
@@ -283,7 +369,7 @@ export class McpClient extends EventEmitter {
       return false;
     }
     this.protocolMode = PROTOCOL_MODE.MODERN;
-    this.protocolVersion = version;
+    this.setProtocolVersion(version);
     return true;
   }
 
@@ -306,7 +392,7 @@ export class McpClient extends EventEmitter {
 
     this.serverInfo = initResult?.serverInfo || null;
     this.serverCapabilities = initResult?.capabilities || {};
-    this.protocolVersion = initResult?.protocolVersion || requested;
+    this.setProtocolVersion(initResult?.protocolVersion || requested);
     this.protocolMode = PROTOCOL_MODE.LEGACY;
 
     this.rpc.notify("notifications/initialized");
@@ -342,12 +428,14 @@ export class McpClient extends EventEmitter {
     return result || { content: [], isError: false, resultType: "complete" };
   }
 
-  async disconnect() {
-    this.status = "DISCONNECTED";
+  async disconnect({ keepStatus = false } = {}) {
+    if (!keepStatus) this.status = "DISCONNECTED";
 
     if (this.transport) {
       this.transport.removeListener("close", this._onTransportClose);
-      this.transport.removeListener("error", this._onTransportError);
+      // 故意**保留** error 监听:close() 之后仍可能有迟到的网络错误(如 abort、
+      // 连接重置)。移除监听会让 EventEmitter 把 'error' 当未处理异常直接抛出,
+      // 把一次可控的传输失败变成进程级崩溃。
     }
 
     this.rpc.removeListener("notification", this._onNotification);

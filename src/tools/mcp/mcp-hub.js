@@ -30,7 +30,9 @@ export class McpHub extends EventEmitter {
     reconnect = {},
     inputs = null,
     projectRoot = null,
-    loadConfigScopes = false
+    loadConfigScopes = false,
+    /** v1.12.0:SSRF 私网允许清单(仅对列出的目标放行,默认空 = 全部 fail-closed) */
+    httpAllowlist = []
   } = {}) {
     super();
     this.toolRegistry = toolRegistry;
@@ -39,6 +41,7 @@ export class McpHub extends EventEmitter {
     this.reconnectBaseMs = reconnect.baseMs ?? DEFAULT_RECONNECT_BASE_MS;
     this.reconnectMaxMs = reconnect.maxMs ?? DEFAULT_RECONNECT_MAX_MS;
     this.maxReconnectAttempts = reconnect.maxAttempts ?? DEFAULT_MAX_RECONNECT_ATTEMPTS;
+    this.httpAllowlist = Array.isArray(httpAllowlist) ? [...httpAllowlist] : [];
 
     this.clients = new Map();
     this.serverTools = new Map();
@@ -146,7 +149,20 @@ export class McpHub extends EventEmitter {
       cwd: resolved.cwd || this.cwd,
       timeoutMs: resolved.timeoutMs || 60000,
       protocolMode: resolved.protocolMode || "auto",
-      discoverTimeoutMs: resolved.discoverTimeoutMs || 500
+      discoverTimeoutMs: resolved.discoverTimeoutMs || 500,
+      // v1.12.0:远程传输。url/type 由配置决定;allowlist 与 headers 在此透传,
+      // SSRF 校验在传输层的每一跳执行。
+      url: resolved.url,
+      type: resolved.type,
+      headers: resolved.headers,
+      allowlist: resolved.allowlist || this.httpAllowlist,
+      maxRedirects: resolved.maxRedirects,
+      retryOnStreamBreak: resolved.retryOnStreamBreak
+    });
+
+    // v1.12.0:legacy SSE 为已废弃通道 —— 透出事件,供 event-contract 与三端提示
+    client.on("deprecated", ({ reason }) => {
+      this.emit("server_deprecated", { serverId, reason });
     });
 
     client.on("error", (err) => {
@@ -509,12 +525,15 @@ export class McpHub extends EventEmitter {
         serverId,
         command: srvConfig.command || null,
         url: srvConfig.url || null,
+        type: srvConfig.type || (srvConfig.url ? "streamable-http" : "stdio"),
         args: srvConfig.args || [],
         disabled: Boolean(srvConfig.disabled),
         autoApprove: srvConfig.autoApprove || [],
         status,
         protocolMode: client?.getProtocolMode?.() || "unknown",
         protocolVersion: client?.protocolVersion || null,
+        // v1.12.0:legacy SSE 通道的弃用提示透出给界面
+        deprecatedTransport: client?.deprecatedTransport || null,
         configSource: this.configSources?.[serverId] || null,
         reconnectAttempts: reconnect?.attempts || 0,
         serverInfo: client?.serverInfo || null,

@@ -38,7 +38,7 @@ kernel facade：
 - `dispose()` 幂等：flush 经验 + 释放项目锁
 - `recovery.*`：list / resume / cancel / clear / report；恢复启用时另有 `abortJournal()` / `commitJournal()`
 - `experience.*`（C4，见 §14.4）
-- `mcp.*`（v1.11.0）：listServers / restartServer / toggleServer / callTool
+- `mcp.*`（v1.11.0，v1.12.0 增 inputs API）：listServers / restartServer / toggleServer / callTool / listInputs / setInputValue
 - `metrics.*`：用量与上下文统计
 
 ### turn 生命周期
@@ -119,20 +119,25 @@ ToolCall
 
 工具超时：`executor` 支持 `defaultToolTimeoutMs` / `context.toolTimeoutMs`；超时落为 `status:"error"`（`metadata.timeout = true`），不抛错、不强杀进程。
 
-### 3.1 MCP (Model Context Protocol) 外部工具接入（v1.11.0 / v1.11.1）
+### 3.1 MCP (Model Context Protocol) 外部工具接入（v1.11.0 / v1.11.1 / v1.12.0）
 
-Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（**dual-era**）：
+Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（**dual-era × 三种传输**）：
 
-- **协议时代**（v1.11.1）：stdio 先 `server/discover` 探测 **Modern `2026-07-28`**（per-request `_meta`），失败回退 **Legacy**（`2025-11-25`…`2024-11-05` initialize 握手）；`clientInfo.version` 读 `package.json`。
-- **纯原生 JSON-RPC 2.0 与 Stdio 传输**：
+- **协议时代**（v1.11.1）：先 `server/discover` 探测 **Modern `2026-07-28`**（per-request `_meta`），失败回退 **Legacy**（`2025-11-25`…`2024-11-05` initialize 握手）；`clientInfo.version` 读 `package.json`。
+- **传输层**（v1.12.0 统一契约，[`transport.js`](../src/tools/mcp/transport.js)）：
+  - [`stdio-transport.js`](../src/tools/mcp/stdio-transport.js)：本地子进程 Stdio 分帧；跨平台防孤儿；敏感 env 隔离。
+  - [`http-transport.js`](../src/tools/mcp/http-transport.js) + [`http-client.js`](../src/tools/mcp/http-client.js)：**Streamable HTTP** —— POST JSON-RPC、`Accept: application/json, text/event-stream`、标准头 `Mcp-Method`/`Mcp-Name`/`MCP-Protocol-Version`/`Mcp-Session-Id`；响应支持 JSON 与**请求级 SSE**；断流按「重发全新请求」处理（不依赖 Last-Event-ID）。
+  - [`sse-transport.js`](../src/tools/mcp/sse-transport.js)：legacy HTTP+SSE（`type: "sse"`）兼容通道，**已废弃**并在三端提示。
+  - [`sse.js`](../src/tools/mcp/sse.js)：SSE 解析器（多行 data、注释 keep-alive、跨 chunk）。
+- **协议与 RPC**：
   - [`jsonrpc-client.js`](../src/tools/mcp/jsonrpc-client.js)：请求/通知/超时取消（`notifications/cancelled`）。
   - [`protocol.js`](../src/tools/mcp/protocol.js)：版本常量、`_meta` 键、`UnsupportedProtocolVersionError`、版本择优。
-  - [`stdio-transport.js`](../src/tools/mcp/stdio-transport.js)：子进程 Stdio 分帧；跨平台防孤儿；敏感 env 隔离。
   - [`mcp-client.js`](../src/tools/mcp/mcp-client.js)：era 探测、tools/list、tools/call、`list_changed`、structuredContent。
 - **宿主管理**（[`mcp-hub.js`](../src/tools/mcp/mcp-hub.js)）：有界并行 init、增量 remount、曾成功连接后的退避重连（主动 stop 不重连）。
+- **安全**（v1.12.0）：出站请求经 [`security/ssrf.js`](../src/security/ssrf.js) **DNS 固定 + 逐跳重定向校验**；私网/环回默认拒绝，只有显式 `allowlist`（精确 IP / CIDR / hostname）才放行；跨 origin 重定向自动剥离凭据头；密钥可经 `${input:*}` 注入而不落项目树。
 - **命名与 Schema**：`mcp__<serverId>__<toolName>`，1–128 规范字符，超长 hash 唯一。
 - **权限**：`autoApprove` 白名单 + 既有审批流（annotations 治理见后续版本）。
-- **三端**：GUI `McpView`；CLI `inkstone mcp [list|check|add|remove|toggle]`。
+- **三端**：GUI `McpView`（含接入方式选择与地址展示）；CLI `inkstone mcp [list|check|add|remove|toggle]`（`--url/--type/--headers/--allow-private`）。
 
 ---
 
