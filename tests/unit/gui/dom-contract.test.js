@@ -36,6 +36,28 @@ test("frozen DOM/CSS contracts survive (v1.8.1 B4 冻结清单)", () => {
   assert.ok(!existsSync(new URL("../../../gui/src/components/Settings/ThemeHub.jsx", import.meta.url)));
 });
 
+test("v1.13.0:MCP 工具治理的 DOM 契约(风险徽章 / 信任开关 / 风险来源)", () => {
+  const mcp = read("gui/src/components/v4/SecondaryViews.jsx");
+  const themeCss = read("gui/src/styles/theme.css");
+
+  // 风险徽章:destructive 必须用 danger 色(区别于 read / mutate)
+  assert.match(mcp, /tDef\.badge\?\.level === "danger"/);
+  assert.match(mcp, /tDef\.badge\?\.label \|\| tDef\.category/);
+
+  // 信任开关:决定是否采纳 server 自报的 annotations
+  assert.match(mcp, /mcp-trust-row/);
+  assert.match(mcp, /trustServer \? \{ trust: true \} : \{\}/, "两处提交都要带 trust");
+  assert.match(themeCss, /\.mcp-trust-row/);
+
+  // 风险来源要可解释:不受信忽略 annotations / 受信采纳
+  assert.match(mcp, /该 server 未受信,自报 annotations 已忽略/);
+  assert.match(mcp, /风险判定来自受信 server 的 annotations/);
+
+  // 持久放行徽章(project / always)
+  assert.match(mcp, /永久放行/);
+  assert.match(mcp, /本项目放行/);
+});
+
 function existsSync(url) {
   try { readFileSync(url); return true; } catch { return false; }
 }

@@ -202,6 +202,8 @@ export function AddMcpModal({ open, onClose, onAdd, onAdded, t }) {
   const [remoteType, setRemoteType] = React.useState("streamable-http");
   const [headersJson, setHeadersJson] = React.useState("");
   const [allowPrivate, setAllowPrivate] = React.useState("");
+  // v1.13.0:是否信任该 server 自报的 annotations
+  const [trustServer, setTrustServer] = React.useState(false);
 
   const PRESETS = [
     {
@@ -323,7 +325,8 @@ export function AddMcpModal({ open, onClose, onAdd, onAdded, t }) {
           type: remoteType,
           autoApprove: parsedAutoApprove,
           headers: parsedHeaders,
-          ...(allowlist.length ? { allowlist } : {})
+          ...(allowlist.length ? { allowlist } : {}),
+          ...(trustServer ? { trust: true } : {})
         });
         if (res && res.status === "ERROR") {
           setError(`服务添加成功但连接异常: ${res.error || "未知原因"}`);
@@ -367,7 +370,8 @@ export function AddMcpModal({ open, onClose, onAdd, onAdded, t }) {
         command: trimmedCommand,
         args: parsedArgs,
         autoApprove: parsedAutoApprove,
-        env: parsedEnv
+        env: parsedEnv,
+        ...(trustServer ? { trust: true } : {})
       });
 
       if (res && res.status === "ERROR") {
@@ -527,8 +531,7 @@ export function AddMcpModal({ open, onClose, onAdd, onAdded, t }) {
             </div>
 
             <div className="mcp-form-group">
-              <label className="mcp-form-label">免审批工具白名单 (Auto-Approve，逗号分隔)</label>
-              <input
+              <label className="mcp-form-label">免审批工具白名单 (Auto-Approve，逗号分隔)</label>              <input
                 type="text"
                 className="mcp-form-input mono"
                 placeholder="例如: read_file, list_directory"
@@ -556,6 +559,21 @@ export function AddMcpModal({ open, onClose, onAdd, onAdded, t }) {
                 {submitting ? "正在连接..." : "保存并启动"}
               </button>
             </div>
+            {/* v1.13.0:信任开关 —— 决定是否采纳 server 自报的 annotations */}
+            <label className="mcp-trust-row" title="受信后,server 自报的 annotations 才参与风险判定;未受信则一律忽略">
+              <input
+                type="checkbox"
+                checked={trustServer}
+                onChange={(e) => setTrustServer(e.target.checked)}
+              />
+              <span>信任此 server(采纳其 annotations)</span>
+            </label>
+            {trustServer && (
+              <div className="mcp-input-desc" style={{ marginTop: "6px" }}>
+                 请只信任你自己部署或审计过的 server;不受信 server 的 annotations 一律忽略,
+                 以免写工具被伪装成“只读”。
+              </div>
+            )}
           </form>
         </div>
       </div>
@@ -898,12 +916,17 @@ export function McpView({ t, kernel, onRequestConfirm }) {
                             <div>
                               <div style={{ fontFamily: "var(--font-mono, monospace)", fontWeight: 500, color: "var(--text-main)" }}>
                                 {tDef.originalName || tDef.name}
+                                {/* v1.13.0:风险徽章(内核给出 level/label;破坏性用 danger 色) */}
                                 <span style={{
                                   marginLeft: "8px", fontSize: "10px", padding: "1px 5px", borderRadius: "4px",
-                                  background: tDef.category === "read" ? "rgba(59, 130, 246, 0.15)" : "rgba(249, 115, 22, 0.15)",
-                                  color: tDef.category === "read" ? "#60a5fa" : "#fb923c"
-                                }}>
-                                  {tDef.category}
+                                  background: (tDef.badge?.level === "danger")
+                                    ? "rgba(244, 63, 94, 0.16)"
+                                    : (tDef.category === "read" ? "rgba(59, 130, 246, 0.15)" : "rgba(249, 115, 22, 0.15)"),
+                                  color: (tDef.badge?.level === "danger")
+                                    ? "#fb7185"
+                                    : (tDef.category === "read" ? "#60a5fa" : "#fb923c")
+                                }} title={`category: ${tDef.category}`}>
+                                  {tDef.badge?.label || tDef.category}
                                 </span>
                                 {tDef.autoApprove && (
                                   <span style={{
@@ -913,10 +936,29 @@ export function McpView({ t, kernel, onRequestConfirm }) {
                                     免审批
                                   </span>
                                 )}
+                                {tDef.approvalScope && tDef.approvalScope !== "session" && (
+                                  <span style={{
+                                    marginLeft: "4px", fontSize: "10px", padding: "1px 5px", borderRadius: "4px",
+                                    background: "rgba(34, 197, 94, 0.15)", color: "#4ade80"
+                                  }}>
+                                    {tDef.approvalScope === "always" ? "永久放行" : "本项目放行"}
+                                  </span>
+                                )}
                               </div>
                               {tDef.description && (
                                 <div style={{ color: "var(--text-mut)", fontSize: "11px", marginTop: "2px" }}>
                                   {tDef.description}
+                                </div>
+                              )}
+                              {/* 让用户看清"这条风险判定是凭谁来的" */}
+                              {tDef.riskSource === "keyword-untrusted" && (
+                                <div style={{ color: "var(--text-faint)", fontSize: "10px", marginTop: "2px" }}>
+                                  该 server 未受信,自报 annotations 已忽略
+                                </div>
+                              )}
+                              {tDef.riskSource === "annotations" && (
+                                <div style={{ color: "var(--text-faint)", fontSize: "10px", marginTop: "2px" }}>
+                                  风险判定来自受信 server 的 annotations
                                 </div>
                               )}
                             </div>

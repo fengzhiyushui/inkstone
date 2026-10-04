@@ -34,12 +34,29 @@ export const DEFAULT_POLICY_MATRIX = Object.freeze({
 });
 
 export function createPermissionEngine() {
-  function decide(toolCall, context = {}) {
+  /** 工具级策略 key,与 mcp/tool-policy.policyKey 保持一致(避免反向依赖)。 */
+  function toolPolicyKey(toolCall) {
+    return `tool:${String(toolCall.name)}`;
+  }
+
+  function decideInner(toolCall, context = {}) {
     const category = toolCall.category || "read";
     const autonomy = context.autonomy || "gated";
 
     if (category === "destructive") {
       return { decision: "deny", matched_rule: "hardcoded:destructive", source: "safety-invariant" };
+    }
+
+    // v1.13.0:持久化策略(project / always)优先级最高 —— 这是用户显式的长期决定,
+    // 高于 server 配置里的 autoApprove 与会话级缓存。
+    const grants = context.policyGrants;
+    if (grants && typeof grants.has === "function" && grants.has(toolPolicyKey(toolCall))) {
+      return {
+        decision: "allow",
+        matched_rule: "mcp-policy:persistent",
+        source: "mcp-policy",
+        persistent: true
+      };
     }
 
     if (toolCall.autoApprove) {
@@ -77,6 +94,25 @@ export function createPermissionEngine() {
       matched_rule: `default:${autonomy}:${category}`,
       source: "default-matrix"
     };
+  }
+
+  /**
+   * v1.13.0:安全网包装。
+   *
+   * `destructive` 一律不可自动放行 —— 无论决策来自哪条路径(policy 文件、
+   * autoApprove、approval-cache、trust-store、项目规则、默认矩阵)。
+   * 早返回已在入口挡掉绝大多数情况,这里做兜底:未来新增任何放行路径
+   * 都不可能绕过这条不变量。
+   */
+  function decide(toolCall, context = {}) {
+    const result = decideInner(toolCall, context);
+    if (result.decision === "allow") {
+      const category = result.category ?? toolCall.category ?? "read";
+      if (category === "destructive") {
+        return { decision: "deny", matched_rule: "hardcoded:destructive", source: "safety-invariant" };
+      }
+    }
+    return result;
   }
 
   function explain(toolCall, context = {}) {

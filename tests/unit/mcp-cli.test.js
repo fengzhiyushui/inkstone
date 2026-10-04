@@ -226,3 +226,107 @@ test("CLI mcp list 标注远程类型与 legacy SSE 弃用提示", async () => {
     console.log = origLog;
   }
 });
+
+// ── v1.13.0:trust 与持久放行策略 ───────────────────────────────────────────
+test("CLI mcp add --trust 写入 trust 并提示风险", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "dsc-cli-mcp-"));
+  const origLog = console.log;
+  const logs = [];
+  console.log = (...args) => logs.push(args.join(" "));
+  try {
+    await withProjectDir(root, () => runCli(["mcp", "add", "trusted_srv", "--command", "npx", "--trust"]));
+    assert.match(logs.join("\n"), /已信任/);
+
+    const saved = JSON.parse(await readFile(path.join(root, ".deepseek-code", "config.json"), "utf8"));
+    assert.equal(saved.mcpServers.trusted_srv.trust, true);
+  } finally {
+    console.log = origLog;
+  }
+});
+
+test("CLI mcp add 未加 --trust 时不写 trust 字段", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "dsc-cli-mcp-"));
+  const origLog = console.log;
+  console.log = () => {};
+  try {
+    await withProjectDir(root, () => runCli(["mcp", "add", "plain_srv", "--command", "npx"]));
+    const saved = JSON.parse(await readFile(path.join(root, ".deepseek-code", "config.json"), "utf8"));
+    assert.ok(!("trust" in saved.mcpServers.plain_srv), "默认不得写 trust,保持最小惊讶");
+  } finally {
+    console.log = origLog;
+  }
+});
+
+/** 把 DEEPSEEK_CODE_HOME 指到临时目录,避免测试写进真实主目录。 */
+async function withIsolatedHome(fn) {
+  const orig = process.env.DEEPSEEK_CODE_HOME;
+  process.env.DEEPSEEK_CODE_HOME = await mkdtemp(path.join(tmpdir(), "dsc-cli-policy-home-"));
+  try {
+    return await fn(process.env.DEEPSEEK_CODE_HOME);
+  } finally {
+    if (orig === undefined) delete process.env.DEEPSEEK_CODE_HOME;
+    else process.env.DEEPSEEK_CODE_HOME = orig;
+  }
+}
+
+test("CLI mcp policy list 空/有记录两种情形", async () => {
+  await withIsolatedHome(async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "dsc-cli-policy-"));
+    await writeProjectConfig(root, { s: { command: "npx" } });
+    const origLog = console.log;
+    const logs = [];
+    console.log = (...args) => logs.push(args.join(" "));
+    try {
+      await withProjectDir(root, () => runCli(["mcp", "policy", "list"]));
+      assert.match(logs.join("\n"), /当前没有持久放行记录/);
+
+      const { createPolicyStore } = await import("../../src/tools/mcp/tool-policy.js");
+      createPolicyStore({ projectRoot: root }).grant("mcp__s__read_doc", "project");
+
+      logs.length = 0;
+      await withProjectDir(root, () => runCli(["mcp", "policy", "list"]));
+      const text = logs.join("\n");
+      assert.match(text, /持久放行记录/);
+      assert.match(text, /mcp__s__read_doc/);
+      assert.match(text, /本项目/);
+      assert.match(text, /破坏性/, "应提示 destructive 不可持久放行");
+    } finally {
+      console.log = origLog;
+    }
+  });
+});
+
+test("CLI mcp policy revoke 撤销两个作用域的授权", async () => {
+  await withIsolatedHome(async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "dsc-cli-policy-"));
+    await writeProjectConfig(root, { s: { command: "npx" } });
+    const origLog = console.log;
+    const logs = [];
+    console.log = (...args) => logs.push(args.join(" "));
+    try {
+      const { createPolicyStore } = await import("../../src/tools/mcp/tool-policy.js");
+      const store = createPolicyStore({ projectRoot: root });
+      store.grant("mcp__s__t", "project");
+      store.grant("mcp__s__t", "always");
+      assert.equal(store.grantedKeys().size, 1);
+
+      await withProjectDir(root, () => runCli(["mcp", "policy", "revoke", "mcp__s__t"]));
+      assert.match(logs.join("\n"), /已撤销/);
+
+      assert.equal(createPolicyStore({ projectRoot: root }).grantedKeys().size, 0, "两个作用域都应被撤销");
+    } finally {
+      console.log = origLog;
+    }
+  });
+});
+
+test("CLI mcp policy revoke 缺少工具名时报错", async () => {
+  await withIsolatedHome(async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "dsc-cli-policy-"));
+    await writeProjectConfig(root, { s: { command: "npx" } });
+    await assert.rejects(
+      () => withProjectDir(root, () => runCli(["mcp", "policy", "revoke"])),
+      /请指定要撤销的工具名/
+    );
+  });
+});

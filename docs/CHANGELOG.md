@@ -14,6 +14,22 @@
 
 ---
 
+## v1.13.0 — 2026-10-04 · MCP 工具治理与权限
+
+> 小版本发布：为 MCP 外部工具建立完整的治理体系 —— annotations 风险推导、服务器信任模型、三级批准与持久放行、破坏性工具硬约束、工具级开关，三端可配置可解释。
+
+- **annotations 解析（D1）**：新增 `src/tools/mcp/annotations.js`。只把显式 `=== true` 的 `readOnlyHint` / `destructiveHint` / `openWorldHint` / `idempotentHint` 视为命中，数组/标量输入安全降级；`title` 仅作展示不参与判定。
+- **信任模型（D2，核心安全语义）**：**server 未受信时其自报 annotations 一律不参与判定**，风险只由关键词兜底；受信后 annotations 才参与，且**只向更危险方向升级** —— `destructiveHint` 直接置顶，`readOnlyHint` 不能把已判定为写操作的工具降级（防误放行），`openWorldHint` 令风险 +1 且不越过 destructive。
+- **三级批准（D3）**：新增 `src/tools/mcp/tool-policy.js`，支持 `session`（仅本次，不落盘）/ `project`（本项目，`<root>/.deepseek-code/mcp-policy.json`）/ `always`（永久，`~/.deepseek-code/mcp-policy.json`）；用户级可用 `DEEPSEEK_CODE_HOME` 覆盖。策略文件原子写入并收紧为 0600，只记录 grant 不写密钥；损坏文件按空表处理（回到默认保守）。**用户级优先于项目级**。
+- **destructive 硬约束（D4）**：`validateApprovalScope` 拒绝为 destructive 授予 project / always，并返回 **fallback 到 session**（界面据此提示原因，而非静默失效）；权限引擎新增兜底安全网 —— 无论决策来自持久化策略、`autoApprove`、approval-cache、trust-store、项目规则还是默认矩阵，destructive 一律 deny。多个测试锁死各路径叠加也不能绕过。
+- **工具级开关（D5）**：`tools.enabled` / `tools.disabled` 在挂载期生效，未启用/已禁用的工具**完全不挂载**（既不出现在 Agent 工具表，也不能被 registry 解析）。
+- **权限引擎（D6）**：新增持久化策略决策分支（优先级高于 `autoApprove` 与会话缓存），`createPolicyContext` 透传 `policyGrants`；旧 `autoApprove` 行为对非破坏性工具保持不变。
+- **三端（D7）**：CLI `mcp add --trust`（写入 `trust` 并提示"请只信任自己部署/审计过的 server"）、`mcp policy list|revoke <tool>`、`mcp list` 展示信任状态并提示持久放行入口；GUI「添加服务」弹窗新增**信任开关**，工具列表展示**风险徽章**（破坏性用 danger 色）、持久放行标记，以及"风险判定来自受信 server 的 annotations / 该 server 未受信，自报 annotations 已忽略"的来源说明。
+- **测试（D8）**：新增 `mcp-annotations`（16 项：解析严格性、信任模型矩阵、失败优先、风险封顶）、`mcp-tool-policy`（13 项：开关、scope 归一、destructive 锁定、持久化/revoke/损坏容错）、权限引擎 7 项新不变式、hub 4 项真实挂载行为、CLI 5 项、GUI DOM 契约 1 项。
+- **修复的缺陷**：`isToolEnabled`  / `resolveConfiguredScope` 原先直接吃**未归一化**的原始 `tools` 字段，`enabled` 为 `undefined` 会让 `.includes` 抛错，导致**整台 server 的工具全部挂载失败**；`config-loader` 归一化也会削掉 `trust`。均已修正并加回归测试。
+
+---
+
 ## v1.12.0 — 2026-10-04 · MCP Streamable HTTP（远程接入）
 
 > 小版本发布：把 MCP 接入从「本地 stdio 子进程」扩展到「远程 HTTP 服务」——统一传输抽象、标准 Streamable HTTP 请求头、请求级 SSE、逐跳 SSRF 校验与私网放行清单，并保留 legacy HTTP+SSE 兼容通道（标注废弃）。三端可配置、可自检。

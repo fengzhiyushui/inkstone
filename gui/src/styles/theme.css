@@ -892,6 +892,25 @@ select.f-in { min-width: 160px; }
   background: var(--accent-soft);
 }
 
+/* v1.13.0:信任 server 自报的 annotations */
+.mcp-trust-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-mut);
+  background: var(--bg-element);
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+.mcp-trust-row input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 /* ══ 添加 MCP 服务拟态弹窗 (AddMcpModal) ══ */
 .mcp-modal-card {
   position: relative;

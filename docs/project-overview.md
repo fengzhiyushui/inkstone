@@ -119,9 +119,9 @@ ToolCall
 
 工具超时：`executor` 支持 `defaultToolTimeoutMs` / `context.toolTimeoutMs`；超时落为 `status:"error"`（`metadata.timeout = true`），不抛错、不强杀进程。
 
-### 3.1 MCP (Model Context Protocol) 外部工具接入（v1.11.0 / v1.11.1 / v1.12.0）
+### 3.1 MCP (Model Context Protocol) 外部工具接入（v1.11.0 / v1.11.1 / v1.12.0 / v1.13.0）
 
-Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（**dual-era × 三种传输**）：
+Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（**dual-era × 三种传输 × 工具治理**）：
 
 - **协议时代**（v1.11.1）：先 `server/discover` 探测 **Modern `2026-07-28`**（per-request `_meta`），失败回退 **Legacy**（`2025-11-25`…`2024-11-05` initialize 握手）；`clientInfo.version` 读 `package.json`。
 - **传输层**（v1.12.0 统一契约，[`transport.js`](../src/tools/mcp/transport.js)）：
@@ -136,8 +136,13 @@ Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（
 - **宿主管理**（[`mcp-hub.js`](../src/tools/mcp/mcp-hub.js)）：有界并行 init、增量 remount、曾成功连接后的退避重连（主动 stop 不重连）。
 - **安全**（v1.12.0）：出站请求经 [`security/ssrf.js`](../src/security/ssrf.js) **DNS 固定 + 逐跳重定向校验**；私网/环回默认拒绝，只有显式 `allowlist`（精确 IP / CIDR / hostname）才放行；跨 origin 重定向自动剥离凭据头；密钥可经 `${input:*}` 注入而不落项目树。
 - **命名与 Schema**：`mcp__<serverId>__<toolName>`，1–128 规范字符，超长 hash 唯一。
-- **权限**：`autoApprove` 白名单 + 既有审批流（annotations 治理见后续版本）。
-- **三端**：GUI `McpView`（含接入方式选择与地址展示）；CLI `inkstone mcp [list|check|add|remove|toggle]`（`--url/--type/--headers/--allow-private`）。
+- **工具治理**（v1.13.0）：
+  - [`annotations.js`](../src/tools/mcp/annotations.js)：annotations 严格解析 + 风险推导，优先级为**用户 policy > annotations（仅受信）> 关键词 > 默认**；annotations **只向更危险方向升级，不得降级**，`destructiveHint` 一律置顶。
+  - [`tool-policy.js`](../src/tools/mcp/tool-policy.js)：工具级 `enabled`/`disabled` 开关；三级批准 `session` / `project` / `always`，策略落 `mcp-policy.json`（用户级 `~/.deepseek-code/`、项目级 `<root>/.deepseek-code/`，0600，只记 grant）。
+  - **destructive 硬约束**：权限引擎对 destructive 一律 deny，并设兜底安全网 —— 无论决策来自持久化策略、`autoApprove`、approval-cache、trust-store、项目规则还是默认矩阵，都不可能是 allow。
+  - **信任模型**：server 未受信时其 annotations **一律不参与判定**；只有显式 `trust: true` 的 server 才采纳其 annotations。
+- **权限**：`autoApprove` 白名单（仅非破坏性工具）+ 既有审批流 + 上述治理。
+- **三端**：GUI `McpView`（接入方式选择、风险徽章、信任开关、密钥面板）；CLI `inkstone mcp [list|check|add|remove|toggle|policy]`（`--url/--type/--headers/--allow-private/--trust`）。
 
 ---
 

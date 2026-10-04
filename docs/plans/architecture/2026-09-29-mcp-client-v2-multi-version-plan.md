@@ -2,7 +2,7 @@
 
 - 类型：实施计划 (Plan)
 - 日期：2026-09-29
-- 状态：进行中（v1.11.1 / v1.11.2 / v1.12.0 已收口，2026-10-04；v1.13.0+ 未开工）
+- 状态：进行中（v1.11.1 / v1.11.2 / v1.12.0 / v1.13.0 已收口，2026-10-04；v1.14.0+ 未开工）
 - 关联：[MCP Client v2 设计规格](../../specs/architecture/2026-09-29-mcp-client-v2-design.md) · [v1.11.0 MCP 首版](../../specs/architecture/2026-09-28-v1.11.0-mcp-integration-design.md) · [post-V3 路线图](../../specs/architecture/2026-09-17-post-v3-roadmap-design.md) · [权限引擎](../../specs/backend/2026-05-30-v2-7-approval-resume-design.md)
 
 > 协议事实以 modelcontextprotocol.io **2026-07-28** 为准（2026-09-29 联网核对）：Modern 无握手、per-request `_meta`；Legacy `initialize`；标准 transport = stdio + Streamable HTTP。
@@ -145,7 +145,13 @@
 | D7 | GUI 风险徽章与批准菜单 | |
 | D8 | 测试 | annotations 矩阵、持久化、destructive |
 
-**验收**：只读可配置放行；destructive 始终审批；旧行为不回退。
+**结果（2026-10-04）**：D1–D8 全部落地。新增 `mcp/annotations.js`（解析 + 风险推导）与 `mcp/tool-policy.js`（工具开关、三级批准、策略持久化）；`permission-engine.js` 增加持久化策略分支与 destructive 兜底安全网，`policy-loader.js` 透传 `policyGrants`；hub 在挂载期完成信任判定并把风险元数据（badge / riskSource / riskEscalatedBy / approvalScope）透给三端；CLI 增 `--trust` 与 `mcp policy list|revoke`，GUI 增风险徽章与信任开关。
+
+关键决策：**annotations 只向更危险方向升级，不得降级** —— 受信 server 的 `readOnlyHint` 不能把关键词已判定为写操作的工具讲成只读；`destructiveHint` 与 `readOnlyHint` 并存时按失败优先定为 destructive；未受信 server 的 annotations 一律忽略（仅关键词兜底）。持久化策略**用户级优先于项目级**，且文件收紧 0600、只记 grant 不写密钥。破坏性工具的 project/always 授权被拒绝时**返回 fallback 到 session**，让界面能说明原因而不是静默失效。
+
+**收口时发现并修复的缺陷**：`isToolEnabled` / `resolveConfiguredScope` 原先直接消费未归一化的原始 `tools` 字段（`enabled` 为 `undefined`），`.includes` 抛错会令**整台 server 的工具全部挂载失败**；`config-loader` 归一化也会削掉 `trust`。两者已改为宽容归一化并加回归测试。
+
+**验收**：只读可配置放行；destructive 始终审批；旧行为不回退。（已达成：`mcp-annotations` 16 项、`mcp-tool-policy` 13 项、权限引擎不变式 7 项、hub 真实挂载 4 项、CLI 5 项、DOM 契约 1 项；全量测试 1470 通过，0 失败）
 
 ---
 
@@ -261,7 +267,7 @@ git diff --check
 | v1.11.1 | **已完成**（2026-09-29，dual-era + 可靠性） |
 | v1.11.2 | **已完成**（2026-09-29 落地 / 2026-09-30 收口补齐 B7 + 入口接线） |
 | v1.12.0 | **已完成**（2026-10-04，Streamable HTTP + 逐跳 SSRF + legacy SSE 兼容） |
-| v1.13.0 | 未开工 |
+| v1.13.0 | **已完成**（2026-10-04，annotations 治理 + 三级批准 + destructive 硬约束） |
 | v1.14.0 | 未开工 |
 | v1.15.0 | 未开工 |
 | v1.16.0 | 未开工 |

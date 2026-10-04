@@ -461,12 +461,46 @@ async function runMcp(root, args, flags) {
       } else {
         console.log(`  命令: ${srv.command} ${(srv.args || []).join(" ")}`);
       }
+      // v1.13.0:trust 决定该 server 的 annotations 是否被采纳
+      console.log(`  信任: ${srv.trust ? color.green("已信任(采纳其 annotations)") : color.dim("未信任(annotations 被忽略)")}`);
       if (srv.autoApprove?.length) {
         console.log(`  免审批工具: ${srv.autoApprove.join(", ")}`);
       }
     }
-    console.log("\n提示: 运行 \"inkstone mcp check <serverId>\" 测试特定服务的连通性与可用工具。");
+    console.log("\n提示: 运行 \"inkstone mcp check <serverId>\" 测试连通性与可用工具;\"inkstone mcp policy\" 管理持久放行。");
     return;
+  }
+
+  if (action === "policy") {
+    const sub = args[1] || "list";
+    const { createPolicyStore } = await import("./tools/mcp/tool-policy.js");
+    const store = createPolicyStore({ projectRoot: root });
+    if (sub === "list") {
+      const grants = store.list();
+      if (grants.length === 0) {
+        console.log("当前没有持久放行记录(仅本次/本项目/永久)。");
+        return;
+      }
+      console.log(section(`持久放行记录 (${grants.length} 条)`));
+      for (const g of grants) {
+        const scopeLabel = g.scope === "always" ? "永久" : "本项目";
+        console.log(`  • ${color.bold(g.tool)}  [${scopeLabel}]  ${color.dim(g.granted_at || "")}`);
+      }
+      console.log(`\n${color.dim("破坏性(destructive)工具不可持久放行,只能逐次审批。")}`);
+      return;
+    }
+
+    if (sub === "revoke") {
+      const toolName = args[2];
+      if (!toolName) {
+        throw new Error("请指定要撤销的工具名，例如: inkstone mcp policy revoke mcp__srv__tool");
+      }
+      store.revoke(toolName, "always");
+      store.revoke(toolName, "project");
+      console.log(color.green(`已撤销 ${color.bold(toolName)} 的持久放行（永久与本项目两个作用域）。`));
+      return;
+    }
+    throw new Error(`未知的 policy 子命令: ${sub}。可用: list | revoke <tool>`);
   }
 
   if (action === "check") {
@@ -572,7 +606,9 @@ async function runMcp(root, args, flags) {
       ...(timeoutMs ? { timeoutMs } : {}),
       ...(type ? { type } : {}),
       ...(headers ? { headers } : {}),
-      ...(allowPrivate.length ? { allowlist: allowPrivate } : {})
+      ...(allowPrivate.length ? { allowlist: allowPrivate } : {}),
+      // v1.13.0:trust 决定是否采纳该 server 自报的 annotations
+      ...(flags.has("trust") ? { trust: true } : {})
     };
 
     const nextMcpServers = { ...mcpServers, [serverId]: srvConfig };
@@ -590,6 +626,10 @@ async function runMcp(root, args, flags) {
     }
     if (autoApprove.length) {
       console.log(`  免审批工具: ${autoApprove.join(", ")}`);
+    }
+    if (flags.has("trust")) {
+      console.log(`  信任: 已信任 —— 该 server 自报的 annotations 将被采纳`);
+      console.log(`  ${color.yellow("注意: 请只信任你自己部署/审计过的 server;不受信 server 的 annotations 一律忽略。")}`);
     }
     if (allowPrivate.length) {
       console.log(`  私网放行: ${allowPrivate.join(", ")}`);

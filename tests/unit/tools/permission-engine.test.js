@@ -168,3 +168,90 @@ test("fingerprint changes when memory key or value differs", () => {
   assert.notEqual(fp1, fp2);
   assert.notEqual(fp1, fp3);
 });
+
+// ── v1.13.0:持久化策略与破坏性硬约束 ─────────────────────────────────────────
+test("持久化策略(mcp-policy)命中即放行,且优先于 autoApprove", () => {
+  const engine = createPermissionEngine();
+  const grants = new Set(["tool:mcp__srv__read_doc"]);
+  const call = { name: "mcp__srv__read_doc", category: "read", params: {}, autoApprove: false };
+  const r = engine.decide(call, createPolicyContext({ autonomy: "read-only", policyGrants: grants }));
+  assert.deepEqual(
+    r,
+    { decision: "allow", matched_rule: "mcp-policy:persistent", source: "mcp-policy", persistent: true }
+  );
+});
+
+test("没有持久化策略时,决策与既有一致(不因新字段改变)", () => {
+  const engine = createPermissionEngine();
+  const call = { name: "mcp__srv__write", category: "mutate", params: {} };
+  assert.equal(
+    engine.decide(call, createPolicyContext({ autonomy: "read-only" })).decision,
+    "deny"
+  );
+  assert.equal(
+    engine.decide(call, createPolicyContext({ autonomy: "auto" })).decision,
+    "allow"
+  );
+});
+
+test("D4 安全网:destructive 即使被持久化策略覆盖也一律 deny", () => {
+  const engine = createPermissionEngine();
+  const grants = new Set(["tool:wipe_db"]);
+  const r = engine.decide({ name: "wipe_db", category: "destructive", params: {} }, createPolicyContext({ policyGrants: grants }));
+  assert.equal(r.decision, "deny");
+  assert.equal(r.source, "safety-invariant");
+});
+
+test("D4 安全网:autoApprove + approval-cache + trust + project 规则全允许时,destructive 仍 deny", () => {
+  const engine = createPermissionEngine();
+  const ctx = createPolicyContext({
+    autonomy: "full-auto",
+    projectRules: [{ id: "p1", tool: "wipe_db", decision: "allow" }]
+  });
+  ctx.trustStore = { rules: [{ id: "t1", tool: "wipe_db", decision: "allow" }] };
+  ctx.approvalCache = {
+    get: () => ({ decision: "allow" })
+  };
+  // 深度合并:approvalCache 不被 policy-loader 覆盖
+  const merged = { ...ctx, approvalCache: ctx.approvalCache, trustStore: ctx.trustStore };
+  const r = engine.decide(
+    { name: "wipe_db", category: "destructive", params: {}, autoApprove: true },
+    merged
+  );
+  assert.equal(r.decision, "deny", "四类放行来源叠加也不能破坏 destructive 不变量");
+  assert.equal(r.matched_rule, "hardcoded:destructive");
+});
+
+test("D4 安全网:非 destructive 工具不受影响", () => {
+  const engine = createPermissionEngine();
+  const r = engine.decide(
+    { name: "write_file", category: "mutate", params: {}, autoApprove: true },
+    createPolicyContext({ autonomy: "gated" })
+  );
+  assert.equal(r.decision, "allow", "mutate 的 autoApprove 仍照旧生效");
+  assert.equal(r.source, "mcp-server-config");
+});
+
+test("D4 安全网:approval-cache 对 destructive 不产生放行", () => {
+  const engine = createPermissionEngine();
+  const ctx = createPolicyContext({ autonomy: "gated" });
+  ctx.approvalCache = { get: () => ({ decision: "allow" }) };
+  const r = engine.decide(
+    { name: "drop_table", category: "destructive", params: {} },
+    { ...ctx, approvalCache: ctx.approvalCache }
+  );
+  assert.equal(r.decision, "deny");
+});
+
+test("持久化策略作用于工具名粒度,不伤其它工具", () => {
+  const engine = createPermissionEngine();
+  const grants = new Set(["tool:write_notes"]);
+  // 用 mutate + read-only:默认矩阵本身就是 deny,放行只可能来自持久化策略
+  const ctx = createPolicyContext({ autonomy: "read-only", policyGrants: grants });
+  const granted = engine.decide({ name: "write_notes", category: "mutate", params: {} }, ctx);
+  assert.equal(granted.decision, "allow");
+  assert.equal(granted.source, "mcp-policy", "放行必须来自持久化策略而非其它路径");
+
+  const other = engine.decide({ name: "write_notes_backup", category: "mutate", params: {} }, ctx);
+  assert.equal(other.decision, "deny", "未被授权的另一个工具不得被顺带放行");
+});

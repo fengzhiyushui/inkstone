@@ -10,11 +10,12 @@ import {
   formatExternalToolName,
   parseExternalToolName,
   cleanJsonSchema,
-  inferCategory,
   formatToolResult,
   summarizeToolResult,
   mcpToolToDeepSeekSchema
 } from "./schema-converter.js";
+import { resolveToolRisk, annotationsFromTool, riskBadge } from "./annotations.js";
+import { isToolEnabled, resolveConfiguredScope, normalizeToolPolicy } from "./tool-policy.js";
 
 const DEFAULT_MAX_PARALLEL_INIT = 4;
 const DEFAULT_RECONNECT_BASE_MS = 500;
@@ -215,29 +216,44 @@ export class McpHub extends EventEmitter {
 
   _mountTools(serverId, mcpTools, client, srvConfig) {
     const toolDefs = [];
-    const toolPolicy = srvConfig.tools || { enabled: ["*"], disabled: [] };
-    const enabled = new Set(toolPolicy.enabled || ["*"]);
-    const disabled = new Set(toolPolicy.disabled || []);
 
     for (const tool of mcpTools) {
-      if (disabled.has(tool.name)) continue;
-      if (!enabled.has("*") && !enabled.has(tool.name)) continue;
+      if (!isToolEnabled(srvConfig.tools, tool.name)) continue;
 
       const namespacedName = formatExternalToolName(serverId, tool.name);
       const rawFunctionSchema = mcpToolToDeepSeekSchema(serverId, tool);
-      const category = inferCategory(tool.name, tool.description);
+
+      // v1.13.0:风险推导。**server 未受信时 annotations 一律不参与判定**(design §4.2),
+      // 因此一个恶意 server 无法通过 annotation 把自己的写工具伪装成只读。
+      const trusted = Boolean(srvConfig.trust);
+      const risk = resolveToolRisk({
+        name: tool.name,
+        description: tool.description,
+        annotations: annotationsFromTool(tool),
+        trusted
+      });
+
+      const configuredScope = resolveConfiguredScope(srvConfig.tools, tool.name);
 
       const toolDef = {
         name: namespacedName,
         description: `[MCP: ${serverId}] ${tool.description || tool.name}`.trim(),
-        category,
+        category: risk.category,
         source: "mcp",
         serverId,
         originalName: tool.name,
         rawFunctionSchema,
         inputSchema: cleanJsonSchema(tool.inputSchema),
+        // 只读工具可配置自动放行;破坏性工具永不自动放行(引擎有硬约束兜底)
         autoApprove:
-          Array.isArray(srvConfig.autoApprove) && srvConfig.autoApprove.includes(tool.name),
+          risk.category === "read" &&
+          Array.isArray(srvConfig.autoApprove) &&
+          srvConfig.autoApprove.includes(tool.name),
+        annotations: risk.annotations,
+        riskSource: risk.source,
+        riskEscalatedBy: risk.escalatedBy,
+        serverTrusted: trusted,
+        approvalScope: configuredScope,
         execute: async (params) => {
           const res = await client.callTool(tool.name, params);
           return formatToolResult(res);
@@ -538,13 +554,22 @@ export class McpHub extends EventEmitter {
         reconnectAttempts: reconnect?.attempts || 0,
         serverInfo: client?.serverInfo || null,
         toolCount: tools.length,
-        tools: tools.map((t) => ({
-          name: t.name,
-          originalName: t.originalName,
-          description: t.description,
-          category: t.category,
-          autoApprove: t.autoApprove
-        })),
+        tools: tools.map((t) => {
+          const badge = riskBadge(t.category);
+          return {
+            name: t.name,
+            originalName: t.originalName,
+            description: t.description,
+            category: t.category,
+            autoApprove: t.autoApprove,
+            // v1.13.0:风险徽章与推导依据,供 GUI 展示"这条放行是凭据来的"
+            badge,
+            riskSource: t.riskSource || null,
+            riskEscalatedBy: t.riskEscalatedBy || [],
+            serverTrusted: Boolean(t.serverTrusted),
+            approvalScope: t.approvalScope || null
+          };
+        }),
         error: client?.getLastError()?.message || null,
         stderr: client?.getRecentStderr() || ""
       });

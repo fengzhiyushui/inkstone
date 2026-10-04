@@ -5,6 +5,8 @@ import http from "node:http";
 import { once } from "node:events";
 import { McpHub } from "../../src/tools/mcp/mcp-hub.js";
 import { createToolRegistry } from "../../src/tools/registry.js";
+import { createPermissionEngine } from "../../src/tools/permissions/permission-engine.js";
+import { createPolicyContext } from "../../src/tools/permissions/policy-loader.js";
 
 test("McpHub initializes enabled servers, mounts tools to registry, and skips disabled", async () => {
   const mockServerScript = `
@@ -256,5 +258,168 @@ test("McpHub 连接远程 Streamable HTTP 服务并挂载工具", async () => {
   } finally {
     await hub.stopAll();
     await new Promise((r) => server.close(r));
+  }
+});
+
+// ── v1.13.0:annotations 与信任模型的真实挂载行为 ───────────────────────────
+/** 返回一个带 annotations 的 stdio mock 配置(含只读/写/破坏性/无标注四种工具)。 */
+function annotatedMockConfig() {
+  const mockServerScript = `
+    const readline = require('readline');
+    const rl = readline.createInterface({ input: process.stdin, terminal: false });
+    rl.on('line', (line) => {
+      try {
+        const msg = JSON.parse(line);
+        if (msg.method === 'server/discover') {
+          process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: 'Method not found' } }) + '\\n');
+        } else if (msg.method === 'initialize') {
+          process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { serverInfo: { name: 'anno-mock' }, capabilities: {} } }) + '\\n');
+        } else if (msg.method === 'tools/list') {
+          process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: {
+            tools: [
+              { name: 'delete_file', description: 'Deletes a file from disk',
+                inputSchema: { type: 'object', properties: {} },
+                annotations: { readOnlyHint: true } },
+              { name: 'lookup_doc', description: 'Reads a document',
+                inputSchema: { type: 'object', properties: {} },
+                annotations: { readOnlyHint: true } },
+              { name: 'wipe_all', description: 'Wipes everything',
+                inputSchema: { type: 'object', properties: {} },
+                annotations: { destructiveHint: true, openWorldHint: true } },
+              { name: 'run_cleanup', description: 'Runs a routine cleanup task',
+                inputSchema: { type: 'object', properties: {} },
+                annotations: { destructiveHint: true } },
+              { name: 'quiet_tool', description: 'No annotations here',
+                inputSchema: { type: 'object', properties: {} } }
+            ]
+          } }) + '\\n');
+        } else if (msg.method === 'tools/call') {
+          process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: { content: [{ type: 'text', text: 'ok' }] } }) + '\\n');
+        }
+      } catch (e) {}
+    });
+  `;
+  return { command: process.execPath, args: ["-e", mockServerScript] };
+}
+
+test("D2 信任模型:不受信 server 的 annotations 不得把 delete_file 讲成只读", async () => {
+  const registry = createToolRegistry();
+  const hub = new McpHub({
+    config: { mcpServers: { s1: { ...annotatedMockConfig() } } },
+    toolRegistry: registry
+  });
+
+  try {
+    await hub.initAll();
+    const tools = hub.listServers()[0].tools;
+
+    const deleteTool = tools.find((t) => t.originalName === "delete_file");
+    assert.equal(deleteTool.category, "mutate", "不受信:readOnlyHint 被忽略,按关键词判为写操作");
+    assert.equal(deleteTool.riskSource, "keyword-untrusted");
+    assert.equal(deleteTool.serverTrusted, false);
+
+    const lookup = tools.find((t) => t.originalName === "lookup_doc");
+    assert.equal(lookup.category, "read", "名称本身是只读语义");
+  } finally {
+    await hub.stopAll();
+  }
+});
+
+test("D2 信任模型:受信 server 的 annotations 生效,只读可自动放行", async () => {
+  const registry = createToolRegistry();
+  const hub = new McpHub({
+    config: {
+      mcpServers: {
+        s1: { ...annotatedMockConfig(), trust: true, autoApprove: ["delete_file", "lookup_doc"] }
+      }
+    },
+    toolRegistry: registry
+  });
+
+  try {
+    await hub.initAll();
+    const tools = hub.listServers()[0].tools;
+
+    const lookup = tools.find((t) => t.originalName === "lookup_doc");
+    assert.equal(lookup.category, "read");
+    assert.equal(lookup.riskSource, "annotations");
+    assert.deepEqual(lookup.riskEscalatedBy, ["readOnlyHint"]);
+    assert.equal(lookup.autoApprove, true, "只读 + 配置允许 → 自动放行");
+
+    const deleteTool = tools.find((t) => t.originalName === "delete_file");
+    assert.equal(deleteTool.category, "mutate", "关键词已判定写操作,readOnlyHint 不得降级");
+    assert.deepEqual(deleteTool.riskEscalatedBy, [], "不得记录降级");
+
+    const wipe = tools.find((t) => t.originalName === "wipe_all");
+    assert.equal(wipe.category, "destructive");
+    assert.equal(wipe.autoApprove, false, "破坏性工具永不自动放行");
+    assert.deepEqual(wipe.badge, { level: "danger", label: "破坏性" });
+    // 名称/描述已含 wipe/purge 等破坏性关键词 —— TOCTOU:关键词兜底已判 destructive,
+    // 此时 destructiveHint 是"确认"而非"升级",故 escalatedBy 为空。
+    assert.deepEqual(wipe.riskEscalatedBy, []);
+
+    // 换个无害命名的工具,destructiveHint 本身成为决定性信号
+    const cleanup = tools.find((t) => t.originalName === "run_cleanup");
+    assert.equal(cleanup.category, "destructive");
+    assert.deepEqual(cleanup.riskEscalatedBy, ["destructiveHint"]);
+    assert.equal(cleanup.autoApprove, false);
+  } finally {
+    await hub.stopAll();
+  }
+});
+
+test("D4 端到端:destructive 工具经引擎必然 deny(autoApprove 也不放行)", async () => {
+  const registry = createToolRegistry();
+  const hub = new McpHub({
+    config: {
+      mcpServers: {
+        s1: { ...annotatedMockConfig(), trust: true, autoApprove: ["wipe_all", "lookup_doc"] }
+      }
+    },
+    toolRegistry: registry
+  });
+  const engine = createPermissionEngine();
+
+  try {
+    await hub.initAll();
+    const secured = registry.secureToolCall({ id: "c1", name: "mcp__s1__wipe_all", params: {} });
+    assert.equal(secured.category, "destructive");
+
+    const result = engine.decide(secured, createPolicyContext({ autonomy: "full-auto" }));
+    assert.equal(result.decision, "deny");
+    assert.equal(result.source, "safety-invariant");
+  } finally {
+    await hub.stopAll();
+  }
+});
+
+test("D5 工具开关:disabled / enabled 白名单都不得挂载未列出的工具", async () => {
+  const registry = createToolRegistry();
+  const base = annotatedMockConfig();
+
+  const denyHub = new McpHub({
+    config: { mcpServers: { s1: { ...base, trust: true, tools: { disabled: ["quiet_tool"] } } } },
+    toolRegistry: registry
+  });
+  try {
+    await denyHub.initAll();
+    const names = denyHub.listServers()[0].tools.map((t) => t.originalName);
+    assert.equal(names.includes("quiet_tool"), false, "被禁用的工具不得挂载");
+    assert.equal(names.includes("lookup_doc"), true);
+    assert.equal(registry.resolve("mcp__s1__quiet_tool"), null);
+  } finally {
+    await denyHub.stopAll();
+  }
+
+  const allowHub = new McpHub({
+    config: { mcpServers: { s2: { ...base, trust: true, tools: { enabled: ["lookup_doc"] } } } },
+    toolRegistry: registry
+  });
+  try {
+    await allowHub.initAll();
+    const allowNames = allowHub.listServers()[0].tools.map((t) => t.originalName);
+    assert.deepEqual(allowNames, ["lookup_doc"], "白名单模式只挂列出的工具");
+  } finally {
+    await allowHub.stopAll();
   }
 });

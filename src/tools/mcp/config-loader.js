@@ -60,10 +60,16 @@ export function normalizeServerConfig(serverId, raw = {}) {
   if (raw.oauth && typeof raw.oauth === "object") {
     normalized.oauth = { ...raw.oauth };
   }
+  // v1.13.0:trust 决定该 server 自报的 annotations 是否参与风险判定
+  // (design §4.2:annotations 不可信,除非 server 受信)。默认 false。
+  if (raw.trust === true) normalized.trust = true;
   if (raw.tools && typeof raw.tools === "object") {
     normalized.tools = {
       enabled: Array.isArray(raw.tools.enabled) ? raw.tools.enabled.map(String) : ["*"],
-      disabled: Array.isArray(raw.tools.disabled) ? raw.tools.disabled.map(String) : []
+      disabled: Array.isArray(raw.tools.disabled) ? raw.tools.disabled.map(String) : [],
+      ...(raw.tools.approval && typeof raw.tools.approval === "object" && !Array.isArray(raw.tools.approval)
+        ? { approval: { ...raw.tools.approval } }
+        : {})
     };
   }
   if (raw.protocolMode === "auto" || raw.protocolMode === "modern" || raw.protocolMode === "legacy") {
