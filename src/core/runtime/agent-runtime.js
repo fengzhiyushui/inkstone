@@ -272,8 +272,9 @@ export function createAgentRuntime({
     return { status: "failed", content: repair.reason, verification, toolResults: loop.toolResults };
   }
 
-  async function approve(approvalId, decision = "approve") {
+  async function approve(approvalId, decision = "approve", opts = {}) {
     const normalized = normalizeApprovalDecision(decision);
+    const approvalScope = typeof opts?.scope === "string" ? opts.scope : "session";
     if (currentTurnId) {
       const err = new Error("another turn is in progress");
       err.code = "BUSY";
@@ -321,7 +322,8 @@ export function createAgentRuntime({
         turnId: record.turn_id,
         toolCall: record.resume_state.pending_tool_call,
         options: record.resume_state.options || {},
-        permission_context: recordPermissionContext
+        permission_context: recordPermissionContext,
+        scope: approvalScope
       });
       await publishTurnResumed(record, approvalId);
       const resumeOptions = record.resume_state.options || {};

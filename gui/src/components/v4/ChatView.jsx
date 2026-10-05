@@ -164,12 +164,35 @@ function ApprovalCard({ card, t, onApprove }) {
       {card.summary && <span className={css.headSum}>· {card.summary}</span>}
     </>
   );
+  // v1.13.1:三级批准。破坏性工具不允许持久放行(destructive 硬约束),
+  // 后两个按钮禁用并说明原因,用户只能"仅本次"批准或拒绝。
+  const destructive = card.category === "destructive";
   const actions = card.resolved
     ? <span className={`mini ${card.decision === "approved" ? "ok" : "err"}`}>{t(`ev.decision.${card.decision === "approved" ? "approved" : "denied"}`)}</span>
     : (
       <>
         <button type="button" className="btn ghost" onClick={() => onApprove(card.id, "deny")}>{t("ev.deny")}</button>
-        <button type="button" className="btn accent" onClick={() => onApprove(card.id, "approve")}>{t("ev.approve")}</button>
+        <button
+          type="button"
+          className="btn ghost"
+          disabled={destructive}
+          title={destructive ? t("ev.approvalScope.locked") : t("ev.approval.projectHint")}
+          onClick={() => onApprove(card.id, "approve", { scope: "project" })}
+        >
+          {t("ev.approval.project")}
+        </button>
+        <button
+          type="button"
+          className="btn ghost"
+          disabled={destructive}
+          title={destructive ? t("ev.approvalScope.locked") : t("ev.approval.alwaysHint")}
+          onClick={() => onApprove(card.id, "approve", { scope: "always" })}
+        >
+          {t("ev.approval.always")}
+        </button>
+        <button type="button" className="btn accent" onClick={() => onApprove(card.id, "approve", { scope: "session" })}>
+          {t("ev.approval.session")}
+        </button>
       </>
     );
   return <Collapsible className="ap" head={head} actions={actions} />;

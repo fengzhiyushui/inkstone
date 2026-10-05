@@ -15,7 +15,7 @@ import {
   mcpToolToDeepSeekSchema
 } from "./schema-converter.js";
 import { resolveToolRisk, annotationsFromTool, riskBadge } from "./annotations.js";
-import { isToolEnabled, resolveConfiguredScope, normalizeToolPolicy } from "./tool-policy.js";
+import { isToolEnabled, resolveConfiguredScope, normalizeToolPolicy, asPolicy } from "./tool-policy.js";
 
 const DEFAULT_MAX_PARALLEL_INIT = 4;
 const DEFAULT_RECONNECT_BASE_MS = 500;
@@ -233,20 +233,31 @@ export class McpHub extends EventEmitter {
         trusted
       });
 
+      // v1.13.1:用户显式风险覆盖(design §4.2 中"用户 policy"是最高优先级)。
+      // 关键词/annotations 都是启发式,会把 create_backup 这类只读工具误判成写操作;
+      // 这里给用户一个手写的逃生阀。它是人手写进配置的**有意决定**,因此允许降级,
+      // 但会被记录下来并在三端提示,避免悄悄放宽。
+      const policy = asPolicy(srvConfig.tools);
+      const riskOverride = policy.risk[tool.name] || null;
+      const overridden = Boolean(riskOverride) && riskOverride !== risk.category;
+      let category = risk.category;
+      if (riskOverride) category = riskOverride;
+
       const configuredScope = resolveConfiguredScope(srvConfig.tools, tool.name);
 
       const toolDef = {
         name: namespacedName,
         description: `[MCP: ${serverId}] ${tool.description || tool.name}`.trim(),
-        category: risk.category,
+        category,
         source: "mcp",
         serverId,
         originalName: tool.name,
         rawFunctionSchema,
         inputSchema: cleanJsonSchema(tool.inputSchema),
-        // 只读工具可配置自动放行;破坏性工具永不自动放行(引擎有硬约束兜底)
+        // v1.13.1:恢复 v1.11.0 的语义 —— autoApprove 不看类别,列入即放行。
+        // (v1.13.0 曾错误地收紧为"仅 read",那是无声的行为回退。)
+        // 破坏性工具仍由引擎硬拒绝,不受此项影响。
         autoApprove:
-          risk.category === "read" &&
           Array.isArray(srvConfig.autoApprove) &&
           srvConfig.autoApprove.includes(tool.name),
         annotations: risk.annotations,
@@ -254,6 +265,8 @@ export class McpHub extends EventEmitter {
         riskEscalatedBy: risk.escalatedBy,
         serverTrusted: trusted,
         approvalScope: configuredScope,
+        riskOverridden: overridden,
+        riskOverride: riskOverride,
         execute: async (params) => {
           const res = await client.callTool(tool.name, params);
           return formatToolResult(res);
@@ -567,7 +580,9 @@ export class McpHub extends EventEmitter {
             riskSource: t.riskSource || null,
             riskEscalatedBy: t.riskEscalatedBy || [],
             serverTrusted: Boolean(t.serverTrusted),
-            approvalScope: t.approvalScope || null
+            approvalScope: t.approvalScope || null,
+            riskOverridden: Boolean(t.riskOverridden),
+            riskOverride: t.riskOverride || null
           };
         }),
         error: client?.getLastError()?.message || null,

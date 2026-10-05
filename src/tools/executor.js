@@ -60,7 +60,10 @@ export function createToolExecutor({ registry, permissionEngine, eventBus = null
         kind: "tool",
         risk: def.risk_level,
         summary: approvalSummary(def.name, securedCall.params),
-        detailsRef: toolCall.id
+        detailsRef: toolCall.id,
+        // v1.13.1:把风险等级带到审批请求上,三端据此决定是否提供
+        // "本项目/永久" 这类持久放行(destructive 一律只允许逐次审批)。
+        category: securedCall.category
       });
       publish("approval:requested", { approval, call: securedCall });
       return publishResult(createToolResult({

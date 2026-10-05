@@ -393,8 +393,7 @@ test("D4 端到端:destructive 工具经引擎必然 deny(autoApprove 也不放�
   }
 });
 
-test("D5 工具开关:disabled / enabled 白名单都不得挂载未列出的工具", async () => {
-  const registry = createToolRegistry();
+test("D5 工具开关:disabled / enabled 白名单都不得挂载未列出的工具", async () => {  const registry = createToolRegistry();
   const base = annotatedMockConfig();
 
   const denyHub = new McpHub({
@@ -421,5 +420,98 @@ test("D5 工具开关:disabled / enabled 白名单都不得挂载未列出的工
     assert.deepEqual(allowNames, ["lookup_doc"], "白名单模式只挂列出的工具");
   } finally {
     await allowHub.stopAll();
+  }
+});
+
+// ── v1.13.1:回归修复与用户逃生阀 ───────────────────────────────────────────
+test("回归:autoApprove 恢复 v1.11.0 语义 —— 不看类别,列入即放行", async () => {
+  // v1.13.0 曾错误收紧为"仅 read",导致存量 `autoApprove: ["write_file"]`
+  // 升级后每次都要重新审批(无声行为回退)。
+  const registry = createToolRegistry();
+  const hub = new McpHub({
+    config: {
+      mcpServers: {
+        s1: { ...annotatedMockConfig(), autoApprove: ["lookup_doc", "delete_file", "wipe_all"] }
+      }
+    },
+    toolRegistry: registry
+  });
+
+  try {
+    await hub.initAll();
+    const tools = hub.listServers()[0].tools;
+    const byName = (n) => tools.find((t) => t.originalName === n);
+
+    assert.equal(byName("lookup_doc").autoApprove, true, "只读工具照旧放行");
+    assert.equal(byName("delete_file").autoApprove, true, "mutate 工具也必须放行(v1.11.0 行为)");
+    // destructive 的 autoApprove 仍为 true(配置层面),但引擎会硬拒绝 —— 双保险
+    assert.equal(byName("wipe_all").autoApprove, true);
+  } finally {
+    await hub.stopAll();
+  }
+});
+
+test("回归:autoApprove 不含的工具不受影响;列表不自动带 autoApprove", async () => {
+  const registry = createToolRegistry();
+  const hub = new McpHub({
+    config: { mcpServers: { s1: { ...annotatedMockConfig(), autoApprove: ["lookup_doc"] } } },
+    toolRegistry: registry
+  });
+  try {
+    await hub.initAll();
+    const tools = hub.listServers()[0].tools;
+    assert.equal(tools.find((t) => t.originalName === "lookup_doc").autoApprove, true);
+    assert.equal(tools.find((t) => t.originalName === "quiet_tool").autoApprove, false);
+  } finally {
+    await hub.stopAll();
+  }
+});
+
+test("逃生阀:tools.risk 可让用户显式覆盖风险等级", async () => {
+  const registry = createToolRegistry();
+  const hub = new McpHub({
+    config: {
+      mcpServers: {
+        s1: { ...annotatedMockConfig(), tools: { risk: { delete_file: "read", wipe_all: "mutate" } } }
+      }
+    },
+    toolRegistry: registry
+  });
+
+  try {
+    await hub.initAll();
+    const tools = hub.listServers()[0].tools;
+    const byName = (n) => tools.find((t) => t.originalName === n);
+
+    // 关键词/annotations 判定为 mutate,用户手写降级为 read
+    assert.equal(byName("delete_file").category, "read", "用户覆盖应生效");
+    assert.equal(byName("delete_file").riskOverridden, true);
+    assert.equal(byName("delete_file").riskOverride, "read");
+
+    // destructive 也可由用户显式改写(有意决定),但会被记录
+    assert.equal(byName("wipe_all").category, "mutate");
+    assert.equal(byName("wipe_all").riskOverridden, true);
+
+    // 未覆盖的工具保持原判定
+    assert.equal(byName("lookup_doc").category, "read");
+    assert.equal(byName("lookup_doc").riskOverridden, false);
+  } finally {
+    await hub.stopAll();
+  }
+});
+
+test("逃生阀:tools.risk 的非法值被忽略,不破坏挂载", async () => {
+  const registry = createToolRegistry();
+  const hub = new McpHub({
+    config: { mcpServers: { s1: { ...annotatedMockConfig(), tools: { risk: { delete_file: "bogus", lookup_doc: 42 } } } } },
+    toolRegistry: registry
+  });
+  try {
+    await hub.initAll();
+    const tools = hub.listServers()[0].tools;
+    assert.equal(tools.find((t) => t.originalName === "delete_file").category, "mutate", "非法值回落到原判定");
+    assert.equal(tools.find((t) => t.originalName === "lookup_doc").category, "read");
+  } finally {
+    await hub.stopAll();
   }
 });

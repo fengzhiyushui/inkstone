@@ -135,7 +135,7 @@ export function describeEvent(event) {
     return d("tool-result", src, isSuccess ? "success" : "warn", false, { status, durationMs: duration });
   }
   if (type === "permission:decision") return d("permission", src, "info", false, { decision: str(event.permission?.decision) || str(event.decision) });
-  if (type === "approval:requested") return d("approval", src, "warn", false, { id: str(event.approval?.id), summary: str(event.approval?.summary) });
+  if (type === "approval:requested") return d("approval", src, "warn", false, { id: str(event.approval?.id), summary: str(event.approval?.summary), category: str(event.approval?.category) });
   if (type === "approval:resolved") return d("approval-resolved", src, "info", false, { decision: str(event.decision) || str(event.approval?.decision) });
 
   if (type === "file:diff_preview") return d("diff-preview", src, "info", false, { summaryText: str(event.summary_text), diffHash: str(event.diff_hash), changeId: changeId(event), files: normFiles(event) });

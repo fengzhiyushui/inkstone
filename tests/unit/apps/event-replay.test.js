@@ -140,7 +140,7 @@ const DESCRIPTOR_EXPECTATIONS = new Map([
   ["tool:call", { kind: "tool-call", severity: "info", quiet: false, fields: { name: "read", argHint: "src/core/runtime/agent-runtime.js" } }],
   ["tool:result", { kind: "tool-result", severity: "success", quiet: false, fields: { status: "success", durationMs: 42 } }],
   ["permission:decision", { kind: "permission", severity: "info", quiet: false, fields: { decision: "allow" } }],
-  ["approval:requested", { kind: "approval", severity: "warn", quiet: false, fields: { id: "approval_3d8e", summary: "shell requires approval: `npm test -- tests/unit/apps/event-contract.test.js`" } }],
+  ["approval:requested", { kind: "approval", severity: "warn", quiet: false, fields: { id: "approval_3d8e", summary: "shell requires approval: `npm test -- tests/unit/apps/event-contract.test.js`", category: null } }],
   ["approval:resolved", { kind: "approval-resolved", severity: "info", quiet: false, fields: { decision: "approved" } }],
   // ── 恢复 ──
   ["recovery:blocked", { kind: "recovery-blocked", severity: "warn", quiet: false, fields: { reason: "corrupt paused sidecar: invalid json", itemId: "rec_pause_approval_3d8e" } }],

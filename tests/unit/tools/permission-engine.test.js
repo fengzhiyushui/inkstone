@@ -169,19 +169,41 @@ test("fingerprint changes when memory key or value differs", () => {
   assert.notEqual(fp1, fp3);
 });
 
-// ── v1.13.0:持久化策略与破坏性硬约束 ─────────────────────────────────────────
-test("持久化策略(mcp-policy)命中即放行,且优先于 autoApprove", () => {
+// ── v1.13.1:MCP 持久化授权以「规则」形式进入引擎(不再有平行规则源) ──────────
+test("mcp-policy 规则命中即放行(经 projectRules 通道)", () => {
   const engine = createPermissionEngine();
-  const grants = new Set(["tool:mcp__srv__read_doc"]);
+  // 这正是 mcp/tool-policy.js 的 createPolicyStore().asRules() 产出的形状
+  const policyRules = [{
+    id: "mcp-policy:project:mcp__srv__read_doc",
+    tool: "mcp__srv__read_doc",
+    decision: "allow",
+    meta: { source: "mcp-policy", scope: "project" }
+  }];
   const call = { name: "mcp__srv__read_doc", category: "read", params: {}, autoApprove: false };
-  const r = engine.decide(call, createPolicyContext({ autonomy: "read-only", policyGrants: grants }));
+  const r = engine.decide(call, createPolicyContext({ autonomy: "read-only", projectRules: policyRules }));
   assert.deepEqual(
     r,
-    { decision: "allow", matched_rule: "mcp-policy:persistent", source: "mcp-policy", persistent: true }
+    { decision: "allow", matched_rule: "mcp-policy:project:mcp__srv__read_doc", source: "project-rules" }
   );
 });
 
-test("没有持久化策略时,决策与既有一致(不因新字段改变)", () => {
+test("mcp-policy 规则可带参数作用域(pattern),与内置 projectRules 一致", () => {
+  const engine = createPermissionEngine();
+  const rules = [{
+    id: "mcp-policy:project:mcp__fs__write_file",
+    tool: "mcp__fs__write_file",
+    pattern: "src/**",
+    decision: "allow",
+    meta: { source: "mcp-policy", scope: "project" }
+  }];
+  const base = { name: "mcp__fs__write_file", category: "mutate", autoApprove: false };
+  const allowed = engine.decide({ ...base, params: { path: "src/a.js" } }, createPolicyContext({ autonomy: "read-only", projectRules: rules }));
+  const rejected = engine.decide({ ...base, params: { path: "etc/passwd" } }, createPolicyContext({ autonomy: "read-only", projectRules: rules }));
+  assert.equal(allowed.decision, "allow", "命中 pattern 应放行");
+  assert.equal(rejected.decision, "deny", "pattern 外不得被顺带放行");
+});
+
+test("没有持久化策略时,决策与既有默认矩阵一致", () => {
   const engine = createPermissionEngine();
   const call = { name: "mcp__srv__write", category: "mutate", params: {} };
   assert.equal(
@@ -194,12 +216,16 @@ test("没有持久化策略时,决策与既有一致(不因新字段改变)", ()
   );
 });
 
-test("D4 安全网:destructive 即使被持久化策略覆盖也一律 deny", () => {
+test("D4 安全网:destructive 即使有规则放行也一律 deny", () => {
   const engine = createPermissionEngine();
-  const grants = new Set(["tool:wipe_db"]);
-  const r = engine.decide({ name: "wipe_db", category: "destructive", params: {} }, createPolicyContext({ policyGrants: grants }));
+  const rules = [{ id: "p1", tool: "wipe_db", decision: "allow" }];
+  const r = engine.decide(
+    { name: "wipe_db", category: "destructive", params: {} },
+    createPolicyContext({ projectRules: rules })
+  );
   assert.equal(r.decision, "deny");
   assert.equal(r.source, "safety-invariant");
+  assert.equal(r.matched_rule, "hardcoded:destructive");
 });
 
 test("D4 安全网:autoApprove + approval-cache + trust + project 规则全允许时,destructive 仍 deny", () => {
@@ -243,14 +269,14 @@ test("D4 安全网:approval-cache 对 destructive 不产生放行", () => {
   assert.equal(r.decision, "deny");
 });
 
-test("持久化策略作用于工具名粒度,不伤其它工具", () => {
+test("mcp-policy 规则作用于工具名粒度,不伤其它工具", () => {
   const engine = createPermissionEngine();
-  const grants = new Set(["tool:write_notes"]);
-  // 用 mutate + read-only:默认矩阵本身就是 deny,放行只可能来自持久化策略
-  const ctx = createPolicyContext({ autonomy: "read-only", policyGrants: grants });
+  const rules = [{ id: "mcp-policy:project:write_notes", tool: "write_notes", decision: "allow", meta: { source: "mcp-policy" } }];
+  // 用 mutate + read-only:默认矩阵本身就是 deny,放行只可能来自规则
+  const ctx = createPolicyContext({ autonomy: "read-only", projectRules: rules });
   const granted = engine.decide({ name: "write_notes", category: "mutate", params: {} }, ctx);
   assert.equal(granted.decision, "allow");
-  assert.equal(granted.source, "mcp-policy", "放行必须来自持久化策略而非其它路径");
+  assert.equal(granted.source, "project-rules", "放行必须来自规则通道(与内置 projectRules 同一条路径)");
 
   const other = engine.decide({ name: "write_notes_backup", category: "mutate", params: {} }, ctx);
   assert.equal(other.decision, "deny", "未被授权的另一个工具不得被顺带放行");

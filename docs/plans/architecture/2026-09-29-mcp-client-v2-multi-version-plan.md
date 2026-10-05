@@ -2,7 +2,7 @@
 
 - 类型：实施计划 (Plan)
 - 日期：2026-09-29
-- 状态：进行中（v1.11.1 / v1.11.2 / v1.12.0 / v1.13.0 已收口，2026-10-04；v1.14.0+ 未开工）
+- 状态：进行中（v1.11.1 / v1.11.2 / v1.12.0 / v1.13.0 / v1.13.1 已收口，2026-10-05；v1.14.0+ 未开工）
 - 关联：[MCP Client v2 设计规格](../../specs/architecture/2026-09-29-mcp-client-v2-design.md) · [v1.11.0 MCP 首版](../../specs/architecture/2026-09-28-v1.11.0-mcp-integration-design.md) · [post-V3 路线图](../../specs/architecture/2026-09-17-post-v3-roadmap-design.md) · [权限引擎](../../specs/backend/2026-05-30-v2-7-approval-resume-design.md)
 
 > 协议事实以 modelcontextprotocol.io **2026-07-28** 为准（2026-09-29 联网核对）：Modern 无握手、per-request `_meta`；Legacy `initialize`；标准 transport = stdio + Streamable HTTP。

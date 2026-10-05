@@ -24,7 +24,8 @@ export function makeFakeKernel({ onSend, onApprove, onInterrupt } = {}) {
     metrics: { getUsage: () => ({ total_tokens: 42, cache_hit_rate: 0.5 }) },
     agent: {
       send: (text, options) => onSend({ text, options, emit }),
-      approve: (id, decision) => onApprove({ id, decision }),
+      // v1.13.1:第三个参数是放行范围 scope(session/project/always)
+      approve: (id, decision, opts) => onApprove({ id, decision, scope: opts?.scope }),
       interrupt: () => onInterrupt?.()
     },
     async dispose() { kernel.disposed = true; }

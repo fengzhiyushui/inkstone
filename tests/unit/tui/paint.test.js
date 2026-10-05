@@ -26,7 +26,8 @@ test("computeBottom: cursor column counts CJK as 2", () => {
 test("computeBottom: approval replaces input line", () => {
   const s = reduce(initialTuiState({}), { type: "approval", approval: { id: "ap_1", summary: "x" } });
   const out = computeBottom(s, t, 80);
-  assert.match(strip(out.lines[1]), /审批:y 批准/);
+  // v1.13.1:提示行同时给出放行范围按键
+  assert.match(strip(out.lines[1]), /审批:y 仅本次/);
   assert.equal(out.cursorCol, 1);
 });
 

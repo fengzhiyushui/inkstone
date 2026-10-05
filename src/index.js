@@ -14,6 +14,7 @@ import { createBuiltinTools } from "./tools/builtin/index.js";
 import { createToolRegistry } from "./tools/registry.js";
 import { createToolExecutor } from "./tools/executor.js";
 import { McpHub } from "./tools/mcp/mcp-hub.js";
+import { createPolicyStore, validateApprovalScope, normalizeApprovalScope } from "./tools/mcp/tool-policy.js";
 import { createPermissionEngine } from "./tools/permissions/permission-engine.js";
 import { createApprovalCache } from "./tools/permissions/approval-cache.js";
 import { createPolicyContext } from "./tools/permissions/policy-loader.js";
@@ -120,6 +121,49 @@ export async function createKernel(root, options = {}) {
   const modelGateway = resolveModelGateway(options);
   const approvalCache = options.approvalCache || createApprovalCache();
   const permissionEngine = options.permissionEngine || createPermissionEngine();
+  // v1.13.1:MCP 持久化授权存储。它只负责把 project/always 级授权**翻译成**权限引擎
+  // 已在读取的规则形状(见 tool-policy.policyGrantsAsRules),不另造规则源。
+  // 可用 options.mcpPolicyStore 注入(测试隔离);缺省按 root + DEEPSEEK_CODE_HOME 落地。
+  const mcpPolicyStore = options.mcpPolicyStore !== undefined
+    ? options.mcpPolicyStore
+    : createPolicyStore({ projectRoot: root });
+
+  /**
+   * 把 MCP 持久化授权(project / always)翻译成规则,与项目既有 projectRules 合并。
+   * 顺序:MCP 策略在前 —— 它们是用户在批准菜单里点"本项目/永久"得到的最明确决定,
+   * 应优先于更笼统的既有规则命中。destructive 仍由引擎在规则匹配**之前**硬拒绝。
+   */
+  function mergeProjectRules() {
+    const base = options.projectRules || [];
+    const fromPolicy = mcpPolicyStore?.asRules?.() || [];
+    return [...fromPolicy, ...base];
+  }
+
+  /**
+   * v1.13.1:按用户选择的 scope 持久化一次批准。
+   *  - `session`(缺省):只进内存 approval-cache,与旧行为逐字节一致;
+   *  - `project` / `always`:落 mcp-policy.json,之后同一工具不再询问。
+   * destructive 一律拒绝持久化并降级为 session(validateApprovalScope 判定)。
+   */
+  async function persistApprovalScope(securedCall, scope) {
+    const normalized = normalizeApprovalScope(scope) || "session";
+    if (normalized === "session") return { persisted: false, scope: "session" };
+
+    const verdict = validateApprovalScope({
+      category: securedCall?.category,
+      scope: normalized,
+      toolName: securedCall?.name || ""
+    });
+    if (!verdict.ok) {
+      // 被硬约束拒绝:降级为仅本次,并把原因带回去供三端说明
+      return { persisted: false, scope: "session", locked: true, reason: verdict.reason };
+    }
+    const result = mcpPolicyStore?.grant?.(securedCall?.name, verdict.scope);
+    if (!result?.ok) {
+      return { persisted: false, scope: "session", reason: result?.reason || "policy store rejected grant" };
+    }
+    return { persisted: true, scope: result.scope };
+  }
   const mainPlane = buildToolPlane(root, {
     eventBus,
     permissionEngine,
@@ -207,13 +251,15 @@ export async function createKernel(root, options = {}) {
         projectId: permissionContext?.project_id || approvalContext.options?.projectId || projectId,
         projectRoot: permissionContext?.project_root || root,
         trustStore: permissionContext ? { rules: permissionContext.trust_store_rules || [] } : (options.trustStore || { rules: [] }),
-        projectRules: permissionContext?.project_rules || options.projectRules || [],
+        projectRules: mergeProjectRules(),
         approvalCache,
         memoryRoot: permissionContext?.memory_root ?? options.memoryRoot ?? null
       });
       policyContext.turnId = approvalContext.turnId;
       const fp = permissionEngine.fingerprint(securedCall, policyContext);
       approvalCache.grant(fp, { decision: "allow" });
+      // v1.13.1:按用户选择的 scope 落盘(project / always);session 仅进缓存
+      await persistApprovalScope(securedCall, approvalContext.scope);
     }
   };
 
@@ -442,10 +488,10 @@ export async function createKernel(root, options = {}) {
     runtime,
     agent: {
       send: routedSend,
-      approve: async (id, decision) => {
+      approve: async (id, decision, opts = {}) => {
         if (orchestrator.hasPaused(id)) return orchestrator.resume(id, decision);
         if (recoveryEnabled && await orchestrator.hasDurablePaused(id)) return orchestrator.resumeDurable(id, decision);
-        return runtime.approve(id, decision);
+        return runtime.approve(id, decision, opts);
       },
       interrupt: runtime.interrupt,
       listPaused: runtime.listPaused,

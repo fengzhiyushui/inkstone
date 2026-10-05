@@ -14,6 +14,19 @@
 
 ---
 
+## v1.13.1 — 2026-10-05 · MCP 工具治理闭环与回归修复
+
+> 补丁版本：修复 v1.13.0「三级批准」在产品中不可达的接线断裂，恢复被误改的 `autoApprove` 语义，并补上用户显式风险覆盖的逃生阀。
+
+- **闭环：持久化授权真正生效**。v1.13.0 的 `policyGrants` 在内核里恒为 `null`、`validateApprovalScope` 无生产调用方，导致"本项目/永久"两个作用域在产品里**完全不可达**。现删除引擎中平行造的规则源，由 `mcp/tool-policy.js` 的 `asRules()` 把授权翻译成**引擎已在读取的 `projectRules` 规则形状**（`{id, tool, pattern?, decision}`），经 `createKernel` 的 `mergeProjectRules()` 注入。消掉一条冗余安全路径，同时免费获得与内置 `projectRules` 一致的参数作用域（`pattern` glob）。
+- **三级批准入口**：批准请求新增 `category` 字段并经 `approval-request` → `executor` → `event-contract` → `agent-cards` 贯通到三端。GUI 审批卡片由单个「批准」按钮改为**仅本次 / 本项目 / 永久**三枚，破坏性工具时后两枚禁用并提示「destructive 不可持久放行」；CLI 在 TTY 下追问范围（`p`/`a`/其它），非交互调用方默认仅本次；TUI 行内追问 `[p]/[a]/其它`。授权经 `validateApprovalScope` 校验后落盘，被拒绝时**降级为仅本次并说明原因**，而非静默失效。
+- **回归修复：`autoApprove` 语义**。v1.13.0 曾错误收紧为"仅 read 类工具才放行"，使存量 `autoApprove: ["write_file"]` 升级后每次都要重新审批（无声行为回退，且与发布说明不符）。现恢复 v1.11.0 语义：**不看类别，列入即放行**；破坏性工具仍由引擎硬拒绝。
+- **逃生阀：`tools.risk`**。规格 §4.2 中「用户 policy」本就是最高优先级，但 v1.13.0 未落地，关键词误判只读工具（如 `create_backup`）时用户无从纠正。现支持在 server 配置的 `tools.risk` 中显式指定 `read`/`mutate`/`destructive`，可覆盖 annotations 与关键词推断；非法值忽略，覆盖记录在 `riskOverridden` 字段并透出三端。
+- **策略文件**：用户级根可用 `DEEPSEEK_CODE_HOME` 覆盖（便于测试隔离与便携部署）；`always` 与 `project` 分别落 `~/.deepseek-code/mcp-policy.json` 与 `<root>/.deepseek-code/mcp-policy.json`，0600、原子写入、只记录 grant 不写密钥；损坏文件按空表处理（回到默认保守）。
+- **测试**：新增 `mcp-policy-closure`（6 项，把「策略存储 → 规则 → 引擎」整条链走通）、`mcp-hub` 补 4 项（autoApprove 回归、tools.risk 覆盖）、`agent-cards` 补 1 项（category 贯通）；更新受 `category` 字段影响的 event-contract/replay 期望表。
+
+---
+
 ## v1.13.0 — 2026-10-04 · MCP 工具治理与权限
 
 > 小版本发布：为 MCP 外部工具建立完整的治理体系 —— annotations 风险推导、服务器信任模型、三级批准与持久放行、破坏性工具硬约束、工具级开关，三端可配置可解释。

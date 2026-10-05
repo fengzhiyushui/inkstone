@@ -34,11 +34,6 @@ export const DEFAULT_POLICY_MATRIX = Object.freeze({
 });
 
 export function createPermissionEngine() {
-  /** 工具级策略 key,与 mcp/tool-policy.policyKey 保持一致(避免反向依赖)。 */
-  function toolPolicyKey(toolCall) {
-    return `tool:${String(toolCall.name)}`;
-  }
-
   function decideInner(toolCall, context = {}) {
     const category = toolCall.category || "read";
     const autonomy = context.autonomy || "gated";
@@ -47,17 +42,9 @@ export function createPermissionEngine() {
       return { decision: "deny", matched_rule: "hardcoded:destructive", source: "safety-invariant" };
     }
 
-    // v1.13.0:持久化策略(project / always)优先级最高 —— 这是用户显式的长期决定,
-    // 高于 server 配置里的 autoApprove 与会话级缓存。
-    const grants = context.policyGrants;
-    if (grants && typeof grants.has === "function" && grants.has(toolPolicyKey(toolCall))) {
-      return {
-        decision: "allow",
-        matched_rule: "mcp-policy:persistent",
-        source: "mcp-policy",
-        persistent: true
-      };
-    }
+    // v1.13.1 起:持久化授权不再由本引擎单独消费,而是由创建策略存储的一方
+    // (mcp/tool-policy.js)翻译成 projectRules / trustStore 的规则形状,走下面
+    // 既有的两条规则路径 —— 安全关键路径上只保留一套规则源。
 
     if (toolCall.autoApprove) {
       return { decision: "allow", matched_rule: "mcp:auto-approve", source: "mcp-server-config" };

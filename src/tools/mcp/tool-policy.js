@@ -40,7 +40,18 @@ export function normalizeToolPolicy(raw = {}) {
     }
   }
 
-  return { enabled, disabled, approval };
+  // per-tool 风险覆盖:{ "<toolName>": "read" | "mutate" | "destructive" }
+  // 这是**用户手写**的决定(规格中优先级高于 annotations 与关键词),用于补回逃生阀:
+  // 关键词把一个只读工具误判成写操作时,用户可以在配置里显式纠正。
+  const risk = {};
+  if (source.risk && typeof source.risk === "object" && !Array.isArray(source.risk)) {
+    for (const [tool, level] of Object.entries(source.risk)) {
+      const normalized = normalizeRiskOverride(level);
+      if (normalized) risk[tool] = normalized;
+    }
+  }
+
+  return { enabled, disabled, approval, risk };
 }
 
 export function normalizeApprovalScope(value) {
@@ -50,12 +61,21 @@ export function normalizeApprovalScope(value) {
 }
 
 /** 宽容地拿到规范化策略:允许直接传 server 配置里的原始 `tools` 字段。 */
-function asPolicy(toolPolicy) {
+export function asPolicy(toolPolicy) {
   // 已规范化(有 enabled/disabled 两个键)时不再重复归一,保持幂等
   if (toolPolicy && typeof toolPolicy === "object" && Array.isArray(toolPolicy.enabled) && Array.isArray(toolPolicy.disabled)) {
     return toolPolicy;
   }
   return normalizeToolPolicy(toolPolicy);
+}
+
+/** 允许用户显式指定的风险等级(规格 §4.2:用户 policy 优先级最高)。 */
+export const OVERRIDABLE_RISKS = Object.freeze(["read", "mutate", "destructive"]);
+
+export function normalizeRiskOverride(value) {
+  if (typeof value !== "string") return null;
+  const lowered = value.trim().toLowerCase();
+  return OVERRIDABLE_RISKS.includes(lowered) ? lowered : null;
 }
 
 /** 工具是否被 server 配置显式启用(默认全开)。 */
@@ -98,6 +118,33 @@ export function validateApprovalScope({ category, scope, toolName = "" } = {}) {
 /** 策略文件的规范 key(工具级,与调用参数无关)。 */
 export function policyKey(toolName) {
   return `tool:${String(toolName)}`;
+}
+
+/**
+ * 把持久化授权翻译成**权限引擎已在读取的规则形状**,而不是另造一套规则源。
+ *
+ * 引擎的 `ruleMatches()` 已支持 `rule.tool` / `rule.category` / `rule.pattern`
+ * (对 params.path 的 glob) / `rule.match.argv`,因此这里只需产出 tool 级规则,
+ * 参数作用域可由用户手写规则获得(与内置工具的 projectRules 完全一致的体验)。
+ *
+ * 顺序即优先级:**用户级(always)先于项目级(project)** —— 引擎遇首条命中即返回,
+ * 更"永久"的用户决定应覆盖更局部的项目决定。
+ */
+export function policyGrantsAsRules(grants = [], scope = "project") {
+  const rules = [];
+  for (const [key, grant] of Object.entries(grants || {})) {
+    if (!key.startsWith("tool:")) continue; // 只消费工具级 key
+    const tool = grant?.tool || key.slice(5);
+    if (!tool) continue;
+    rules.push({
+      id: `mcp-policy:${scope}:${tool}`,
+      tool: String(tool),
+      decision: "allow",
+      // 供界面区分这条规则来自哪里
+      meta: { source: "mcp-policy", scope }
+    });
+  }
+  return rules;
 }
 
 function readGrantFile(file) {
@@ -160,10 +207,16 @@ export function createPolicyStore({ projectRoot = null, userRoot = null } = {}) 
     return { ok: true };
   }
 
-  /** 返回一个可直接被权限引擎消费的"已放行 key 集合"。 */
-  function grantedKeys() {
+  /**
+   * 翻译成权限引擎可直接消费的规则数组(见 policyGrantsAsRules)。
+   * 顺序即优先级:用户级(always)先于项目级(project)。
+   */
+  function asRules() {
     const { always, project } = readAll();
-    return new Set([...Object.keys(project), ...Object.keys(always)]);
+    return [
+      ...policyGrantsAsRules(always, "always"),
+      ...policyGrantsAsRules(project, "project")
+    ];
   }
 
   function list() {
@@ -174,5 +227,5 @@ export function createPolicyStore({ projectRoot = null, userRoot = null } = {}) 
     ];
   }
 
-  return { grant, revoke, grantedKeys, list, files: { project: projectFile, user: userFile } };
+  return { grant, revoke, asRules, list, files: { project: projectFile, user: userFile } };
 }

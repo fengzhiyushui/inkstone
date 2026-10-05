@@ -308,12 +308,12 @@ test("CLI mcp policy revoke 撤销两个作用域的授权", async () => {
       const store = createPolicyStore({ projectRoot: root });
       store.grant("mcp__s__t", "project");
       store.grant("mcp__s__t", "always");
-      assert.equal(store.grantedKeys().size, 1);
+      assert.equal(store.asRules().length, 2);
 
       await withProjectDir(root, () => runCli(["mcp", "policy", "revoke", "mcp__s__t"]));
       assert.match(logs.join("\n"), /已撤销/);
 
-      assert.equal(createPolicyStore({ projectRoot: root }).grantedKeys().size, 0, "两个作用域都应被撤销");
+      assert.equal(createPolicyStore({ projectRoot: root }).asRules().length, 0, "两个作用域都应被撤销");
     } finally {
       console.log = origLog;
     }

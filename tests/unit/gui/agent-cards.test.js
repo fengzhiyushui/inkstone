@@ -91,6 +91,25 @@ test("v1.4.6:审批卡带 id 与摘要,resolved 回填决策", () => {
   assert.equal(ap.decision, "approved");
 });
 
+test("v1.13.1:审批卡携带 category,供三端判定可否持久放行", () => {
+  const cards = deriveAgentCards([
+    { type: "approval:requested", approval: { id: "ap_x", summary: "wipe db", category: "destructive" } }
+  ]);
+  const ap = cards.find((c) => c.kind === "approval");
+  assert.equal(ap.category, "destructive", "destructive 必须传到卡片,否则无法禁用持久放行按钮");
+
+  const plain = deriveAgentCards([
+    { type: "approval:requested", approval: { id: "ap_y", summary: "read file", category: "read" } }
+  ]);
+  assert.equal(plain[0].category, "read");
+
+  // 没有 category 的旧载荷不得报错
+  const legacy = deriveAgentCards([
+    { type: "approval:requested", approval: { id: "ap_z", summary: "s" } }
+  ]);
+  assert.equal(legacy[0].category, null);
+});
+
 test("v1.4.6:编排完成产出编排卡(轮次/完成/失败)", () => {
   const cards = deriveAgentCards([
     { type: "orchestration:planned", subtasks: 2 },
@@ -211,6 +230,7 @@ test("M1 fixtures:审批卡也用内核样本闭环(requested 出卡 + resolved 
     kind: "approval",
     id: "approval_3d8e",
     summary: "shell requires approval: `npm test -- tests/unit/apps/event-contract.test.js`",
+    category: null,
     decision: "approved"
   }]);
 });

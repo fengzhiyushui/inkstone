@@ -92,7 +92,8 @@ export function deriveAgentCards(activity) {
         applied: type === "file:diff_applied"
       });
     } else if (type === "approval:requested") {
-      cards.push({ kind: "approval", id: f.id || null, summary: f.summary || "" });
+      // v1.13.1:category 用于判定能否提供"本项目/永久"持久放行
+      cards.push({ kind: "approval", id: f.id || null, summary: f.summary || "", category: f.category || null });
     } else if (type === "approval:resolved") {
       for (let i = cards.length - 1; i >= 0; i -= 1) {
         if (cards[i].kind === "approval" && !cards[i].decision) { cards[i].decision = f.decision || "resolved"; break; }

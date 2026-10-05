@@ -108,6 +108,76 @@ test("approval flow: y approves, esc denies", async () => {
   await done;
 });
 
+test("v1.13.1:审批按键同时决定放行范围(p=本项目 / a=永久 / y=仅本次)", async () => {
+  const io = makeIO();
+  const approvals = [];
+  let phase = 0;
+  const kernel = makeFakeKernel({
+    onSend: async ({ emit }) => {
+      phase += 1;
+      const approval = { id: `ap_${phase}`, summary: `write file ${phase}`, category: "mutate" };
+      emit({ type: "approval:requested", approval });
+      return { status: "awaiting_approval", approval };
+    },
+    onApprove: async ({ id, decision, scope }) => {
+      approvals.push({ id, decision, scope });
+      return { status: "complete", content: "done" };
+    }
+  });
+  const app = createTuiApp({ root: await tmpRoot(), kernel, input: io.input, output: io.output });
+  const done = app.run();
+  await until(() => io.text().includes("❯"));
+
+  // 第一轮:输入命令进入审批,按 p → 本项目
+  io.input.write("do it\r");
+  await until(() => io.text().includes("write file 1"));
+  io.input.write("p");
+  await until(() => approvals.length === 1);
+  assert.deepEqual(approvals[0], { id: "ap_1", decision: "approve", scope: "project" });
+
+  // 第二轮:按 a → 永久
+  io.input.write("again\r");
+  await until(() => io.text().includes("write file 2"));
+  io.input.write("a");
+  await until(() => approvals.length === 2);
+  assert.deepEqual(approvals[1], { id: "ap_2", decision: "approve", scope: "always" });
+
+  // 与既有审批用例相同的方式收尾:两次 ctrl_c 让 app 退出,避免 stdin 监听泄漏到
+  // 后续用例造成互相抢按键。
+  io.input.write("\x03");
+  io.input.write("\x03");
+  await done;
+});
+
+test("v1.13.1:destructive 工具按 a 也退化为仅本次", async () => {
+  const io = makeIO();
+  const approvals = [];
+  const kernel = makeFakeKernel({
+    onSend: async ({ emit }) => {
+      const approval = { id: "ap_d", summary: "wipe db", category: "destructive" };
+      emit({ type: "approval:requested", approval });
+      return { status: "awaiting_approval", approval };
+    },
+    onApprove: async ({ id, decision, scope }) => {
+      approvals.push({ id, decision, scope });
+      return { status: "complete", content: "done" };
+    }
+  });
+  const app = createTuiApp({ root: await tmpRoot(), kernel, input: io.input, output: io.output });
+  const done = app.run();
+  await until(() => io.text().includes("❯"));
+
+  io.input.write("wipe\r");
+  await until(() => io.text().includes("审批"));
+  io.input.write("a"); // 用户请求永久,但 destructive 必须退化
+  await until(() => approvals.length === 1);
+  assert.equal(approvals[0].decision, "approve");
+  assert.equal(approvals[0].scope, "session", "destructive 不可持久放行");
+  io.input.write("\x03");
+  io.input.write("\x03");
+  await done;
+});
+
 test("kernel events render as cards; ctrl_c single press hints", async () => {
   const io = makeIO();
   const kernel = makeFakeKernel({ onSend: async () => ({ status: "complete", content: "" }) });

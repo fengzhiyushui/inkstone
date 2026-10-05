@@ -2,7 +2,7 @@
 export const STRINGS = {
   zh: {
     "input.placeholder": "输入消息,/ 呼出命令",
-    "input.approval": "审批:y 批准 · n 拒绝 · Esc 拒绝",
+    "input.approval": "审批:y 仅本次 · p 本项目 · a 永久 · n·Esc 拒绝",
     "sensitive.title": "!! 敏感文件写入 —— 这不是权限审批",
     "sensitive.body": "完整原文将写入变更记录以支持回滚,记录不脱敏:",
     "sensitive.reason.secret": "密钥文件",
@@ -95,7 +95,7 @@ export const STRINGS = {
   },
   en: {
     "input.placeholder": "Type a message, / for commands",
-    "input.approval": "Approval: y approve · n deny · Esc deny",
+    "input.approval": "Approval: y once · p this project · a always · n·Esc deny",
     "sensitive.title": "!! SENSITIVE FILE WRITE -- this is NOT a permission prompt",
     "sensitive.body": "Full contents go into the change record for rollback; that record is not redacted:",
     "sensitive.reason.secret": "secret file",

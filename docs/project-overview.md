@@ -136,12 +136,13 @@ Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（
 - **宿主管理**（[`mcp-hub.js`](../src/tools/mcp/mcp-hub.js)）：有界并行 init、增量 remount、曾成功连接后的退避重连（主动 stop 不重连）。
 - **安全**（v1.12.0）：出站请求经 [`security/ssrf.js`](../src/security/ssrf.js) **DNS 固定 + 逐跳重定向校验**；私网/环回默认拒绝，只有显式 `allowlist`（精确 IP / CIDR / hostname）才放行；跨 origin 重定向自动剥离凭据头；密钥可经 `${input:*}` 注入而不落项目树。
 - **命名与 Schema**：`mcp__<serverId>__<toolName>`，1–128 规范字符，超长 hash 唯一。
-- **工具治理**（v1.13.0）：
+- **工具治理**（v1.13.0 / v1.13.1）：
   - [`annotations.js`](../src/tools/mcp/annotations.js)：annotations 严格解析 + 风险推导，优先级为**用户 policy > annotations（仅受信）> 关键词 > 默认**；annotations **只向更危险方向升级，不得降级**，`destructiveHint` 一律置顶。
-  - [`tool-policy.js`](../src/tools/mcp/tool-policy.js)：工具级 `enabled`/`disabled` 开关；三级批准 `session` / `project` / `always`，策略落 `mcp-policy.json`（用户级 `~/.deepseek-code/`、项目级 `<root>/.deepseek-code/`，0600，只记 grant）。
-  - **destructive 硬约束**：权限引擎对 destructive 一律 deny，并设兜底安全网 —— 无论决策来自持久化策略、`autoApprove`、approval-cache、trust-store、项目规则还是默认矩阵，都不可能是 allow。
+  - [`tool-policy.js`](../src/tools/mcp/tool-policy.js)：工具级 `enabled`/`disabled` 开关；三级批准 `session` / `project` / `always`，策略落 `mcp-policy.json`（用户级 `~/.deepseek-code/`、项目级 `<root>/.deepseek-code/`，0600，只记 grant）。**策略不是平行规则源**：由 `asRules()` 翻译成引擎已在读取的 `projectRules` 规则形状（`{id, tool, pattern?, decision}`），经 `createKernel` 的 `mergeProjectRules()` 注入 —— 因此天然获得与内置 `projectRules` 一致的参数作用域（`pattern` glob），安全关键路径上只保留一套规则匹配。
+  - **destructive 硬约束**：权限引擎对 destructive 一律 deny，并设兜底安全网 —— 无论决策来自规则、`autoApprove`、approval-cache、trust-store 还是默认矩阵，都不可能是 allow；批准侧 `validateApprovalScope` 拒绝为 destructive 授予 project/always，并**降级为仅本次**而非静默失效。
+  - **用户逃生阀 `tools.risk`**：用户可在 server 配置里显式指定工具风险等级（`read`/`mutate`/`destructive`），覆盖 annotations 与关键词推断；覆盖记录在 `riskOverridden` 并透出三端。**注意**：这是人手写进配置的有意决定，因此允许降级；若被滥用需自行审计 `tools.risk`。
   - **信任模型**：server 未受信时其 annotations **一律不参与判定**；只有显式 `trust: true` 的 server 才采纳其 annotations。
-- **权限**：`autoApprove` 白名单（仅非破坏性工具）+ 既有审批流 + 上述治理。
+- **权限**：`autoApprove` 白名单（**不看类别**，列入即放行；destructive 仍由引擎硬拒）+ 既有三级审批流 + 上述治理。
 - **三端**：GUI `McpView`（接入方式选择、风险徽章、信任开关、密钥面板）；CLI `inkstone mcp [list|check|add|remove|toggle|policy]`（`--url/--type/--headers/--allow-private/--trust`）。
 
 ---

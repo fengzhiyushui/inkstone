@@ -164,12 +164,25 @@ export function createTuiApp({
     });
   }
 
+  /**
+   * 等待一次审批,返回 { decision, scope }。
+   * 按键:y = 仅本次批准;n / Esc = 拒绝;p = 本项目放行;a = 永久放行。
+   * destructive 工具禁用 p / a(scope 固定 session)—— 由调用方结合 approval.category
+   * 判定,这里只负责把按键映射成 scope。
+   */
   function waitApproval(approval) {
     return new Promise((resolve) => {
-      approvalResolve = (decision) => {
+      approvalResolve = (answer) => {
         approvalResolve = null;
         dispatch({ type: "approval", approval: null });
-        resolve(decision);
+        const destructive = approval?.category === "destructive";
+        const key = String(answer || "").toLowerCase();
+        let decision = "approve";
+        let scope = "session";
+        if (key === "" || key === "n") { decision = "deny"; scope = "session"; }
+        else if (key === "p") { scope = destructive ? "session" : "project"; }
+        else if (key === "a") { scope = destructive ? "session" : "always"; }
+        resolve({ decision, scope });
       };
       dispatch({ type: "approval", approval });
     });
@@ -207,8 +220,9 @@ export function createTuiApp({
         onDelta: (d) => dispatch({ type: "stream_delta", text: String(d) })
       });
       while (result && result.status === "awaiting_approval" && result.approval?.id) {
-        const decision = await waitApproval(result.approval);
-        result = await kernel.agent.approve(result.approval.id, decision);
+        // v1.13.1:一次按键同时给出决定与放行范围(y / n·Esc / p / a)
+        const { decision, scope } = await waitApproval(result.approval);
+        result = await kernel.agent.approve(result.approval.id, decision, { scope });
       }
       if (result && result.status === "complete") {
         const content = result.content || "";
@@ -559,8 +573,12 @@ export function createTuiApp({
       return;
     }
     if (state.approval) {
-      if (ev.type === "char" && /^y$/i.test(ev.text)) approvalResolve?.("approve");
-      else if ((ev.type === "char" && /^n$/i.test(ev.text)) || ev.type === "esc") approvalResolve?.("deny");
+      const ch = ev.type === "char" ? String(ev.text || "").trim().toLowerCase() : "";
+      // v1.13.1:p = 本项目放行 / a = 永久放行 / y = 仅本次 / n·Esc = 拒绝
+      if (ch === "y") approvalResolve?.("y");
+      else if (ch === "p") approvalResolve?.("p");
+      else if (ch === "a") approvalResolve?.("a");
+      else if (ch === "n" || ev.type === "esc" || ch === "") approvalResolve?.("n");
       return;
     }
     if (state.menu) {

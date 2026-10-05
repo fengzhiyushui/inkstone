@@ -16,6 +16,7 @@ export async function runKernelAgentCommand({
   loadConfigImpl = null,
   sendOptions = {},
   promptApproval = defaultPromptApproval,
+  promptApprovalScope = null,
   askSensitive = defaultAskSensitive,
   onSigint = defaultOnSigint
 } = {}) {
@@ -32,7 +33,14 @@ export async function runKernelAgentCommand({
       onSigint,
       run: () => kernel.agent.send(message, { autonomy, ...sendOptions })
     });
-    return await resolveApprovals({ kernel, result, write, promptApproval, onSigint });
+    return await resolveApprovals({
+      kernel,
+      result,
+      write,
+      promptApproval,
+      promptApprovalScope: promptApprovalScope ?? (process.stdin?.isTTY ? promptApprovalScopeInteractive : null),
+      onSigint
+    });
   } finally {
     subscription.unsubscribe();
   }
@@ -48,6 +56,7 @@ export async function runKernelChatCommand({
   loadConfigImpl = null,
   sendOptions = {},
   promptApproval = defaultPromptApproval,
+  promptApprovalScope = null,
   askSensitive = defaultAskSensitive,
   onSigint = defaultOnSigint
 } = {}) {
@@ -67,7 +76,14 @@ export async function runKernelChatCommand({
           history: []
         })
       });
-      return await resolveApprovals({ kernel, result, write, promptApproval, onSigint });
+      return await resolveApprovals({
+        kernel,
+        result,
+        write,
+        promptApproval,
+        promptApprovalScope: promptApprovalScope ?? (process.stdin?.isTTY ? promptApprovalScopeInteractive : null),
+        onSigint
+      });
     }
 
     return await runChatRepl({
@@ -76,6 +92,7 @@ export async function runKernelChatCommand({
       question,
       sendOptions,
       promptApproval,
+      promptApprovalScope,
       onSigint
     });
   } finally {
@@ -83,21 +100,46 @@ export async function runKernelChatCommand({
   }
 }
 
-export async function resolveApprovals({ kernel, result, write = console.log, promptApproval = defaultPromptApproval, onSigint = defaultOnSigint } = {}) {
+export async function resolveApprovals({ kernel, result, write = console.log, promptApproval = defaultPromptApproval, promptApprovalScope = null, onSigint = defaultOnSigint } = {}) {
   let current = result;
   for (const line of renderKernelResult(withUsage(current, kernel))) write(line);
   while (current.status === "awaiting_approval" && current.approval?.id) {
     const answer = await promptApproval(current.approval);
     const decision = isApprovalYes(answer) ? "approve" : "deny";
+    // v1.13.1:三级批准。**只有调用方显式提供 promptApprovalScope 时才追问范围** ——
+    // 否则按"仅本次(session)"处理,避免给非交互调用方/既有测试引入阻塞。
+    // destructive 工具同样不追问(validateApprovalScope 会在内核侧锁死持久化)。
+    let scope = "session";
+    if (decision === "approve" && current.approval?.category !== "destructive" && promptApprovalScope) {
+      scope = await promptApprovalScope(current.approval);
+    }
     current = await withTurnInterrupt({
       kernel,
       write,
       onSigint,
-      run: () => kernel.agent.approve(current.approval.id, decision)
+      run: () => kernel.agent.approve(current.approval.id, decision, { scope })
     });
     for (const line of renderKernelResult(withUsage(current, kernel))) write(line);
   }
   return current;
+}
+
+/**
+ * v1.13.1:交互式批准范围追问(由 CLI 入口注入,非默认值)。
+ * p = 本项目 / a = 永久 / 其它 = 仅本次。
+ */
+export async function promptApprovalScopeInteractive(approval) {
+  const { createInterface } = await import("node:readline");
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = await new Promise((resolve) => rl.question("放行范围？[p] 本项目  [a] 永久  [其它] 仅本次 > ", resolve));
+    const normalized = String(answer || "").trim().toLowerCase();
+    if (normalized === "p") return "project";
+    if (normalized === "a") return "always";
+    return "session";
+  } finally {
+    rl.close();
+  }
 }
 
 // v1.9 M4 #11:给终局渲染挂 usage 快照。agent.send/approve 的 result 不带 usage,
@@ -111,7 +153,7 @@ function withUsage(current, kernel) {
   }
 }
 
-async function runChatRepl({ kernel, write, question, sendOptions, promptApproval, onSigint }) {
+async function runChatRepl({ kernel, write, question, sendOptions, promptApproval, promptApprovalScope, onSigint }) {
   let mode = "read-only";
   let history = [];
   write("chat mode: read-only");
@@ -141,7 +183,15 @@ async function runChatRepl({ kernel, write, question, sendOptions, promptApprova
         history
       })
     });
-    const resolved = await resolveApprovals({ kernel, result, write, promptApproval, onSigint });
+    const resolved = await resolveApprovals({
+      kernel,
+      result,
+      write,
+      promptApproval,
+      // v1.13.1:交互式会话才追问放行范围;非交互(stdin 非 TTY)时留空 → 仅本次
+      promptApprovalScope: promptApprovalScope ?? (process.stdin?.isTTY ? promptApprovalScopeInteractive : null),
+      onSigint
+    });
     if (resolved.status === "complete") {
       history = appendHistory(history, input, resolved.content || "");
     }
