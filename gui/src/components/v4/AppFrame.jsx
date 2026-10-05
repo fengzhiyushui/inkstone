@@ -26,13 +26,39 @@ export default function AppFrame({
 
   useEffect(() => {
     const el = rootRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    if (!el) return undefined;
+
+    const measure = () => {
+      // 壳层独占窗口宽度,因此以窗口宽度为准。RO 漏报 / 元素盒子未变时,
+      // 这里仍能给出正确值(修复 headless 下程序化 resize 后布局不收敛)。
+      const w = typeof window === "undefined" ? 0 : window.innerWidth;
+      if (w > 0) setViewport((prev) => (Math.abs(prev - w) < 0.5 ? prev : w));
+    };
+
+    // 首帧立即量一次:ResizeObserver **只在尺寸变化时**触发,若挂载时窗口已被
+    // 程序化 setSize 到目标宽度、而元素盒子恰好未变,viewport 会一直是初始值。
+    measure();
+
+    if (typeof ResizeObserver === "undefined") {
+      // 无 ResizeObserver 的环境(老浏览器/部分 jsdom)退化为 window.resize 轮询
+      window.addEventListener?.("resize", measure);
+      return () => window.removeEventListener?.("resize", measure);
+    }
+
     const ro = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect?.width;
       if (w && w > 0) setViewport(w);
     });
     ro.observe(el);
-    return () => ro.disconnect();
+
+    // 双保险:定时补量,覆盖 RO 在 headless / 高负载下漏报的场景
+    const timer = setInterval(measure, 500);
+    if (typeof timer.unref === "function") timer.unref();
+
+    return () => {
+      ro.disconnect();
+      clearInterval(timer);
+    };
   }, []);
 
   const sidebarIn = (hideSidebar || railCollapsed) ? 0 : sidebarWidth;

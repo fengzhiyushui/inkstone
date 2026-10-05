@@ -205,6 +205,17 @@ async function createWindow() {
         // 并行跑 e2e 时机器负载高,setSize 偶发被丢弃(窗宽停在窄窗的 minWidth≈880),
         // 且渲染层重渲染滞后:AppFrame 的 viewport 仍按旧窗宽算,右栏拿不到列宽
         // (cols.rightbar < 300 → dock 不渲染)。故放大后必须确认窗口到位 + 列宽铺满。
+        /**
+         * 等三列布局真正铺满目标窗宽。
+         *
+         * 背景（v1.12.1 冒烟排查）：`AppFrame` 用 ResizeObserver 观测自身根节点来
+         * 推导 `viewport`，但在无显示 surface 的 headless 环境里，程序化 `setSize`
+         * 之后**元素的 contentBox 常常不变化**（窗口 physically 变宽了，壳层仍按旧
+         * 宽度排版），于是 `viewport` 停在旧值、右栏拿不到列宽、dock 不渲染。
+         * 单纯重试 `setSize` 无效（窗口本来就到位了）。
+         * 因此这里在“窗口已到位但布局没收敛”时，主动触发一次 `resize` 事件 +
+         * 读写 offsetWidth 强制回流，把观测回调唤醒。
+         */
         const settleLayout = async (wantW, tries = 25) => {
           for (let i = 0; i < tries; i += 1) {
             const state = await win.webContents.executeJavaScript(`
@@ -213,7 +224,11 @@ async function createWindow() {
                 const sum = s
                   ? getComputedStyle(s).gridTemplateColumns.split(" ").reduce((a, v) => a + parseFloat(v || "0"), 0)
                   : 0;
-                return { w: window.innerWidth, sum };
+                const w = window.innerWidth;
+                // 强制回流 + 唤醒观测者:AppFrame 的 viewport 可能是陈旧测量值
+                if (s) { void s.offsetWidth; }
+                window.dispatchEvent(new Event("resize"));
+                return { w, sum, vp: s ? (s.getAttribute("data-viewport") || null) : null };
               })()
             `).catch(() => null);
             if (state && Math.abs(state.w - wantW) < 4 && Math.abs(state.sum - state.w) < 4) return true;

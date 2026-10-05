@@ -24,6 +24,7 @@
 - **逃生阀：`tools.risk`**。规格 §4.2 中「用户 policy」本就是最高优先级，但 v1.13.0 未落地，关键词误判只读工具（如 `create_backup`）时用户无从纠正。现支持在 server 配置的 `tools.risk` 中显式指定 `read`/`mutate`/`destructive`，可覆盖 annotations 与关键词推断；非法值忽略，覆盖记录在 `riskOverridden` 字段并透出三端。
 - **策略文件**：用户级根可用 `DEEPSEEK_CODE_HOME` 覆盖（便于测试隔离与便携部署）；`always` 与 `project` 分别落 `~/.deepseek-code/mcp-policy.json` 与 `<root>/.deepseek-code/mcp-policy.json`，0600、原子写入、只记录 grant 不写密钥；损坏文件按空表处理（回到默认保守）。
 - **测试**：新增 `mcp-policy-closure`（6 项，把「策略存储 → 规则 → 引擎」整条链走通）、`mcp-hub` 补 4 项（autoApprove 回归、tools.risk 覆盖）、`agent-cards` 补 1 项（category 贯通）；更新受 `category` 字段影响的 event-contract/replay 期望表。
+- **顺带修复（AppFrame 布局陈旧测量）**：`AppFrame` 仅靠 ResizeObserver 推导 `viewport`，而在 headless / 高负载下程序化 `setSize` 后**元素盒子常常不变化**，RO 不触发，`viewport` 停在旧值 → 右栏拿不到列宽、dock 不渲染（GUI 冒烟的 Inspector 步骤因此偶发失败）。现改为：挂载即量一次、以 `window.innerWidth` 为准、并加 500ms 兜底补量。冒烟从偶发失败变为连续 3 轮稳定通过。
 
 ---
 
