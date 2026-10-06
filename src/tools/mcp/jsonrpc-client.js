@@ -28,6 +28,11 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   setTransport(transport) {
+    if (this.transport === transport) return;
+    if (this.pendingRequests.size) {
+      const error = Object.assign(new Error("JSON-RPC transport replaced"), { code: JSONRPC_ERRORS.SERVER_DISCONNECTED });
+      this._rejectPending(error);
+    }
     if (this.transport) {
       this.transport.removeListener("message", this._onTransportMessage);
       this.transport.removeListener("close", this._onTransportClose);
@@ -53,9 +58,9 @@ export class JsonRpcClient extends EventEmitter {
   /**
    * @param {string} method
    * @param {object} [params]
-   * @param {{ timeoutMs?: number, meta?: object, cancelOnTimeout?: boolean }} [opts]
+   * @param {{ timeoutMs?: number, meta?: object, cancelOnTimeout?: boolean, signal?: AbortSignal }} [opts]
    */
-  async request(method, params, { timeoutMs, meta, cancelOnTimeout = true } = {}) {
+  async request(method, params, { timeoutMs, meta, cancelOnTimeout = true, signal } = {}) {
     if (!this.transport) {
       throw new Error("No transport configured for JSON-RPC client");
     }
@@ -82,41 +87,68 @@ export class JsonRpcClient extends EventEmitter {
     };
 
     return new Promise((resolve, reject) => {
-      let timer = null;
+      const pending = { resolve, reject, timer: null, method, signal, onAbort: null, startedAt: performance.now(), transport: this.transport, sent: false };
+      this.pendingRequests.set(id, pending);
+      const cancel = (error, status, notify) => {
+        if (!this._settle(id, status, undefined, error)) return;
+        try { pending.transport.cancelRequest?.(id, error); } catch { /* best-effort */ }
+        if (notify && pending.sent) {
+          try {
+            this._send(pending.transport, {
+              jsonrpc: "2.0", method: "notifications/cancelled",
+              params: { requestId: id, reason: status === "timeout" ? "timeout" : "cancelled" }
+            });
+          } catch { /* best-effort */ }
+        }
+      };
+      pending.onAbort = () => {
+        const timedOut = signal.reason?.code === "TOOL_TIMEOUT" || signal.reason?.code === JSONRPC_ERRORS.TIMEOUT;
+        const status = timedOut ? "timeout" : "cancelled";
+        cancel(Object.assign(new Error(`JSON-RPC request ${timedOut ? "timed out" : "cancelled"}: ${method}${signal.reason?.message ? ` (${signal.reason.message})` : ""}`, { cause: signal.reason }), {
+          name: timedOut ? "TimeoutError" : "AbortError", code: timedOut ? JSONRPC_ERRORS.TIMEOUT : JSONRPC_ERRORS.CANCELLED, requestId: id
+        }), status, !timedOut || cancelOnTimeout);
+      };
+      if (signal?.aborted) { pending.onAbort(); return; }
+      signal?.addEventListener("abort", pending.onAbort, { once: true });
       if (effectiveTimeoutMs > 0 && effectiveTimeoutMs !== Infinity) {
-        timer = setTimeout(() => {
-          this.pendingRequests.delete(id);
-          if (cancelOnTimeout) {
-            try {
-              this.transport?.send({
-                jsonrpc: "2.0",
-                method: "notifications/cancelled",
-                params: { requestId: id, reason: "timeout" }
-              });
-            } catch {
-              /* best-effort */
-            }
-          }
+        pending.timer = setTimeout(() => {
           const err = new Error(`JSON-RPC request timed out after ${effectiveTimeoutMs}ms: ${method}`);
           err.code = JSONRPC_ERRORS.TIMEOUT;
           err.requestId = id;
-          reject(err);
+          cancel(err, "timeout", cancelOnTimeout);
         }, effectiveTimeoutMs);
-        if (typeof timer.unref === "function") {
-          timer.unref();
+        if (typeof pending.timer.unref === "function") {
+          pending.timer.unref();
         }
       }
-
-      this.pendingRequests.set(id, { resolve, reject, timer, method });
-
       try {
-        this.transport.send(payload);
+        pending.sent = true;
+        this._send(pending.transport, payload, { timeoutMs: effectiveTimeoutMs });
       } catch (err) {
-        if (timer) clearTimeout(timer);
-        this.pendingRequests.delete(id);
-        reject(err);
+        this._settle(id, "error", undefined, err);
       }
     });
+  }
+
+  _send(transport, frame, opts) {
+    this.emit("trace", { direction: "out", frame });
+    transport.send(frame, opts);
+  }
+
+  _settle(id, status, result, error) {
+    const pending = this.pendingRequests.get(id);
+    if (!pending) return false;
+    this.pendingRequests.delete(id);
+    if (pending.timer) clearTimeout(pending.timer);
+    pending.signal?.removeEventListener("abort", pending.onAbort);
+    this.emit("request_completed", {
+      requestId: id, method: pending.method,
+      durationMs: Math.max(0, performance.now() - pending.startedAt), status,
+      ...(error ? { error } : {})
+    });
+    if (error) pending.reject(error);
+    else pending.resolve(result);
+    return true;
   }
 
   notify(method, params) {
@@ -130,30 +162,26 @@ export class JsonRpcClient extends EventEmitter {
       ...(params !== undefined ? { params } : {})
     };
 
-    this.transport.send(payload);
+    this._send(this.transport, payload);
   }
 
   handleMessage(message) {
     if (!message || typeof message !== "object") {
       return;
     }
+    this.emit("trace", { direction: "in", frame: message });
 
     // Response to a request
     if (message.id !== undefined && message.id !== null) {
       const pending = this.pendingRequests.get(message.id);
-      if (pending) {
-        this.pendingRequests.delete(message.id);
-        if (pending.timer) {
-          clearTimeout(pending.timer);
-        }
-
+      if (pending && !message.method) {
         if (message.error) {
           const err = new Error(message.error.message || "JSON-RPC error");
           err.code = message.error.code;
           err.data = message.error.data;
-          pending.reject(err);
+          this._settle(message.id, completionStatus(err), undefined, err);
         } else {
-          pending.resolve(message.result);
+          this._settle(message.id, "success", message.result);
         }
         return;
       }
@@ -182,11 +210,9 @@ export class JsonRpcClient extends EventEmitter {
   _handleTransportError(err) {
     // HTTP errors have no JSON-RPC response. Settle the failed request now so
     // an OAuth challenge reaches callers instead of being masked by a timeout.
-    for (const [id, pending] of this.pendingRequests) {
+    for (const id of this.pendingRequests.keys()) {
       if (err?.requestId !== undefined && err.requestId !== id) continue;
-      if (pending.timer) clearTimeout(pending.timer);
-      this.pendingRequests.delete(id);
-      pending.reject(err);
+      this._settle(id, completionStatus(err), undefined, err);
     }
     if (this.listenerCount("error")) this.emit("error", err);
   }
@@ -197,13 +223,7 @@ export class JsonRpcClient extends EventEmitter {
       err.code = JSONRPC_ERRORS.SERVER_DISCONNECTED;
     }
 
-    for (const [id, pending] of this.pendingRequests.entries()) {
-      if (pending.timer) {
-        clearTimeout(pending.timer);
-      }
-      pending.reject(err);
-    }
-    this.pendingRequests.clear();
+    this._rejectPending(err);
 
     if (this.transport) {
       this.transport.removeListener("message", this._onTransportMessage);
@@ -214,4 +234,17 @@ export class JsonRpcClient extends EventEmitter {
 
     this.emit("close");
   }
+
+  _rejectPending(error) {
+    for (const [id, pending] of this.pendingRequests) {
+      this._settle(id, completionStatus(error), undefined, error);
+      try { pending.transport.cancelRequest?.(id, error); } catch { /* best-effort */ }
+    }
+  }
+}
+
+function completionStatus(error) {
+  if (error?.code === JSONRPC_ERRORS.CANCELLED || error?.name === "AbortError") return "cancelled";
+  if (error?.code === JSONRPC_ERRORS.TIMEOUT || error?.code === "ETIMEDOUT") return "timeout";
+  return "error";
 }

@@ -79,7 +79,8 @@ export function createToolExecutor({ registry, permissionEngine, eventBus = null
       const timeoutMs = context.toolTimeoutMs ?? defaultToolTimeoutMs;
       const raw = await runWithTimeout(
         ({ signal } = {}) => def.execute(securedCall.params, { ...context, ...(signal ? { signal } : {}) }),
-        timeoutMs
+        timeoutMs,
+        context.signal
       );
       return publishResult(createToolResult({
         callId: toolCall.id,
@@ -116,22 +117,39 @@ function publicTool(def) {
   return publicDef;
 }
 
-function runWithTimeout(promiseFactory, timeoutMs) {
-  if (!timeoutMs) return promiseFactory({});
+function runWithTimeout(promiseFactory, timeoutMs, signal) {
+  const hasTimeout = Number.isFinite(timeoutMs) && timeoutMs > 0;
+  if (!hasTimeout && !signal) return promiseFactory({});
   const ac = new AbortController();
   return new Promise((resolve, reject) => {
     let settled = false;
-    const timer = setTimeout(() => {
+    let timer = null;
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const finish = (error, value, abort = false) => {
       if (settled) return;
       settled = true;
-      try { ac.abort(); } catch {}
-      const err = new Error(`tool timed out after ${timeoutMs}ms`);
-      err.code = "TOOL_TIMEOUT";
-      reject(err);
-    }, timeoutMs);
+      cleanup();
+      if (abort) ac.abort(error);
+      if (error) reject(error);
+      else resolve(value);
+    };
+    const onAbort = () => {
+      const error = signal.reason instanceof Error ? signal.reason : new Error(String(signal.reason || "Tool execution cancelled"));
+      finish(error, undefined, true);
+    };
+    if (signal?.aborted) { onAbort(); return; }
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (hasTimeout) {
+      timer = setTimeout(() => {
+        const error = Object.assign(new Error(`tool timed out after ${timeoutMs}ms`), { code: "TOOL_TIMEOUT" });
+        finish(error, undefined, true);
+      }, timeoutMs);
+    }
     Promise.resolve()
-      .then(() => promiseFactory({ signal: ac.signal }))
-      .then((value) => { if (!settled) { settled = true; clearTimeout(timer); resolve(value); } })
-      .catch((error) => { if (!settled) { settled = true; clearTimeout(timer); reject(error); } });
+      .then(() => { if (!settled) return promiseFactory({ signal: ac.signal }); })
+      .then((value) => finish(null, value), (error) => finish(error));
   });
 }

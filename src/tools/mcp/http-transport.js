@@ -74,6 +74,8 @@ export class HttpTransport extends EventEmitter {
     this.state = TRANSPORT_STATE.IDLE;
     this.lastError = null;
     this._controllers = new Set();
+    this._requestControllers = new Map();
+    this._cancelledControllers = new WeakSet();
   }
 
   /** 协商完成/握手后由 McpClient 回填,用于请求头。 */
@@ -101,21 +103,52 @@ export class HttpTransport extends EventEmitter {
       throw new Error(`HttpTransport: cannot send message while state is '${this.state}'`);
     }
     // 不阻塞调用方:JsonRpcClient.send 是同步契约,响应经 'message' 事件回流。
-    this._dispatch(message, { retries, timeoutMs }).catch((err) => {
+    const controller = new AbortController();
+    const effectiveTimeout = timeoutMs ?? this.timeoutMs;
+    this._controllers.add(controller);
+    if (message?.id != null) this._requestControllers.set(message.id, controller);
+    const timer = effectiveTimeout > 0 && effectiveTimeout !== Infinity
+      ? setTimeout(() => controller.abort(Object.assign(new Error(`HTTP transport timeout after ${effectiveTimeout}ms`), { code: -32000 })), effectiveTimeout)
+      : null;
+    timer?.unref?.();
+    const clearTimer = () => { if (timer) clearTimeout(timer); };
+    controller.signal.addEventListener("abort", clearTimer, { once: true });
+    this._dispatch(message, { retries, timeoutMs: effectiveTimeout, controller }).catch((err) => {
+      // Explicit cancellation and close are local control flow. Never surface
+      // them as a broken server or retry an aborted operation.
+      if (this._cancelledControllers.has(controller) || (controller.signal.aborted && controller.signal.reason?.code !== -32000)) return;
+      if (controller.signal.aborted) err = controller.signal.reason;
       if (message?.id !== undefined) err.requestId = message.id;
       this.lastError = err;
       this.emit("error", err);
+    }).finally(() => {
+      clearTimer();
+      controller.signal.removeEventListener("abort", clearTimer);
+      this._controllers.delete(controller);
+      if (this._requestControllers.get(message?.id) === controller) this._requestControllers.delete(message.id);
     });
   }
 
-  async _dispatch(message, { retries, timeoutMs }) {
+  cancelRequest(id, reason = new Error("HTTP request cancelled")) {
+    const controller = this._requestControllers.get(id);
+    if (!controller) return false;
+    this._requestControllers.delete(id);
+    this._controllers.delete(controller);
+    this._cancelledControllers.add(controller);
+    controller.abort(reason);
+    return true;
+  }
+
+  async _dispatch(message, { retries, timeoutMs, controller }) {
     const isNotification = message?.id === undefined || message?.id === null;
     let attempt = 0;
     for (;;) {
       try {
-        await this._postOnce(message, { timeoutMs });
+        controller.signal.throwIfAborted();
+        await this._postOnce(message, { timeoutMs, controller });
         return;
       } catch (err) {
+        if (controller.signal.aborted) throw controller.signal.reason;
         const retryable = !isNotification && attempt < retries && isStreamBreak(err);
         if (!retryable) {
           if (isNotification) return; // 通知失败不致命(服务端可能未实现)
@@ -129,14 +162,8 @@ export class HttpTransport extends EventEmitter {
     }
   }
 
-  async _postOnce(message, { timeoutMs }) {
-    const controller = new AbortController();
-    this._controllers.add(controller);
+  async _postOnce(message, { timeoutMs, controller }) {
     const effectiveTimeout = timeoutMs ?? this.timeoutMs;
-    const timer = effectiveTimeout > 0 && effectiveTimeout !== Infinity
-      ? setTimeout(() => controller.abort(new Error(`HTTP transport timeout after ${effectiveTimeout}ms`)), effectiveTimeout)
-      : null;
-    if (timer?.unref) timer.unref();
 
     const body = JSON.stringify(message);
     const method = methodOf(message);
@@ -152,56 +179,56 @@ export class HttpTransport extends EventEmitter {
     if (method) headers["Mcp-Method"] = method;
     if (toolName) headers["Mcp-Name"] = toolName;
 
-    try {
-      const response = await oauthHttpRequest(
-        this.url,
-        { allowlist: this.allowlist, lookup: this.lookup, maxRedirects: this.maxRedirects },
-        {
-          method: "POST",
-          headers,
-          body,
-          timeoutMs: effectiveTimeout,
-          signal: controller.signal,
-          stream: true,
-          maxBodyBytes: this.maxBodyBytes
-        },
-        this.oauth
-      );
-
-      const sessionId = response.getHeader("mcp-session-id");
-      if (sessionId && !this.sessionId) this.setSessionId(sessionId);
-
-      if (response.status === 202 || response.status === 204) {
-        response.stream.resume?.();
-        return;
-      }
-      if (response.status >= 400) {
-        if (this.oauth) {
-          response.stream.destroy?.();
-          throw httpError(response.status, "MCP request failed");
-        }
-        const detail = await readErrorBody(response);
-        throw httpError(response.status, detail);
-      }
-
-      if (isEventStream(response.getHeader("content-type"))) {
-        await this._consumeSse(response.stream);
-        return;
-      }
-      await this._consumeJson(response.stream, response.getHeader("content-length"));
-    } finally {
-      if (timer) clearTimeout(timer);
-      this._controllers.delete(controller);
+    const response = await oauthHttpRequest(
+      this.url,
+      { allowlist: this.allowlist, lookup: this.lookup, maxRedirects: this.maxRedirects },
+      {
+        method: "POST",
+        headers,
+        body,
+        timeoutMs: effectiveTimeout,
+        signal: controller.signal,
+        stream: true,
+        maxBodyBytes: this.maxBodyBytes
+      },
+      this.oauth
+    );
+    if (controller.signal.aborted) {
+      response.stream?.destroy?.();
+      controller.signal.throwIfAborted();
     }
+
+    const sessionId = response.getHeader("mcp-session-id");
+    if (sessionId && !this.sessionId) this.setSessionId(sessionId);
+
+    if (response.status === 202 || response.status === 204) {
+      response.stream.resume?.();
+      return;
+    }
+    if (response.status >= 400) {
+      if (this.oauth) {
+        response.stream.destroy?.();
+        throw httpError(response.status, "MCP request failed");
+      }
+      const detail = await readErrorBody(response);
+      throw httpError(response.status, detail);
+    }
+
+    if (isEventStream(response.getHeader("content-type"))) {
+      await this._consumeSse(response.stream, controller.signal);
+      return;
+    }
+    await this._consumeJson(response.stream, response.getHeader("content-length"), controller.signal);
   }
 
-  async _consumeJson(stream, contentLength) {
+  async _consumeJson(stream, contentLength, signal) {
     const chunks = [];
     await new Promise((resolve, reject) => {
       stream.on("data", (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
       stream.on("end", resolve);
       stream.on("error", reject);
     });
+    signal?.throwIfAborted();
     const text = Buffer.concat(chunks).toString("utf8").trim();
     if (!text) {
       // 空 body:通知被接受,或服务端没有内容可回
@@ -220,10 +247,10 @@ export class HttpTransport extends EventEmitter {
     else this.emit("message", parsed);
   }
 
-  async _consumeSse(stream) {
+  async _consumeSse(stream, signal) {
     const parser = new SseParser({
       onEvent: ({ data }) => {
-        if (!data) return;
+        if (!data || signal?.aborted) return;
         let parsed;
         try {
           parsed = JSON.parse(data);
@@ -253,7 +280,7 @@ export class HttpTransport extends EventEmitter {
   }
 
   async close() {
-    if (this.state === TRANSPORT_STATE.STOPPED || this.state === TRANSPORT_STATE.IDLE) {
+    if (this.state === TRANSPORT_STATE.STOPPED) {
       this.state = TRANSPORT_STATE.STOPPED;
       return;
     }
@@ -262,6 +289,7 @@ export class HttpTransport extends EventEmitter {
       try { controller.abort(new Error("HttpTransport closed")); } catch { /* best-effort */ }
     }
     this._controllers.clear();
+    this._requestControllers.clear();
     this.state = TRANSPORT_STATE.STOPPED;
     this.emit("close", { code: 0, signal: null });
   }
