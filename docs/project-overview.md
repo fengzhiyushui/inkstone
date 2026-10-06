@@ -39,6 +39,7 @@ kernel facade：
 - `recovery.*`：list / resume / cancel / clear / report；恢复启用时另有 `abortJournal()` / `commitJournal()`
 - `experience.*`（C4，见 §14.4）
 - `mcp.*`（v1.11.0，v1.12.0 增 inputs API）：listServers / restartServer / toggleServer / callTool / listInputs / setInputValue
+- `mcp.*`（v1.15 OAuth）：getAuthStatus / startAuth / cancelAuth / logoutAuth；resources/prompts 接口见 §3.1
 - `metrics.*`：用量与上下文统计
 
 ### turn 生命周期
@@ -119,7 +120,7 @@ ToolCall
 
 工具超时：`executor` 支持 `defaultToolTimeoutMs` / `context.toolTimeoutMs`；超时落为 `status:"error"`（`metadata.timeout = true`），不抛错、不强杀进程。
 
-### 3.1 MCP (Model Context Protocol) 外部工具与内容接入（至 v1.14.0）
+### 3.1 MCP (Model Context Protocol) 外部工具与内容接入（至 v1.15.0）
 
 Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（**dual-era × 三种传输 × 工具治理**）：
 
@@ -148,6 +149,7 @@ Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（
 - **模型上下文桥**（[`capability-tools.js`](../src/tools/mcp/capability-tools.js)）：按连接状态动态挂载 `mcp_resources` / `mcp_prompts`，走现有 read 权限与参数校验；外部内容以 tool 消息引用，不能将返回的 system 角色提升成模型系统指令。已知密钥、错误及 binary 经共享 [`security/mcp-content.js`](../src/security/mcp-content.js) 处理。
 - **输出契约**（[`output-schema.js`](../src/tools/mcp/output-schema.js)）：有界 JSON Schema 2020-12 子集检查原始 structuredContent，未知关键词/远程引用/超预算明确报错；随后脱敏进 metadata。挂载工具返回标准 `{status,content,metadata}`，修复 ToolExecutor 丢文本；`isError` / 校验失败均为 error。公开 `kernel.mcp.callTool` 保持字符串兼容。
 - **三端**：GUI `McpView`（接入方式选择、风险徽章、信任开关、密钥面板）加资源树、URI 模板、提示词参数浏览；结果只填入对话草稿，不自动发送。CLI 增 `inkstone mcp resources|prompts`，与 GUI 默认均为 1 页 / 50 项 / 64 KiB；命令见 [部署与使用](DEPLOYMENT_AND_USAGE.md)。TUI 可通过模型调用同一内核内容工具，专用 `/mcp` 管理留待 v1.16。
+- **OAuth（v1.15）**：`auth/` 负责 PR/AS 与 401 challenge 发现、CIDM/预注册公共客户端、DCR 兼容、S256 PKCE、state/iss 校验及加密凭据。凭据按 server/issuer/resource/client/scopes 隔离；并发刷新合并、401 最多一次重试，失败重新登录。OAuth HTTP 请求不跟随重定向，仍走 DNS 固定与 SSRF。GUI 主进程打开浏览器，CLI `mcp auth` 提供登录/状态/注销；成功后 Hub 自动重连，注销/禁用/移除阻止旧请求重新挂载工具。`mcp:auth_required` / `mcp:auth_status` 进入统一会话事件。完整边界见 [规格 §3.4.1](specs/architecture/2026-09-29-mcp-client-v2-design.md#341-v115-实际契约2026-10-06)。
 
 ---
 
@@ -332,6 +334,7 @@ tests/            单元 / 集成 / e2e
 
 - 持久化恢复默认关闭；未开启时会话 / 变更 / 分支无跨进程文件锁，勿在同一项目目录并发运行多个写状态实例。
 - repair executor 目前是单轮修复执行器。
+- MCP 在途 AbortSignal 取消仍未接入；OAuth 真实外部 IdP 尚未验证，本版以本地 HTTP mock 验收。凭据加密密钥与密文同存于用户目录，不是操作系统密钥链。
 - GUI 用量统计在离线或未接入真实模型调用时可能显示零值。
 - `src/theme.js` 的 `VERSION` 可能滞后于 `package.json`；发布真源是 `package.json`。
 - 模型 id 默认 `deepseek-flash` / `deepseek-v4-pro`（`deepseek-v4-flash` 已退役，旧 id 加载时静默迁移），以配置覆盖为准。

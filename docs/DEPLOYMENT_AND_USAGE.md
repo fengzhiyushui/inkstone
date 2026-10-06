@@ -310,6 +310,26 @@ GUI 的服务卡片提供「资源 / URI 模板 / 提示词」标签。展开按
 
 当工具定义 `outputSchema` 时，客户端校验返回的 structuredContent；不匹配、缺失或 schema 使用未支持的关键词都会报错。支持范围是有界 JSON Schema 2020-12 子集（见 [MCP 设计规格](specs/architecture/2026-09-29-mcp-client-v2-design.md)），不承诺任意 schema 兼容。
 
+### MCP OAuth 登录（v1.15）
+
+远程 MCP 支持 OAuth 公共客户端。先添加服务，再在浏览器中授权（示例地址与客户端 ID 需替换为服务方提供的真实值）：
+
+```bash
+node ./bin/inkstone.js mcp add remote --url "https://mcp.example.com/mcp" --oauth --client-id "https://app.example.com/inkstone-client.json" --scopes "mcp:read"
+node ./bin/inkstone.js mcp auth remote
+node ./bin/inkstone.js mcp auth remote status
+node ./bin/inkstone.js mcp check remote
+node ./bin/inkstone.js mcp auth remote logout
+```
+
+CLI 会显示授权地址并等待本机回调，请保持命令运行；在浏览器完成后自动保存凭据。取消请在原登录命令按 Ctrl+C。独立 `cancel` 命令只作用于当前进程的待授权流程，不跨进程取消另一个登录命令。
+
+GUI 添加远程服务时勾选 OAuth，填写可选客户端 ID 与 scopes，随后在服务卡片点「登录」。浏览器由主进程打开；完成后服务自动重连并刷新工具列表，也可取消或退出登录。无需模型 API Key 即可管理 MCP 登录。
+
+`--client-id` 可以是预注册公共客户端 ID，或 AS 支持的 HTTPS Client ID Metadata Document URL。未提供时尝试服务端动态注册；没有动态注册能力时需配置客户端 ID。Inkstone 不托管 metadata 文档，也不接受在项目配置中写入 client secret/access token/refresh token。OAuth 不与静态 Authorization 请求头混用。
+
+默认凭据位于 `~/.deepseek-code/credentials/mcp-oauth/`，加密落盘、自动刷新，按 server/issuer/resource/client/scopes 隔离。`DEEPSEEK_CODE_HOME` 替代用户 home 后仍追加 `.deepseek-code`。退出会清除该服务该资源的本地凭据，不代表远端撤销授权；需要彻底撤销时使用服务方账户设置。OAuth 仅接受 HTTPS，显式私网放行清单中的回环 HTTP 用于本机服务/测试；OAuth 请求不跟随重定向。
+
 ### 环境变量
 
 | 变量 | 对应配置 | 默认 |
