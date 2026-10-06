@@ -1,3 +1,6 @@
+import { redactSecrets } from "../../security/redactor.js";
+import { validateOutputSchema } from "./output-schema.js";
+
 export function sanitizeIdentifier(str) {
   if (!str || typeof str !== "string") return "unknown";
   return str.replace(/[^a-zA-Z0-9_.-]/g, "_");
@@ -167,6 +170,63 @@ export function summarizeToolResult(callResult) {
     meta.structuredContent = callResult.structuredContent;
   }
   return { text, meta };
+}
+
+/** Copy JSON metadata while redacting secret fields and token-like strings. */
+export function redactStructuredContent(value) {
+  let nodes = 0;
+  let bytes = 0;
+  const ancestors = new Set();
+  const secretKey = /^(?:authorization|api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|password|passwd|secret|token)$/i;
+  function visit(item, depth = 0) {
+    if (++nodes > 20_000 || depth > 64 || bytes > 1_048_576) throw new Error("MCP structuredContent exceeds safety limits");
+    if (typeof item === "string") {
+      bytes += item.length * 3;
+      if (bytes > 1_048_576) throw new Error("MCP structuredContent exceeds safety limits");
+      return redactSecrets(item);
+    }
+    if (item === null || typeof item === "boolean" || typeof item === "number" && Number.isFinite(item)) return item;
+    if (!item || typeof item !== "object" || ancestors.has(item)) throw new Error("MCP structuredContent must be acyclic JSON");
+    if (!Array.isArray(item) && Object.getPrototypeOf(item) !== Object.prototype && Object.getPrototypeOf(item) !== null) throw new Error("MCP structuredContent must be JSON");
+    ancestors.add(item);
+    const entries = [];
+    for (const key of Object.keys(item)) {
+      const descriptor = Object.getOwnPropertyDescriptor(item, key);
+      if (!descriptor || !Object.hasOwn(descriptor, "value")) throw new Error("MCP structuredContent accessors are unsupported");
+      bytes += key.length * 3;
+      entries.push([key, secretKey.test(key) ? "[REDACTED]" : visit(descriptor.value, depth + 1)]);
+    }
+    ancestors.delete(item);
+    return Array.isArray(item) ? entries.map(([, child]) => child) : Object.fromEntries(entries);
+  }
+  return visit(value);
+}
+
+/** Adapter for ToolExecutor's object contract; public callTool stays textual. */
+export function toToolExecutionResult(callResult, { outputSchema, redact = (value) => value } = {}) {
+  const isError = Boolean(callResult?.isError);
+  const resultType = callResult?.resultType || "complete";
+  const metadata = { isError, resultType: redact(redactSecrets(resultType)) };
+  let validation;
+  if (!isError && resultType === "complete" && outputSchema !== undefined) {
+    validation = validateOutputSchema(outputSchema, callResult?.structuredContent);
+    metadata.outputValidation = redact(redactStructuredContent(validation));
+  }
+  try {
+    if (callResult?.structuredContent !== undefined) metadata.structuredContent = redact(redactStructuredContent(callResult.structuredContent));
+  } catch {
+    return { status: "error", content: [{ type: "error", text: "MCP structuredContent could not be safely retained" }], metadata: { ...metadata, errorCode: "MCP_OUTPUT_CONTENT_INVALID" } };
+  }
+  if (validation && !validation.valid) {
+    metadata.errorCode = validation.errors[0].code;
+    return { status: "error", content: [{ type: "error", text: redact(redactSecrets(`MCP outputSchema validation failed: ${validation.errors[0].message} (${validation.errors[0].path})`)) }], metadata };
+  }
+  if (resultType !== "complete") {
+    metadata.errorCode = resultType === "input_required" ? "MCP_INPUT_REQUIRED" : "MCP_RESULT_TYPE_UNSUPPORTED";
+    return { status: "error", content: [{ type: "error", text: redact(redactSecrets(formatToolResult(callResult))) }], metadata };
+  }
+  const text = redact(redactSecrets(formatToolResult(callResult)));
+  return { status: isError ? "error" : "success", content: [{ type: isError ? "error" : "text", text }], metadata };
 }
 
 export function mcpToolToDeepSeekSchema(serverId, mcpTool) {

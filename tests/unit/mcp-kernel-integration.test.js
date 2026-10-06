@@ -88,7 +88,8 @@ test("createKernel integrates McpHub, exposes kernel.mcp facet, and cleans up on
     assert.equal(resolvedTool.autoApprove, true);
 
     const execResult = await resolvedTool.execute({ a: 8, b: 9 });
-    assert.equal(execResult, "72");
+    assert.equal(execResult.status, "success");
+    assert.deepEqual(execResult.content, [{ type: "text", text: "72" }]);
   } finally {
     await kernel.dispose();
     await rm(root, { recursive: true, force: true }).catch(() => {});
