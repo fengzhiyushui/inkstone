@@ -2,7 +2,7 @@
 
 - 类型：实施计划 (Plan)
 - 日期：2026-09-29
-- 状态：进行中（v1.11.1 / v1.11.2 / v1.12.0 / v1.13.0 / v1.13.1 已收口，2026-10-05；v1.14.0+ 未开工）
+- 状态：进行中（已推进至 v1.14.0，2026-10-06；v1.15.0+ 未开工）
 - 关联：[MCP Client v2 设计规格](../../specs/architecture/2026-09-29-mcp-client-v2-design.md) · [v1.11.0 MCP 首版](../../specs/architecture/2026-09-28-v1.11.0-mcp-integration-design.md) · [post-V3 路线图](../../specs/architecture/2026-09-17-post-v3-roadmap-design.md) · [权限引擎](../../specs/backend/2026-05-30-v2-7-approval-resume-design.md)
 
 > 协议事实以 modelcontextprotocol.io **2026-07-28** 为准（2026-09-29 联网核对）：Modern 无握手、per-request `_meta`；Legacy `initialize`；标准 transport = stdio + Streamable HTTP。
@@ -39,8 +39,8 @@
 2. **安全不变量**：destructive 永不永久自动放行；密钥不进项目树/日志/IPC；stdio `shell:false`；远程 SSRF；**annotations 默认不可信**。
 3. **故障隔离**：单 Server 失败不影响内核。
 4. **兼容**：v1.11.0 `mcpServers` 与 `mcp__*` 名保持可用。
-5. **Git/版本铁律**：`feat/v1.11.1` 等独立分支；提交仅 `v<major>.<minor>.<patch>`；根 `README.md` 仅大版本改。
-6. **测试**：`npm test` + `npm run check` 三绿；`tests/unit/mcp-*.test.js` 基线只增不减（现 10 文件）。
+5. **Git/版本**：按当前 [文档中心开发规范](../../README.md#开发分支与版本管理规范预览探索期--方式-a-版) 执行：本地 `codex/v1.14` 等短分支，冲刺内普通 feat/fix/test 提交；完成后 `--no-ff` 合入 main，仅一个 minor 预览里程碑 tag，远端不推临时分支；根 README 仅大版本改。
+6. **测试**：`npm test`、`npm run check`、`git diff --check`；修改 GUI 时再过 `npm run build:gui`。基线只增不减。
 
 ---
 
@@ -168,6 +168,14 @@
 
 **验收**：带 resources 的 mock 可浏览并读入上下文。
 
+**结果（2026-10-06）**：E1–E6 已落地。资源/模板/提示词经 Client → Hub → kernel → CLI/GUI 贯通，并由 `mcp_resources` / `mcp_prompts` 进入模型工具上下文；缓存、分页和字节上限见规格 §4.1.1。outputSchema 采用零依赖的有界 2020-12 子集，unsupported 明确报错。
+
+**同步修复**：正常 runtime 和公开 tools.execute 真正消费持久授权；统一工具配置归一化保留 risk；动态 add 保留 HTTP headers/allowlist/trust/tools；kernel 暴露 add/remove，GUI 显示真实添加错误。另修复 Hub 工具返回字符串造成执行结果丢失，以及资源/工具结果和 RPC 错误的已知密钥脱敏。
+
+**验证**：真实 stdio mock + createKernel + 本地模拟模型，覆盖资源列表→读取→提示词→后续 role:tool 消息、脱敏、权限参数校验及禁用/重启/删除；Client 单测覆盖 capability gate、Modern/Legacy、分页/截断/缓存失效；GUI host/IPC/草稿和 CLI mock 回归。全量测试与 GUI 构建通过，精确计数见本次 CHANGELOG。语法检查改为逐一检查 JS 文件，避免旧脚本多路径参数只检查首文件的遗漏。
+
+**下一步**：按 v1.15 F1–F7 推进 OAuth；优先用本地 mock AS 锁定发现、issuer 隔离和 PKCE，再接 GUI/CLI 登录。v1.16 同时登记在途 AbortSignal 接入 JSON-RPC 的既有缺口，不能以当前请求前检查代替完整取消验收。
+
 ---
 
 ### v1.15.0 — OAuth 2.1（minor）
@@ -237,7 +245,7 @@ v1.11.1 ──► v1.11.2 ──► v1.12.0 ──► v1.13.0 ──► v1.14.0
 ```bash
 npm test
 npm run check
-npm run build:renderer   # 凡改 gui/ 必过
+npm run build:gui        # 根目录执行；凡改 gui/ 必过
 git diff --check
 ```
 
@@ -268,7 +276,7 @@ git diff --check
 | v1.11.2 | **已完成**（2026-09-29 落地 / 2026-09-30 收口补齐 B7 + 入口接线） |
 | v1.12.0 | **已完成**（2026-10-04，Streamable HTTP + 逐跳 SSRF + legacy SSE 兼容） |
 | v1.13.0 | **已完成**（2026-10-04，annotations 治理 + 三级批准 + destructive 硬约束） |
-| v1.14.0 | 未开工 |
+| v1.14.0 | **已完成**（2026-10-06，resources/prompts 上下文闭环 + outputSchema 子集校验 + CLI/GUI） |
 | v1.15.0 | 未开工 |
 | v1.16.0 | 未开工 |
 | v1.17.0 | 未开工 |

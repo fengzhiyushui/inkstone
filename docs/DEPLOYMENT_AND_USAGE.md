@@ -293,6 +293,23 @@ node ./bin/inkstone.js mcp remove fs
 图形化管理 (GUI)：
 桌面端左侧导航栏点击「MCP」次级视图，可直接查看已连接服务、展开查看暴露的工具参数抽屉，点击右上角「+ 添加服务」即可通过官方推荐模板（Filesystem、Fetch、Memory、SQLite、GitHub）或自定义配置一键热插拔挂载，并提供卡片级服务启停、一键重启与安全删除二次确认。
 
+v1.14 起，可按需浏览资源与提示词；这些命令无需模型 API Key，仅连接指定服务：
+
+```bash
+node ./bin/inkstone.js mcp resources filesystem list
+node ./bin/inkstone.js mcp resources filesystem templates
+node ./bin/inkstone.js mcp resources filesystem read "file:///project/README.md"
+node ./bin/inkstone.js mcp prompts helper list
+node ./bin/inkstone.js mcp prompts helper get review --arguments '{"language":"中文"}'
+node ./bin/inkstone.js mcp resources filesystem list --max-pages 5 --max-items 200 --max-bytes 65536
+```
+
+服务必须声明对应的 resources/prompts 能力，否则列表提示不支持，读取拒绝。`read` 的 URI 由 MCP 服务解释，Inkstone 不直接请求 URI。CLI/GUI 默认只取 1 页 / 50 项 / 64 KiB；截断有提示，可调整上限。服务端 `nextCursor` 可用 `--cursor` 续读；`inkstone-page:` 是当前连接内的分页偏移，不能在新 CLI 进程复用，此时提高上限重新列出。列表最多 20 页 / 1000 项，内容最多 1 MiB。
+
+GUI 的服务卡片提供「资源 / URI 模板 / 提示词」标签。展开按需加载，模板需先填完整 URI，提示词需填必填参数；预览后点击「放入对话」生成引用草稿，检查后再发送。binary 不直接显示；文本、错误和结构化输出中的已知密钥会脱敏。对话中的模型也可调用 `mcp_resources` / `mcp_prompts` 读取同一内容。
+
+当工具定义 `outputSchema` 时，客户端校验返回的 structuredContent；不匹配、缺失或 schema 使用未支持的关键词都会报错。支持范围是有界 JSON Schema 2020-12 子集（见 [MCP 设计规格](specs/architecture/2026-09-29-mcp-client-v2-design.md)），不承诺任意 schema 兼容。
+
 ### 环境变量
 
 | 变量 | 对应配置 | 默认 |

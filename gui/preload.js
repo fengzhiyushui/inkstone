@@ -60,6 +60,11 @@ contextBridge.exposeInMainWorld("deepseek", {
   toggleMcpServer: (serverId, enabled) => ipcRenderer.invoke("mcp:toggle", serverId, enabled),
   addMcpServer: (serverId, config) => ipcRenderer.invoke("mcp:add", serverId, config),
   removeMcpServer: (serverId) => ipcRenderer.invoke("mcp:remove", serverId),
+  listMcpResources: (serverId, options) => ipcRenderer.invoke("mcp:resources-list", serverId, options),
+  listMcpResourceTemplates: (serverId, options) => ipcRenderer.invoke("mcp:resource-templates-list", serverId, options),
+  readMcpResource: (serverId, uri, options) => ipcRenderer.invoke("mcp:resource-read", serverId, uri, options),
+  listMcpPrompts: (serverId, options) => ipcRenderer.invoke("mcp:prompts-list", serverId, options),
+  getMcpPrompt: (serverId, name, args, options) => ipcRenderer.invoke("mcp:prompt-get", serverId, name, args, options),
   // v1.11.2:${input:*} 密钥引用(值不落项目树)
   listMcpInputs: () => ipcRenderer.invoke("mcp:inputs"),
   setMcpInput: (name, value) => ipcRenderer.invoke("mcp:set-input", name, value)

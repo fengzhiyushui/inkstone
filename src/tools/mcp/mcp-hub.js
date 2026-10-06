@@ -1,10 +1,12 @@
 import { EventEmitter } from "node:events";
 import { McpClient } from "./mcp-client.js";
+import { createMcpDisplayRedactor } from "../../security/mcp-content.js";
 import {
   loadMcpConfig,
   bindInputs,
   resolveServerEnvAndHeaders,
-  auditConfigSecrets
+  auditConfigSecrets,
+  normalizeServerConfig
 } from "./config-loader.js";
 import {
   formatExternalToolName,
@@ -12,15 +14,23 @@ import {
   cleanJsonSchema,
   formatToolResult,
   summarizeToolResult,
+  toToolExecutionResult,
   mcpToolToDeepSeekSchema
 } from "./schema-converter.js";
 import { resolveToolRisk, annotationsFromTool, riskBadge } from "./annotations.js";
-import { isToolEnabled, resolveConfiguredScope, normalizeToolPolicy, asPolicy } from "./tool-policy.js";
+import { isToolEnabled, resolveConfiguredScope, asPolicy } from "./tool-policy.js";
 
 const DEFAULT_MAX_PARALLEL_INIT = 4;
 const DEFAULT_RECONNECT_BASE_MS = 500;
 const DEFAULT_RECONNECT_MAX_MS = 30_000;
 const DEFAULT_MAX_RECONNECT_ATTEMPTS = 5;
+
+function sanitizedMcpError(error, redact) {
+  const sanitized = new Error(redact(error?.message || String(error)));
+  // RPC data/cause/stack may contain the same secret; expose only the safe message and code.
+  if (typeof error?.code === "number" || typeof error?.code === "string") sanitized.code = redact(error.code);
+  return sanitized;
+}
 
 export class McpHub extends EventEmitter {
   constructor({
@@ -50,6 +60,7 @@ export class McpHub extends EventEmitter {
     this._reconnectState = new Map();
     this._remounting = new Set();
     this._stopping = new Set();
+    this._capabilityConnections = new Map();
 
     this.rawConfigs = config.mcpServers || {};
     this.inputs = inputs && typeof inputs === "object" ? { ...inputs } : {};
@@ -182,8 +193,14 @@ export class McpHub extends EventEmitter {
       }
     });
 
-    client.on("list_changed", async () => {
-      await this._remountTools(serverId, client);
+    client.on("list_changed", async ({ method = "" } = {}) => {
+      if (method.includes("resources/") || method.includes("templates/")) {
+        this.emit("resources_changed", { serverId, method });
+      } else if (method.includes("prompts/")) {
+        this.emit("prompts_changed", { serverId, method });
+      } else if (method.includes("tools/") || !method) {
+        await this._remountTools(serverId, client);
+      }
     });
 
     this.clients.set(serverId, client);
@@ -193,7 +210,11 @@ export class McpHub extends EventEmitter {
   async _connectAndMount(serverId, client, srvConfig) {
     await client.connect();
 
-    const mcpTools = await client.listTools();
+    // Older servers omitted capabilities even when they exposed tools. Preserve
+    // that compatibility, but never probe tools on an explicit resources/prompts-only server.
+    const caps = client.serverCapabilities || {};
+    const supportsTools = caps.tools !== false && (caps.tools !== undefined || (!caps.resources && !caps.prompts));
+    const mcpTools = supportsTools ? await client.listTools() : [];
     this._mountTools(serverId, mcpTools, client, srvConfig);
 
     const st = this._reconnectState.get(serverId) || {
@@ -238,7 +259,7 @@ export class McpHub extends EventEmitter {
       // 这里给用户一个手写的逃生阀。它是人手写进配置的**有意决定**,因此允许降级,
       // 但会被记录下来并在三端提示,避免悄悄放宽。
       const policy = asPolicy(srvConfig.tools);
-      const riskOverride = policy.risk[tool.name] || null;
+      const riskOverride = Object.hasOwn(policy.risk, tool.name) ? policy.risk[tool.name] : null;
       const overridden = Boolean(riskOverride) && riskOverride !== risk.category;
       let category = risk.category;
       if (riskOverride) category = riskOverride;
@@ -267,9 +288,15 @@ export class McpHub extends EventEmitter {
         approvalScope: configuredScope,
         riskOverridden: overridden,
         riskOverride: riskOverride,
-        execute: async (params) => {
-          const res = await client.callTool(tool.name, params);
-          return formatToolResult(res);
+        execute: async (params, context = {}) => {
+          const redact = createMcpDisplayRedactor({ hub: this });
+          try {
+            const res = await client.callTool(tool.name, params, { signal: context.signal });
+            return toToolExecutionResult(res, { outputSchema: tool.outputSchema, redact });
+          } catch (error) {
+            const sanitized = sanitizedMcpError(error, redact);
+            return { status: "error", content: [{ type: "error", text: sanitized.message }], metadata: { isError: true, errorCode: sanitized.code ?? "MCP_TOOL_CALL_FAILED" } };
+          }
         }
       };
 
@@ -427,27 +454,7 @@ export class McpHub extends EventEmitter {
       throw new Error("Invalid MCP server config: 'command' or 'url' is required");
     }
 
-    const normalized = {
-      command: typeof srvConfig.command === "string" ? srvConfig.command.trim() : "",
-      args: Array.isArray(srvConfig.args) ? srvConfig.args.map(String) : [],
-      env:
-        srvConfig.env && typeof srvConfig.env === "object" && !Array.isArray(srvConfig.env)
-          ? { ...srvConfig.env }
-          : {},
-      disabled: Boolean(srvConfig.disabled),
-      autoApprove: Array.isArray(srvConfig.autoApprove) ? srvConfig.autoApprove.map(String) : [],
-      timeoutMs:
-        typeof srvConfig.timeoutMs === "number" && srvConfig.timeoutMs > 0
-          ? srvConfig.timeoutMs
-          : 60000
-    };
-    if (typeof srvConfig.url === "string" && srvConfig.url.trim()) {
-      normalized.url = srvConfig.url.trim();
-      normalized.type = srvConfig.type || "streamable-http";
-    }
-    if (typeof srvConfig.cwd === "string" && srvConfig.cwd.trim()) {
-      normalized.cwd = srvConfig.cwd.trim();
-    }
+    const normalized = normalizeServerConfig(serverId, srvConfig);
 
     if (this.serverConfigs.has(serverId)) {
       await this.removeServer(serverId);
@@ -566,6 +573,7 @@ export class McpHub extends EventEmitter {
         configSource: this.configSources?.[serverId] || null,
         reconnectAttempts: reconnect?.attempts || 0,
         serverInfo: client?.serverInfo || null,
+        capabilities: { ...(client?.serverCapabilities || {}) },
         toolCount: tools.length,
         tools: tools.map((t) => {
           const badge = riskBadge(t.category);
@@ -603,6 +611,51 @@ export class McpHub extends EventEmitter {
     }));
   }
 
+  async _connectedClient(serverId) {
+    const config = this.serverConfigs.get(serverId);
+    if (config?.disabled) {
+      const error = new Error(`MCP server '${serverId}' is disabled`);
+      error.code = "MCP_SERVER_DISABLED";
+      throw error;
+    }
+    const client = this.clients.get(serverId);
+    if (client?.getStatus() === "CONNECTED") return client;
+    if (!config) throw new Error(`MCP server '${serverId}' is not connected or configured`);
+    // CLI capability commands can keep autoInitMcp:false: connect only the
+    // requested server, sharing concurrent browser requests to the same target.
+    if (this._capabilityConnections.has(serverId)) return this._capabilityConnections.get(serverId);
+    const pending = this.restartServer(serverId).then(() => {
+      const connected = this.clients.get(serverId);
+      if (!this.serverConfigs.has(serverId) || this.serverConfigs.get(serverId).disabled || connected?.getStatus() !== "CONNECTED") {
+        throw new Error(`MCP server '${serverId}' is no longer available`);
+      }
+      return connected;
+    });
+    this._capabilityConnections.set(serverId, pending);
+    try { return await pending; }
+    finally { if (this._capabilityConnections.get(serverId) === pending) this._capabilityConnections.delete(serverId); }
+  }
+
+  async listResources(serverId, opts = {}) {
+    return (await this._connectedClient(serverId)).listResources(opts);
+  }
+
+  async listResourceTemplates(serverId, opts = {}) {
+    return (await this._connectedClient(serverId)).listResourceTemplates(opts);
+  }
+
+  async readResource(serverId, uri, opts = {}) {
+    return (await this._connectedClient(serverId)).readResource(uri, opts);
+  }
+
+  async listPrompts(serverId, opts = {}) {
+    return (await this._connectedClient(serverId)).listPrompts(opts);
+  }
+
+  async getPrompt(serverId, name, args = {}, opts = {}) {
+    return (await this._connectedClient(serverId)).getPrompt(name, args, opts);
+  }
+
   async callTool(namespacedName, params = {}) {
     const parsed = parseExternalToolName(namespacedName);
     if (!parsed) {
@@ -614,8 +667,13 @@ export class McpHub extends EventEmitter {
       throw new Error(`MCP server '${serverId}' is not connected`);
     }
 
-    const res = await client.callTool(originalName, params);
-    return formatToolResult(res);
+    const redact = createMcpDisplayRedactor({ hub: this });
+    try {
+      const res = await client.callTool(originalName, params);
+      return redact(formatToolResult(res));
+    } catch (error) {
+      throw sanitizedMcpError(error, redact);
+    }
   }
 
   async callToolDetailed(namespacedName, params = {}) {
@@ -629,7 +687,12 @@ export class McpHub extends EventEmitter {
       throw new Error(`MCP server '${serverId}' is not connected`);
     }
 
-    const res = await client.callTool(originalName, params);
-    return summarizeToolResult(res);
+    const redact = createMcpDisplayRedactor({ hub: this });
+    try {
+      const res = await client.callTool(originalName, params);
+      return redact(summarizeToolResult(res));
+    } catch (error) {
+      throw sanitizedMcpError(error, redact);
+    }
   }
 }

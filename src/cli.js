@@ -6,13 +6,14 @@ import { buildProjectContext } from "./context.js";
 import { showDiff } from "./git.js";
 import { createKernel } from "./index.js";
 import { testDeepSeekConnection } from "./provider.js";
+import { createMcpDisplayRedactor } from "./security/mcp-content.js";
 import { searchProject } from "./search.js";
 import { runTui } from "./tui.js";
 import { banner, color, commandLine, section, statusLine } from "./theme.js";
 import { buildEditPrompt, buildKernelOptions, runKernelAgentCommand, runKernelChatCommand, runKernelTestCommand } from "./apps/cli/kernel-runner.js";
 
-export async function runCli(argv) {
-  const root = process.cwd();
+export async function runCli(argv, deps = {}) {
+  const root = deps.root || process.cwd();
   const { command, args, flags } = parseArgs(argv);
 
   switch (command) {
@@ -62,7 +63,7 @@ export async function runCli(argv) {
       await runResume(root);
       return;
     case "mcp":
-      await runMcp(root, args, flags);
+      await runMcp(root, args, flags, deps.mcp);
       return;
     default:
       throw new Error(`未知命令 "${command}"。运行 "inkstone help" 查看帮助。`);
@@ -82,7 +83,9 @@ function parseArgs(argv) {
     }
 
     const raw = value.slice(2);
-    const [key, inline] = raw.split("=", 2);
+    const equalAt = raw.indexOf("=");
+    const key = equalAt < 0 ? raw : raw.slice(0, equalAt);
+    const inline = equalAt < 0 ? undefined : raw.slice(equalAt + 1);
     if (inline !== undefined) {
       appendFlag(flags, key, inline);
       continue;
@@ -436,8 +439,9 @@ function collectHttpAllowlist(srvConfig = {}, config = {}, flags = null) {
   return [...new Set(merged)];
 }
 
-async function runMcp(root, args, flags) {
+export async function runMcp(root, args, flags = new Map(), deps = {}) {
   const action = args[0] || "list";
+  if (action === "resources" || action === "prompts") return runMcpContent(root, args, flags, deps);
   const config = await loadConfig(root, { allowMissingKey: true });
   const mcpServers = config.mcpServers || {};
 
@@ -676,7 +680,69 @@ async function runMcp(root, args, flags) {
     return;
   }
 
-  throw new Error(`未知 MCP 操作 "${action}"。可使用 "mcp list"、"mcp check <id>"、"mcp add <id>"、"mcp remove <id>" 或 "mcp toggle <id>"。`);
+  throw new Error(`未知 MCP 操作 "${action}"。可使用 list、check、add、remove、toggle、policy、resources 或 prompts。运行 inkstone help 查看用法。`);
+}
+
+async function runMcpContent(root, args, flags, deps) {
+  const { write = console.log, createKernelImpl = createKernel, buildKernelOptionsImpl = buildKernelOptions, loadConfigImpl = loadConfig } = deps;
+  const [kind, serverId, sub = "list", target] = args;
+  const usage = kind === "resources"
+    ? "inkstone mcp resources <server> [list|templates|read <uri>]"
+    : "inkstone mcp prompts <server> [list|get <name> --arguments JSON]";
+  if (!serverId || !/^[a-zA-Z0-9_.-]+$/.test(serverId)) throw new Error(`请指定 MCP 服务标识。用法：${usage}`);
+  const valid = kind === "resources" ? ["list", "templates", "read"] : ["list", "get"];
+  if (!valid.includes(sub) || args.length > (sub === "read" || sub === "get" ? 4 : 3)) throw new Error(`用法：${usage}`);
+  if ((sub === "read" || sub === "get") && !target?.trim()) throw new Error(`用法：${usage}`);
+  const limit = (flag, fallback, max) => {
+    if (!flags.has(flag)) return fallback;
+    const raw = flags.get(flag);
+    const value = typeof raw === "string" ? Number(raw) : NaN;
+    if (!Number.isInteger(value) || value < 1 || value > max) throw new Error(`--${flag} 必须是 1–${max} 的整数。`);
+    return value;
+  };
+  const options = {
+    maxPages: limit("max-pages", 5, 100),
+    maxItems: limit("max-items", 200, 10000),
+    maxBytes: limit("max-bytes", 65536, 65536)
+  };
+  if (flags.has("cursor")) {
+    const cursor = flags.get("cursor");
+    if (typeof cursor !== "string" || !cursor) throw new Error("--cursor 需要非空游标。");
+    if (cursor.startsWith("inkstone-page:")) throw new Error("该游标仅在原连接中有效；请重新列出并提高 --max-items/--max-pages 上限。");
+    options.cursor = cursor;
+  }
+  let promptArgs = {};
+  if (flags.has("arguments")) {
+    if (kind !== "prompts" || sub !== "get") throw new Error("--arguments 仅用于 prompts get。");
+    try {
+      promptArgs = JSON.parse(flags.get("arguments"));
+      if (!promptArgs || typeof promptArgs !== "object" || Array.isArray(promptArgs)
+        || Object.values(promptArgs).some((value) => typeof value !== "string")) throw new Error();
+    } catch { throw new Error("--arguments 必须为值均为字符串的 JSON 对象。"); }
+  }
+  const config = await loadConfigImpl(root, { allowMissingKey: true });
+  const kernel = await createKernelImpl(root, { ...(await buildKernelOptionsImpl(root)), autoInitMcp: false });
+  const clean = createMcpDisplayRedactor({ config: { ...config, arguments: promptArgs }, hub: kernel.mcp?.hub });
+  try {
+    const method = kind === "resources"
+      ? sub === "read" ? "readResource" : sub === "templates" ? "listResourceTemplates" : "listResources"
+      : sub === "get" ? "getPrompt" : "listPrompts";
+    if (typeof kernel.mcp?.[method] !== "function") throw new Error("MCP 内容接口不可用。");
+    const result = sub === "read" ? await kernel.mcp[method](serverId, target, options)
+      : sub === "get" ? await kernel.mcp[method](serverId, target, promptArgs, options)
+        : await kernel.mcp[method](serverId, options);
+    if (result?.error) throw new Error(typeof result.error === "string" ? result.error : result.error.message || "MCP request failed");
+    const safe = clean(result);
+    if (safe?.supported === false) write("该 MCP 服务不支持此能力。");
+    write(JSON.stringify(safe, null, 2));
+    if (safe?.truncated) write("结果已截断；可调整 --max-pages / --max-items / --max-bytes 后重新读取。");
+    if (safe?.nextCursor?.startsWith("inkstone-page:")) write("nextCursor 仅在当前连接中有效；下次命令请提高读取上限，不要复用此游标。");
+    return safe;
+  } catch (error) {
+    throw new Error(clean(error?.message || String(error)));
+  } finally {
+    await kernel.dispose?.();
+  }
 }
 
 function commonOptions(flags) {
@@ -761,6 +827,10 @@ ${commandLine("inkstone changes show latest", "查看修改详情")}
 ${commandLine("inkstone rollback latest", "回退最近修改")}
 ${commandLine("inkstone resume", "查看最近会话记录")}
 ${commandLine("inkstone mcp [list|check]", "管理与检查 MCP 外部扩展服务与工具")}
+${commandLine("inkstone mcp resources <server> [list|templates]", "按需列出资源或 URI 模板")}
+${commandLine("inkstone mcp resources <server> read <uri>", "通过 MCP 服务读取资源（不会直接访问 URI）")}
+${commandLine("inkstone mcp prompts <server> [list|get <name>]", "列出或获取提示词；参数用 --arguments '{\"key\":\"value\"}'")}
+${commandLine("  --max-pages 5 --max-items 200 --max-bytes 65536", "内容分页/字节上限；--cursor <server-cursor> 续读服务端游标")}
 
 环境变量：
   DEEPSEEK_API_KEY     如果本地配置没有 apiKey，则使用这里的密钥

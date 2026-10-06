@@ -119,7 +119,7 @@ ToolCall
 
 工具超时：`executor` 支持 `defaultToolTimeoutMs` / `context.toolTimeoutMs`；超时落为 `status:"error"`（`metadata.timeout = true`），不抛错、不强杀进程。
 
-### 3.1 MCP (Model Context Protocol) 外部工具接入（v1.11.0 / v1.11.1 / v1.12.0 / v1.13.0）
+### 3.1 MCP (Model Context Protocol) 外部工具与内容接入（至 v1.14.0）
 
 Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（**dual-era × 三种传输 × 工具治理**）：
 
@@ -143,7 +143,11 @@ Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（
   - **用户逃生阀 `tools.risk`**：用户可在 server 配置里显式指定工具风险等级（`read`/`mutate`/`destructive`），覆盖 annotations 与关键词推断；覆盖记录在 `riskOverridden` 并透出三端。**注意**：这是人手写进配置的有意决定，因此允许降级；若被滥用需自行审计 `tools.risk`。
   - **信任模型**：server 未受信时其 annotations **一律不参与判定**；只有显式 `trust: true` 的 server 才采纳其 annotations。
 - **权限**：`autoApprove` 白名单（**不看类别**，列入即放行；destructive 仍由引擎硬拒）+ 既有三级审批流 + 上述治理。
-- **三端**：GUI `McpView`（接入方式选择、风险徽章、信任开关、密钥面板）；CLI `inkstone mcp [list|check|add|remove|toggle|policy]`（`--url/--type/--headers/--allow-private/--trust`）。
+- **v1.14 接线修复**：持久授权进入正常 runtime 的 permission context 及公开 `tools.execute`，重建 kernel 后仍生效；tools 配置统一归一化并保留 risk；动态 add 保留 headers/allowlist/trust/tools；公开 kernel 增 add/remove，GUI 添加失败会呈现错误。
+- **资源与提示词**：Client、Hub、`kernel.mcp` 提供资源 list/templates/read、提示词 list/get；缺少 capability 不发业务 RPC，只含内容能力的服务可独立连接。Hub 支持内容调用按需连接目标服务。列表分页默认 5 页 / 200 项 / 1 MiB，内容默认 64 KiB；同客户端缓存最多 64 项 / 2 MiB / 5 分钟。边界与游标有效期见 [规格 §4.1.1](specs/architecture/2026-09-29-mcp-client-v2-design.md)。
+- **模型上下文桥**（[`capability-tools.js`](../src/tools/mcp/capability-tools.js)）：按连接状态动态挂载 `mcp_resources` / `mcp_prompts`，走现有 read 权限与参数校验；外部内容以 tool 消息引用，不能将返回的 system 角色提升成模型系统指令。已知密钥、错误及 binary 经共享 [`security/mcp-content.js`](../src/security/mcp-content.js) 处理。
+- **输出契约**（[`output-schema.js`](../src/tools/mcp/output-schema.js)）：有界 JSON Schema 2020-12 子集检查原始 structuredContent，未知关键词/远程引用/超预算明确报错；随后脱敏进 metadata。挂载工具返回标准 `{status,content,metadata}`，修复 ToolExecutor 丢文本；`isError` / 校验失败均为 error。公开 `kernel.mcp.callTool` 保持字符串兼容。
+- **三端**：GUI `McpView`（接入方式选择、风险徽章、信任开关、密钥面板）加资源树、URI 模板、提示词参数浏览；结果只填入对话草稿，不自动发送。CLI 增 `inkstone mcp resources|prompts`，与 GUI 默认均为 1 页 / 50 项 / 64 KiB；命令见 [部署与使用](DEPLOYMENT_AND_USAGE.md)。TUI 可通过模型调用同一内核内容工具，专用 `/mcp` 管理留待 v1.16。
 
 ---
 

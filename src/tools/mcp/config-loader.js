@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname, resolve } from "node:path";
+import { normalizeToolPolicy } from "./tool-policy.js";
 
 /**
  * MCP configuration loader — multi-scope merge + secret inputs.
@@ -64,13 +65,7 @@ export function normalizeServerConfig(serverId, raw = {}) {
   // (design §4.2:annotations 不可信,除非 server 受信)。默认 false。
   if (raw.trust === true) normalized.trust = true;
   if (raw.tools && typeof raw.tools === "object") {
-    normalized.tools = {
-      enabled: Array.isArray(raw.tools.enabled) ? raw.tools.enabled.map(String) : ["*"],
-      disabled: Array.isArray(raw.tools.disabled) ? raw.tools.disabled.map(String) : [],
-      ...(raw.tools.approval && typeof raw.tools.approval === "object" && !Array.isArray(raw.tools.approval)
-        ? { approval: { ...raw.tools.approval } }
-        : {})
-    };
+    normalized.tools = normalizeToolPolicy(raw.tools);
   }
   if (raw.protocolMode === "auto" || raw.protocolMode === "modern" || raw.protocolMode === "legacy") {
     normalized.protocolMode = raw.protocolMode;

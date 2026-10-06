@@ -92,7 +92,8 @@ test("McpHub initializes enabled servers, mounts tools to registry, and skips di
 
   // Execute through registry
   const execOutput = await mountedTool.execute({ city: "Beijing" });
-  assert.equal(execOutput, "Sunny in Beijing");
+  assert.equal(execOutput.status, "success");
+  assert.deepEqual(execOutput.content, [{ type: "text", text: "Sunny in Beijing" }]);
 
   // List servers
   const serverList = hub.listServers();

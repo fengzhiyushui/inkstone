@@ -5,6 +5,8 @@ import {
   Plus, X, Check, Key
 } from "@phosphor-icons/react";
 import ChangeDiffView from "../ChangeDiffView.jsx";
+import McpContentBrowser from "./McpContentBrowser.jsx";
+import { checkedMcpResult } from "../../state/mcp-content.js";
 
 function formatChangeTime(time) {
   if (!time) return "";
@@ -328,6 +330,7 @@ export function AddMcpModal({ open, onClose, onAdd, onAdded, t }) {
           ...(allowlist.length ? { allowlist } : {}),
           ...(trustServer ? { trust: true } : {})
         });
+        if (res?.status !== "ERROR") checkedMcpResult(res);
         if (res && res.status === "ERROR") {
           setError(`服务添加成功但连接异常: ${res.error || "未知原因"}`);
           setSubmitting(false);
@@ -374,6 +377,7 @@ export function AddMcpModal({ open, onClose, onAdd, onAdded, t }) {
         ...(trustServer ? { trust: true } : {})
       });
 
+      if (res?.status !== "ERROR") checkedMcpResult(res);
       if (res && res.status === "ERROR") {
         setError(`服务添加成功但连接异常: ${res.error || "未知原因"}`);
         setSubmitting(false);
@@ -581,12 +585,13 @@ export function AddMcpModal({ open, onClose, onAdd, onAdded, t }) {
   );
 }
 
-export function McpView({ t, kernel, onRequestConfirm }) {
+export function McpView({ t, kernel, onRequestConfirm, onUseContent }) {
   const [servers, setServers] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [expanded, setExpanded] = React.useState(() => new Set());
   const [busyId, setBusyId] = React.useState(null);
   const [showAddModal, setShowAddModal] = React.useState(false);
+  const [contentEpoch, setContentEpoch] = React.useState(0);
   // v1.11.2:${input:*} 密钥引用 —— 定义来自 .mcp.json / config.json 的 inputs,
   // 值写入 ~/.deepseek-code/credentials(0600),绝不落项目树。
   const [inputs, setInputs] = React.useState([]);
@@ -602,6 +607,7 @@ export function McpView({ t, kernel, onRequestConfirm }) {
     try {
       const list = await kernel.listMcpServers();
       setServers(Array.isArray(list) ? list : []);
+      setContentEpoch((value) => value + 1);
     } catch {
       setServers([]);
     } finally {
@@ -966,6 +972,8 @@ export function McpView({ t, kernel, onRequestConfirm }) {
                         ))}
                       </div>
                     )}
+                    {!srv.disabled && <McpContentBrowser key={`${srv.serverId}:${contentEpoch}`}
+                      serverId={srv.serverId} kernel={kernel} t={t} onUseContent={onUseContent} />}
                   </div>
                 );
               })}

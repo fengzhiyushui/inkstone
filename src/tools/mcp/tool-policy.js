@@ -36,7 +36,7 @@ export function normalizeToolPolicy(raw = {}) {
   if (source.approval && typeof source.approval === "object" && !Array.isArray(source.approval)) {
     for (const [tool, scope] of Object.entries(source.approval)) {
       const normalized = normalizeApprovalScope(scope);
-      if (normalized) approval[tool] = normalized;
+      if (normalized) Object.defineProperty(approval, tool, { value: normalized, enumerable: true, configurable: true, writable: true });
     }
   }
 
@@ -47,7 +47,7 @@ export function normalizeToolPolicy(raw = {}) {
   if (source.risk && typeof source.risk === "object" && !Array.isArray(source.risk)) {
     for (const [tool, level] of Object.entries(source.risk)) {
       const normalized = normalizeRiskOverride(level);
-      if (normalized) risk[tool] = normalized;
+      if (normalized) Object.defineProperty(risk, tool, { value: normalized, enumerable: true, configurable: true, writable: true });
     }
   }
 
@@ -62,10 +62,7 @@ export function normalizeApprovalScope(value) {
 
 /** 宽容地拿到规范化策略:允许直接传 server 配置里的原始 `tools` 字段。 */
 export function asPolicy(toolPolicy) {
-  // 已规范化(有 enabled/disabled 两个键)时不再重复归一,保持幂等
-  if (toolPolicy && typeof toolPolicy === "object" && Array.isArray(toolPolicy.enabled) && Array.isArray(toolPolicy.disabled)) {
-    return toolPolicy;
-  }
+  // enabled/disabled 不足以证明 approval/risk 已归一化；所有入口使用同一规则。
   return normalizeToolPolicy(toolPolicy);
 }
 
@@ -89,7 +86,8 @@ export function isToolEnabled(toolPolicy, toolName) {
 
 export function resolveConfiguredScope(toolPolicy, toolName) {
   const policy = asPolicy(toolPolicy);
-  return policy.approval[String(toolName)] || null;
+  const name = String(toolName);
+  return Object.hasOwn(policy.approval, name) ? policy.approval[name] : null;
 }
 
 /**

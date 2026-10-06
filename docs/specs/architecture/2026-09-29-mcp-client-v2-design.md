@@ -2,7 +2,7 @@
 
 - 类型：架构设计规格 (Spec)
 - 日期：2026-09-29
-- 状态：设计定稿（装箱 v1.11.1 起多版本演进）
+- 状态：设计定稿；v1.14 能力面已实现（2026-10-06），OAuth / 可观测 / MRTR 仍按后续版本推进
 - 关联：[v1.11.0 MCP 首版](2026-09-28-v1.11.0-mcp-integration-design.md) · [post-V3 路线图](2026-09-17-post-v3-roadmap-design.md) (B1) · [权限引擎](../backend/2026-05-30-v2-7-approval-resume-design.md) · [GUI 壳层](../frontend/2026-09-20-v1.8.1-dsh-shell-design.md) · [实施计划](../../plans/architecture/2026-09-29-mcp-client-v2-multi-version-plan.md)
 
 > **取证说明**：MCP 协议事实以 [modelcontextprotocol.io](https://modelcontextprotocol.io/specification) **2026-07-28** 现行规范为准（2026-09-29 联网核对）。产品配置/交互形态综合官方文档与公开资料；调研副本见 `tmp/mcp-market-research.md`。
@@ -204,7 +204,7 @@ connect(server)
 | C→S | `server/discover` | Modern | 版本/能力/身份 |
 | C→S | `initialize` / `notifications/initialized` | Legacy | 握手 |
 | C→S | `tools/list` · `tools/call` | 两者 | 工具 |
-| C→S | `resources/list` · `resources/read` · `templates/list` | 两者 | 资源 |
+| C→S | `resources/list` · `resources/read` · Modern `templates/list` / Legacy `resources/templates/list` | 两者 | 资源 |
 | C→S | `prompts/list` · `prompts/get` | 两者 | 提示词 |
 | C→S | `subscriptions/listen` | Modern | 变更订阅 |
 | S→C | `notifications/tools/list_changed` 等 | 两者 | 热更新 |
@@ -239,6 +239,17 @@ connect(server)
 - 保持 `mcp__<serverId>__<toolName>`；server 冲突消歧（规范建议前缀）。
 - 超长改为可读前缀 + `hash8`，保证唯一；映射表永久保留 `originalName`。
 - 工具名校验放宽至规范字符集（含 `.`），仍禁止空格/逗号。
+
+### 4.1.1 v1.14 能力面实际契约（2026-10-06）
+
+- `McpClient` 提供 `listResources` / `listResourceTemplates` / `readResource` / `listPrompts` / `getPrompt`；`McpHub` 与 `kernel.mcp` 同名门面首参为 `serverId`。仅显式声明为 `true` 或对象的 capability 生效，未声明时列表返回 `supported:false`、读取抛 `MCP_CAPABILITY_UNSUPPORTED`，均不发业务 RPC。只声明 resources/prompts 的服务不会被探测 `tools/list`。
+- 列表默认最多 5 页 / 200 项 / 1 MiB，上限 20 页 / 1000 项 / 1 MiB；read/get 默认 64 KiB，最多 1 MiB。截断保留 `truncated` / 原因 / 可用的 `nextCursor`。单页内部截断用 `inkstone-page:` 本地游标保存偏移，有效期最多 5 分钟，不能跨客户端或 CLI 进程使用。重复游标和单项超限均停止；UTF-8 文本按 JSON 序列化字节预算截取，二进制块超限则省略。
+- `capability-cache.js` 仅在当前客户端内缓存，最多 64 项 / 2 MiB / 5 分钟；没有正数 `ttlMs` 不缓存，`cacheScope:none/request` 不缓存，其余提示也不扩大到跨服务器、凭据或进程共享。断开、身份变化、`list_changed` 清缓存与游标；在途旧响应不能重新写入失效缓存。列表缓存与游标都不落盘。
+- `capability-tools.js` 按已连接且有对应能力的服务动态挂载 `mcp_resources` / `mcp_prompts`，使用现有 read 类权限及参数校验。资源、提示词均作为带来源说明的普通 tool 文本送入模型，返回数据中的 `role:system` 不会变成系统消息。URI 只提交给配置中的 MCP 服务，客户端不会直接抓取该 URI。界面「放入对话」只填入引用草稿，由用户发送。
+- `security/mcp-content.js` 是 CLI、GUI、内容工具与 Hub 共享的展示脱敏边界：清理已配置的密钥值、敏感字段与对象键，省略 binary，并限制深度 / 节点。输出结构保留普通 `data` 字段；脱敏后重名不会静默覆盖已有字段。RPC 错误也必须经过相同脱敏边界。
+- `output-schema.js` 是**有界 JSON Schema 2020-12 子集**，不是完整实现：支持类型 / 枚举 / const、数值和字符串边界、对象字段 / required / additionalProperties / dependentRequired / dependentSchemas、数组 / prefixItems / contains / uniqueItems、组合 / 条件及本地 JSON Pointer `$ref`。不支持远程引用、锚点、`format`、`unevaluated*` 或任意正则；未知断言、复杂正则、超出预算、缺少或不匹配的 structuredContent 都明确返回校验错误，不静默通过。校验发生在原始 structuredContent 上，随后脱敏进入 metadata。
+- 挂载的 MCP 工具返回标准 `{status,content,metadata}`，修复文本返回值在 ToolExecutor 中丢失的问题；`isError`、校验失败与尚未支持的 `input_required` 均呈 error。`kernel.mcp.callTool` 兼容原有字符串返回。
+- CLI/GUI 默认浏览预算为 1 页 / 50 项 / 64 KiB，按需连接目标服务，失败不拖住其它服务器。资源/提示词的强制刷新可用 API `forceRefresh:true`；取消信号检查覆盖请求前和分页间，在途 JSON-RPC 仍依赖既有超时，不承诺即时取消。OAuth、诊断事件收口、MRTR 不在 v1.14 范围内。
 
 ### 4.2 风险推导优先级
 
