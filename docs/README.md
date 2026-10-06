@@ -61,7 +61,7 @@ docs/
 
 判定口诀：大能力 / 换模型代际 / 破坏性重构 → major（等拍板）；规划内小功能 → minor；文档 / 小修 / 测试 → patch。
 
-发布时同步：`package.json` 的 `version`、`src/theme.js` 的 `VERSION`（TUI/CLI banner）、以及 `CHANGELOG.md` 版本小节。git 中每个已发布版本有对应带注解 tag。
+发布时同步四处代码版本：`package.json`、`package-lock.json`、`src/theme.js` 的 `VERSION`（TUI/CLI banner）、`gui/src/App.jsx` 的 `VERSION`，并更新 `CHANGELOG.md` 版本小节。git 中每个已发布版本有对应带注解 tag。
 
 **与内部架构代号的区分**：文档里的「V2 内核 / V3 支柱」是运行时架构与开发阶段，不是产品版本号。产品版本自 v1.0.0 起单独演进。
 
@@ -77,7 +77,7 @@ docs/
    - 严禁在远端堆积未完成的临时功能分支，保持远端仓库 100% 清爽整洁。
 
 2. **小版本本地独立冲刺（Local Ephemeral Sprints）**：
-   - 针对规划中的小版本特性包（如 `v1.14` 或 `v2.1`），**仅在本地迁出分支**（如 `git checkout -b v1.14`）；
+   - 针对规划中的小版本特性包（如 `v1.16` 或 `v2.1`），**仅在本地迁出分支**（如 `git checkout -b codex/v1.16`）；
    - **严禁向 GitHub 远端推送小版本分支**，确保开发与试错 100% 隔离在本地沙箱。
 
 3. **冲刺周期内免发细碎 Patch**：
@@ -92,7 +92,7 @@ docs/
      git merge --no-ff <小版本分支> -m "release(vX.Y): <特性集描述>"
      ```
    - 确保合入 `main` 的是一个包含多个 commit 的“有意义的功能包大环”，彻底杜绝单提交气泡；
-   - 在合入节点打上唯一里程碑 Tag（如 `git tag vX.Y-preview`）；
+   - 在合入节点打上唯一带注解里程碑 Tag（如 `git tag -a vX.Y-preview -m "Inkstone vX.Y preview"`）；
    - 推送至远端：`git push origin main --tags`；
    - 合并完成后，立即清理删除本地临时分支：`git branch -d <小版本分支>`。
 
@@ -112,7 +112,7 @@ docs/
 - [v3-roadmap-design](specs/architecture/2026-06-24-v3-roadmap-design.md) — V3 路线图：四阶段、三支柱、三层多 agent
 - [post-v3-roadmap-design](specs/architecture/2026-09-17-post-v3-roadmap-design.md) — V3 之后路线图（草案）
 - [v1.11.0-mcp-integration-design](specs/architecture/2026-09-28-v1.11.0-mcp-integration-design.md) — MCP 外部工具接入体系设计规格
-- [mcp-client-v2-design](specs/architecture/2026-09-29-mcp-client-v2-design.md) — MCP Client v2：dual-era / Streamable HTTP / 治理 / 资源与提示词；v1.15 OAuth 已实现，可观测与 MRTR 待后续
+- [mcp-client-v2-design](specs/architecture/2026-09-29-mcp-client-v2-design.md) — MCP Client v2：dual-era / Streamable HTTP / 治理 / 资源与提示词 / OAuth；v1.16 诊断、试跑、三端与取消已实现，MRTR 待后续
 
 ### specs/backend
 - [v2-7 approval-resume](specs/backend/2026-05-30-v2-7-approval-resume-design.md)
@@ -193,6 +193,6 @@ docs/
 
 ## 版本与里程碑
 
-当前产品版本以 [`package.json`](../package.json) 与 [`CHANGELOG.md`](CHANGELOG.md) 为准（**v1.15.0 preview**，2026-10-06）。`package.json`、`package-lock.json`、`src/theme.js`、`gui/src/App.jsx` 四处版本应一致。
+当前产品版本以 [`package.json`](../package.json) 与 [`CHANGELOG.md`](CHANGELOG.md) 为准（**v1.16.0 preview**，2026-10-06）。`package.json`、`package-lock.json`、`src/theme.js`、`gui/src/App.jsx` 四处版本应一致。
 
 开发历程简记：V1 原型 → V2 干净运行时（内核统一、工具平面、编辑回滚、验证修复、上下文、分支 rewind、持久化恢复、护栏）→ V3 三支柱（语义上下文、多智能体调度、三端前端）→ v1.x 产品化（v1.4 会话优先 UI，v1.8 工学换肤与壳层重构）。

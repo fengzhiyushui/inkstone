@@ -14,6 +14,16 @@
 
 ---
 
+## v1.16.0 — 2026-10-06 · MCP 诊断、工具试跑与三端完善（preview）
+
+- **诊断 G1/G4**：结构化帧摘要、延迟和错误分类进入每进程 500 条 / 1 MiB 环形日志，项目内保留最近 8 个运行文件；参数/结果正文、OAuth 交换和原始 stderr 不落帧日志。CLI `mcp logs [server]` 提供过滤、近 N 条和 JSON，fresh 进程读取历史不连接服务；动态脱敏、存储错误提示和 JSON 结构键保护完整接线。
+- **GUI/TUI G2/G3**：GUI 日志筛选/刷新/导出与 schema 表单/JSON 工具试跑；试跑走 supervised 权限引擎与 ToolExecutor，原始 inputSchema 子集校验、一次性批准、取消及结果截断。TUI `/mcp list|restart|disable|enable|logs` 不调用模型，管理操作保持 busy 并明确 Esc 边界。
+- **事件与取消 G5**：17 类 MCP 事件登记/schema/回放与三端展示统一，正常诊断日志不刷对话流，警告/错误可见。AbortSignal 从工具与资源/提示词传至 JSON-RPC/HTTP，取消结束对应请求、丢弃迟到响应，保留其它并行请求。
+- **验证 G6**：全量 **1674 通过、0 失败、0 跳过**；`npm run check` 检查 **623 个 JS 文件**，GUI 构建与 `git diff --check` 通过。覆盖 fresh CLI 历史读取、参数/脱敏/存储边界、TUI、事件回放、GUI host/IPC、试跑审批/生命周期、真实 stdio/HTTP/SSE 取消，以及聊天执行/验证/修复/审批续跑中断。修复 Windows 冒烟测试视口同步，保留真实 Inspector DOM 断言。四处版本同步为 `1.16.0`。
+- **边界**：诊断只含结构摘要；试跑 schema 为有界子集，未知约束明确拒绝。待处理试跑最多 32 个、批准 5 分钟有效、参数/显示结果最多 64 KiB。TUI 重启/启停不支持 Esc 取消；请求取消不保证撤销远端已执行的副作用。MRTR 留待 v1.17。
+
+---
+
 ## v1.15.0 — 2026-10-06 · MCP OAuth 登录与凭据隔离（preview）
 
 - **OAuth F1–F4**：PR/AS metadata 及首次 401 challenge 发现、CIDM/预注册客户端与 DCR 兼容、S256 PKCE、state/iss 强校验、用户目录加密凭据及刷新；按 issuer/resource/client/scopes 隔离。OAuth 请求禁止重定向并复用 DNS 固定/SSRF；HTTP 仅允许显式放行的回环地址。
