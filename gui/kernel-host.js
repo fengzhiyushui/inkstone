@@ -806,6 +806,39 @@ function createKernelHost({
     return res;
   }
 
+  // Content stays data: only the MCP facade reads URIs; the GUI never fetches them.
+  async function mcpContent(method, serverId, args = [], options = {}) {
+    const facade = requireKernel().mcp;
+    const { createMcpDisplayRedactor } = await import(
+      pathToFileURL(path.join(__dirname, "..", "src", "security", "mcp-content.js")).href
+    );
+    const config = await configLoader(projectRoot);
+    const clean = createMcpDisplayRedactor({ config: { ...config, arguments: args }, hub: facade?.hub });
+    const bounded = (key, fallback, cap) => {
+      const value = Number(options?.[key]);
+      return Number.isInteger(value) && value > 0 ? Math.min(value, cap) : fallback;
+    };
+    const limits = {
+      maxPages: bounded("maxPages", 1, 5),
+      maxItems: bounded("maxItems", 50, 200),
+      maxBytes: bounded("maxBytes", 65536, 65536),
+      ...(typeof options?.cursor === "string" && options.cursor ? { cursor: options.cursor } : {})
+    };
+    try {
+      if (typeof facade?.[method] !== "function") throw new Error("MCP content API unavailable");
+      if (typeof serverId !== "string" || !serverId.trim()) throw new Error("MCP server ID is required");
+      return clean(await facade[method](serverId, ...args, limits));
+    } catch (error) {
+      throw new Error(clean(error?.message || String(error)));
+    }
+  }
+
+  const listMcpResources = (id, options) => mcpContent("listResources", id, [], options);
+  const listMcpResourceTemplates = (id, options) => mcpContent("listResourceTemplates", id, [], options);
+  const readMcpResource = (id, uri, options) => mcpContent("readResource", id, [uri], options);
+  const listMcpPrompts = (id, options) => mcpContent("listPrompts", id, [], options);
+  const getMcpPrompt = (id, name, args = {}, options) => mcpContent("getPrompt", id, [name, args], options);
+
   return { init, ready, send, approve, interrupt, getTimeline, getSnapshot, getUsage, getConfig, getState, listPaused,
            listBranches, listCheckpoints, rewindPreview, rewindApply, getActiveBranch,
            getPreferences, setPreferences, listTree, readFile, writeFile, listChanges, describeChange,
@@ -813,6 +846,7 @@ function createKernelHost({
            listModels, testConnection, activateBranch, listProjects, addProject, removeProject, switchProject, listSessions, deleteSession,
            getRecoveryList, getRecoveryReport, recoveryResume, recoveryCancel, recoveryClear,
            listMcpServers, restartMcpServer, toggleMcpServer, addMcpServer, removeMcpServer,
+           listMcpResources, listMcpResourceTemplates, readMcpResource, listMcpPrompts, getMcpPrompt,
     listMcpInputs, setMcpInput,
            resolveSensitiveNotice, abortPendingSensitive, dispose };
 }

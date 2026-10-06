@@ -33,6 +33,7 @@ function normalizeTheme(value, fallback) {
 export function createInitialState() {
   return {
     messages: [],
+    composerDraft: "",
     activity: [],
     changes: [],
     changesTick: 0,
@@ -99,6 +100,17 @@ export function applyWorkbenchAction(state, action) {
     return copy(current, {
       messages: current.messages.concat([action.message]).slice(-200),
       emptyStateVisible: false
+    });
+  }
+  if (action.type === "composer_draft_changed") {
+    return copy(current, { composerDraft: String(action.text || "") });
+  }
+  if (action.type === "mcp_content_to_draft") {
+    const text = String(action.text || "");
+    if (!text.trim()) return current;
+    return copy(current, {
+      composerDraft: [current.composerDraft, text].filter(Boolean).join("\n\n"),
+      view: "chat", chatTab: "chat"
     });
   }
   if (action.type === "event_received") {
@@ -288,6 +300,7 @@ export function applyWorkbenchAction(state, action) {
       dockFiles: { expanded: {} },
       view: "chat",
       messages: [],
+      composerDraft: "",
       activity: [],
       cards: [],
       openFiles: [],

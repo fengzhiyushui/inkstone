@@ -2,6 +2,7 @@ import { useEffect, useMemo } from "react";
 import { getApi } from "../lib/api.js";
 import { buildInitialLoads, branchesAction, eventToAction, errorToAction, refreshLoadsFor } from "./kernel-loads.js";
 import { targetFromCheckpoint } from "../state/workbench-state.js";
+import { checkedMcpResult } from "../state/mcp-content.js";
 
 // Subscribes to window.deepseek events → dispatch, runs first-paint loads, and exposes
 // action wrappers. Pure mapping lives in kernel-loads.js (node:test-covered).
@@ -56,6 +57,10 @@ export function useKernel(dispatch) {
   }, [api, dispatch]);
 
   return useMemo(() => {
+    async function mcpContent(call, ...args) {
+      if (typeof api?.[call] !== "function") throw new Error("MCP content API unavailable");
+      return checkedMcpResult(await api[call](...args));
+    }
     async function refreshBranches() {
       if (!api?.listBranches) return;
       try {
@@ -284,6 +289,11 @@ export function useKernel(dispatch) {
       toggleMcpServer: (serverId, enabled) => (api?.toggleMcpServer ? api.toggleMcpServer(serverId, enabled) : Promise.resolve(null)),
       addMcpServer: (serverId, config) => (api?.addMcpServer ? api.addMcpServer(serverId, config) : Promise.resolve(null)),
       removeMcpServer: (serverId) => (api?.removeMcpServer ? api.removeMcpServer(serverId) : Promise.resolve(null)),
+      listMcpResources: (...args) => mcpContent("listMcpResources", ...args),
+      listMcpResourceTemplates: (...args) => mcpContent("listMcpResourceTemplates", ...args),
+      readMcpResource: (...args) => mcpContent("readMcpResource", ...args),
+      listMcpPrompts: (...args) => mcpContent("listMcpPrompts", ...args),
+      getMcpPrompt: (...args) => mcpContent("getMcpPrompt", ...args),
       // v1.11.2:${input:*} 密钥引用(定义来自 .mcp.json / config.json 的 inputs)
       listMcpInputs: () => (api?.listMcpInputs ? api.listMcpInputs() : Promise.resolve([])),
       setMcpInput: (name, value) => (api?.setMcpInput ? api.setMcpInput(name, value) : Promise.resolve(null))

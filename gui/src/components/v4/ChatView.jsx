@@ -268,8 +268,9 @@ function ThoughtCard({ card, t }) {
   );
 }
 
-export default function ChatView({ t, state, actions, kernel, statusLine, setView, onChatTab, onToggleRightbar }) {
-  const [draft, setDraft] = useState("");
+export default function ChatView({ t, state, actions, kernel, statusLine, setView, onChatTab, onToggleRightbar, onDraftChange }) {
+  const draft = state.composerDraft || "";
+  const setDraft = (text) => onDraftChange?.(text);
   const [timeline, setTimeline] = useState([]);
   const cards = useMemo(() => deriveAgentCards(state.activity), [state.activity]);
   const busy = Boolean(state.runtime && ["acting", "thinking", "verifying", "repairing"].includes(state.runtime.current));

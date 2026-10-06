@@ -34,7 +34,8 @@ const IPC_CHANNELS = [
   "projects:reveal", "projects:pick",
   "sensitive:respond",
   "recovery:list", "recovery:report", "recovery:resume", "recovery:cancel", "recovery:clear",
-  "mcp:list", "mcp:restart", "mcp:toggle", "mcp:add", "mcp:remove", "mcp:inputs", "mcp:set-input"
+  "mcp:list", "mcp:restart", "mcp:toggle", "mcp:add", "mcp:remove", "mcp:inputs", "mcp:set-input",
+  "mcp:resources-list", "mcp:resource-templates-list", "mcp:resource-read", "mcp:prompts-list", "mcp:prompt-get"
 ];
 
 // 冒烟脚手架回收:登记表临时目录 + 测试自建的临时项目根 / userData。
@@ -630,6 +631,11 @@ function registerIpcHandlers() {
   handle("mcp:toggle", wrap((_e, serverId, enabled) => host.toggleMcpServer(serverId, enabled)));
   handle("mcp:add", wrap((_e, serverId, config) => host.addMcpServer(serverId, config)));
   handle("mcp:remove", wrap((_e, serverId) => host.removeMcpServer(serverId)));
+  handle("mcp:resources-list", wrap((_e, id, options) => host.listMcpResources(id, options)));
+  handle("mcp:resource-templates-list", wrap((_e, id, options) => host.listMcpResourceTemplates(id, options)));
+  handle("mcp:resource-read", wrap((_e, id, uri, options) => host.readMcpResource(id, uri, options)));
+  handle("mcp:prompts-list", wrap((_e, id, options) => host.listMcpPrompts(id, options)));
+  handle("mcp:prompt-get", wrap((_e, id, name, args, options) => host.getMcpPrompt(id, name, args, options)));
 handle("mcp:inputs", wrap(() => host.listMcpInputs()));
 handle("mcp:set-input", wrap((_e, name, value) => host.setMcpInput(name, value)));
 }

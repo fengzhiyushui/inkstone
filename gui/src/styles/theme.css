@@ -6,6 +6,15 @@
 
 @import "./tokens.css";
 
+.mcp-content-browser { margin-top:12px; border-top:1px solid var(--border-l2); padding-top:10px; min-width:0; }
+.mcp-content-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+.mcp-resource-tree, .mcp-resource-tree ul { list-style:none; margin:8px 0; padding-left:14px; }
+.mcp-resource-tree li { margin:6px 0; }
+.mcp-content-browser code { display:block; overflow-wrap:anywhere; color:var(--text-mut); font-size:12px; }
+.mcp-content-browser form { display:grid; gap:8px; margin:10px 0; }
+.mcp-content-preview { margin-top:12px; padding:10px; background:var(--bg-element); border-radius:8px; overflow-wrap:anywhere; }
+.mcp-content-preview pre { max-height:320px; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.6 var(--font-mono); }
+
 :root {
   /* 布局尺寸(AppFrame 原生标题栏区);动效三档 + 一条 easing;字阶/圆角/行高补齐 */
   --titlebar:40px;

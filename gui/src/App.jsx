@@ -16,7 +16,7 @@ import SettingsPanels from "./components/Settings/Settings.jsx";
 import SensitiveNoticeModal from "./components/v4/SensitiveNoticeModal.jsx";
 import ConfirmModal from "./components/v4/ConfirmModal.jsx";
 
-const VERSION = "1.13.1";
+const VERSION = "1.14.0";
 
 export default function App() {
   const [state, dispatch] = useWorkbench();
@@ -255,6 +255,7 @@ export default function App() {
                 setView={setViewOrDock}
                 statusLine={statusLine}
                 onChatTab={(tab) => dispatch({ type: "chat_tab_changed", tab })}
+                onDraftChange={(text) => dispatch({ type: "composer_draft_changed", text })}
                 onToggleRightbar={toggleRightbar} />
             )}
             {view === "projects" && (
@@ -263,7 +264,8 @@ export default function App() {
                 onRequestConfirm={requestConfirm}
                 onReveal={(root) => kernel.revealProject(root)} />
             )}
-            {view === "mcp" && <McpView t={t} kernel={kernel} onRequestConfirm={requestConfirm} />}
+            {view === "mcp" && <McpView key={state.currentProject || "mcp"} t={t} kernel={kernel} onRequestConfirm={requestConfirm}
+              onUseContent={(text) => dispatch({ type: "mcp_content_to_draft", text })} />}
             {view === "plugins" && <PluginsView t={t} />}
           </main>
         )}
