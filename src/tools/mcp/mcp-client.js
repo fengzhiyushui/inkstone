@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { JsonRpcClient, JSONRPC_ERRORS } from "./jsonrpc-client.js";
 import { createTransport } from "./transport.js";
+import { McpSubscriptions } from "./subscriptions.js";
 import { createCapabilityCache, CAPABILITY_CACHE_LIMITS } from "./capability-cache.js";
 import { boundCapabilityContent, capabilityLimit, CAPABILITY_CONTENT_DEFAULT_BYTES, CAPABILITY_CONTENT_MAX_BYTES } from "./capability-content.js";
 import {
@@ -15,6 +16,8 @@ import {
   PROTOCOL_MODE,
   DEFAULT_CLIENT_CAPABILITIES,
   META_KEYS,
+  MRTR_METHODS,
+  MRTR_MAX_ROUNDS,
   MCP_SERVER_ERRORS,
   isUnsupportedProtocolVersionError,
   isModernProbeError,
@@ -63,7 +66,10 @@ export class McpClient extends EventEmitter {
     maxRedirects,
     retryOnStreamBreak,
     maxBodyBytes,
-    oauthProvider = null
+    oauthProvider = null,
+    elicitation = {},
+    subscriptions = {},
+    inputHandler = null
   } = {}) {
     super();
     if (!serverId) {
@@ -77,6 +83,10 @@ export class McpClient extends EventEmitter {
     this.timeoutMs = timeoutMs;
     this.requestedProtocolMode = protocolMode;
     this.discoverTimeoutMs = discoverTimeoutMs;
+    this.elicitationEnabled = elicitation?.enabled === true && typeof inputHandler === "function";
+    this.inputHandler = this.elicitationEnabled ? inputHandler : null;
+    this._lifecycle = new AbortController();
+    this.subscriptions = new McpSubscriptions(this, subscriptions);
 
     // v1.12.0:传输选择。显式注入的 transport 优先;否则按 url/type 走统一工厂 ——
     // stdio 仍是默认,既有调用方与测试迁移不破。
@@ -94,6 +104,7 @@ export class McpClient extends EventEmitter {
     this.serverInfo = null;
     this.serverCapabilities = {};
     this.clientCapabilities = { ...DEFAULT_CLIENT_CAPABILITIES };
+    if (this.elicitationEnabled) this.clientCapabilities.elicitation = { form: {} };
     this.lastError = null;
     this._capabilityCache = createCapabilityCache();
     this._capabilityCursors = new Map();
@@ -106,6 +117,8 @@ export class McpClient extends EventEmitter {
     this.rpc.on("request_completed", (event) => this.emit("request_completed", event));
 
     this._onTransportClose = (info) => {
+      this.subscriptions.stop();
+      this._lifecycle.abort(Object.assign(new Error("MCP connection closed"), { code: JSONRPC_ERRORS.SERVER_DISCONNECTED }));
       this._invalidateCapabilities();
       if (this.status === "CONNECTED") {
         this.status = "ERROR";
@@ -118,6 +131,7 @@ export class McpClient extends EventEmitter {
     };
 
     this._onTransportError = (err) => {
+      if (err?.requestId !== undefined && err.requestId === this.subscriptions.current?.id) return;
       if (err?.name === "AbortError" || err?.code === JSONRPC_ERRORS.CANCELLED || err?.code === JSONRPC_ERRORS.TIMEOUT) return;
       this._invalidateCapabilities();
       this.status = "ERROR";
@@ -133,6 +147,7 @@ export class McpClient extends EventEmitter {
     };
 
     this._onNotification = (message) => {
+      if (!this.subscriptions.accepts(message)) return;
       const method = message?.method || "";
       if (method.endsWith("/list_changed") || method === "notifications/tools/list_changed") {
         this._invalidateCapabilities();
@@ -215,10 +230,44 @@ export class McpClient extends EventEmitter {
 
   async _request(method, params, opts = {}) {
     const useMeta = this.protocolMode === PROTOCOL_MODE.MODERN;
-    return this.rpc.request(method, params, {
-      ...opts,
-      meta: useMeta ? this._buildMeta() : opts.meta
-    });
+    const lifecycle = this._lifecycle;
+    const signal = opts.signal ? AbortSignal.any([opts.signal, lifecycle.signal]) : lifecycle.signal;
+    const original = params && typeof params === "object" ? structuredClone(params) : params;
+    // Continuations can only be constructed after the local consent handler.
+    // Top-level state supplied by a caller cannot skip the initial round.
+    if (original && typeof original === "object") {
+      delete original.inputResponses;
+      delete original.requestState;
+    }
+    let requestParams = original;
+    for (let round = 0; ; round++) {
+      signal.throwIfAborted();
+      const result = await this.rpc.request(method, requestParams, {
+        ...opts, signal, meta: useMeta ? this._buildMeta() : opts.meta
+      });
+      if (result?.resultType !== "input_required") return withoutContinuation(result);
+      // Never publish opaque state, schemas, defaults or accompanying content
+      // from an unhandled request into tool output, history or content caches.
+      if (!this.elicitationEnabled || !useMeta) return { resultType: "input_required" };
+      if (!MRTR_METHODS.includes(method)) throw Object.assign(new Error(`MCP input_required is not permitted for ${method}`), { code: "MCP_MRTR_METHOD" });
+      if (round >= MRTR_MAX_ROUNDS) throw Object.assign(new Error("MCP multi-round input limit exceeded"), { code: "MCP_MRTR_LIMIT" });
+      if ((result.requestState !== undefined && typeof result.requestState !== "string")
+        || (result.inputRequests === undefined && result.requestState === undefined)) {
+        throw Object.assign(new Error("MCP input_required has invalid request state"), { code: "MCP_MRTR_INVALID" });
+      }
+      signal.throwIfAborted();
+      const requestState = result.requestState;
+      const response = await waitForInput(this.inputHandler({ serverId: this.serverId, method, params: structuredClone(original), result, signal, round: round + 1 }), signal);
+      signal.throwIfAborted();
+      if (lifecycle !== this._lifecycle || this.status !== "CONNECTED") throw Object.assign(new Error("MCP connection changed during input confirmation"), { code: JSONRPC_ERRORS.SERVER_DISCONNECTED });
+      if (!response || typeof response !== "object") throw Object.assign(new Error("MCP input handler returned no response"), { code: "MCP_MRTR_INVALID" });
+      requestParams = { ...structuredClone(original) };
+      delete requestParams.requestState;
+      delete requestParams.inputResponses;
+      if (response.inputResponses !== undefined) requestParams.inputResponses = structuredClone(response.inputResponses);
+      // The opaque state belongs exclusively to the latest server response.
+      if (requestState !== undefined) requestParams.requestState = requestState;
+    }
   }
 
   async connect() {
@@ -226,6 +275,9 @@ export class McpClient extends EventEmitter {
       return;
     }
     this.status = "CONNECTING";
+    this.subscriptions.stop();
+    this._lifecycle.abort(Object.assign(new Error("MCP connection replaced"), { code: JSONRPC_ERRORS.SERVER_DISCONNECTED }));
+    this._lifecycle = new AbortController();
     this._invalidateCapabilities();
     this.serverCapabilities = {};
     this.lastError = null;
@@ -276,6 +328,7 @@ export class McpClient extends EventEmitter {
         const probed = await this._raceTransportError(this._tryModernConnect());
         if (probed) {
           this.status = "CONNECTED";
+          this.subscriptions.start();
           this.emit("connected", {
             protocolMode: this.protocolMode,
             protocolVersion: this.protocolVersion,
@@ -292,6 +345,7 @@ export class McpClient extends EventEmitter {
       if (wantLegacy) {
         await this._raceTransportError(this._legacyConnect());
         this.status = "CONNECTED";
+        this.subscriptions.start();
         this.emit("connected", {
           protocolMode: this.protocolMode,
           protocolVersion: this.protocolVersion,
@@ -404,7 +458,8 @@ export class McpClient extends EventEmitter {
       "initialize",
       {
         protocolVersion: requested,
-        capabilities: this.clientCapabilities,
+        // The opt-in form flow uses Modern MRTR, not legacy server requests.
+        capabilities: { ...DEFAULT_CLIENT_CAPABILITIES },
         clientInfo: { ...MCP_CLIENT_INFO }
       },
       { timeoutMs: Math.max(this.timeoutMs, 15000) }
@@ -605,6 +660,11 @@ export class McpClient extends EventEmitter {
     const maxBytes = capabilityLimit(opts.maxBytes, CAPABILITY_CONTENT_DEFAULT_BYTES, CAPABILITY_CONTENT_MAX_BYTES, 2);
     return this._cachedCapability([method, params, maxBytes], opts, async () => {
       const result = await this._request(method, params, { timeoutMs: this.timeoutMs, ...(opts.signal ? { signal: opts.signal } : {}) });
+      if (result?.resultType && result.resultType !== "complete") {
+        throw Object.assign(new Error(result.resultType === "input_required" ? "MCP server requires input; enable elicitation and confirm the request to continue" : "MCP content response type is unsupported"), {
+          code: result.resultType === "input_required" ? "MCP_INPUT_REQUIRED" : "MCP_RESULT_TYPE_UNSUPPORTED"
+        });
+      }
       return { value: boundCapabilityContent(result?.[field], field, maxBytes), hints: { ttlMs: result?.ttlMs, cacheScope: result?.cacheScope } };
     });
   }
@@ -618,6 +678,8 @@ export class McpClient extends EventEmitter {
   }
 
   async disconnect({ keepStatus = false } = {}) {
+    this.subscriptions.stop();
+    this._lifecycle.abort(Object.assign(new Error("MCP client disconnected"), { code: JSONRPC_ERRORS.SERVER_DISCONNECTED }));
     this._invalidateCapabilities();
     if (!keepStatus) this.status = "DISCONNECTED";
 
@@ -641,3 +703,19 @@ export class McpClient extends EventEmitter {
 }
 
 export { PROTOCOL_MODE, MCP_SERVER_ERRORS, JSONRPC_ERRORS, BASELINE_PROTOCOL_VERSION };
+
+function waitForInput(promise, signal) {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => signal.removeEventListener("abort", onAbort);
+    const onAbort = () => { cleanup(); reject(signal.reason); };
+    Promise.resolve(promise).then((value) => { cleanup(); resolve(value); }, (error) => { cleanup(); reject(error); });
+    if (signal.aborted) { onAbort(); return; }
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function withoutContinuation(result) {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return result;
+  const { inputRequests: _requests, inputResponses: _responses, requestState: _state, ...content } = result;
+  return content;
+}

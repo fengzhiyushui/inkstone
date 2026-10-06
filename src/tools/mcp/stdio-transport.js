@@ -107,6 +107,7 @@ export class StdioTransport extends EventEmitter {
     }
 
     this.state = "running";
+    const child = this.child;
 
     if (this.child.stdout) {
       this.readline = createInterface({
@@ -116,6 +117,7 @@ export class StdioTransport extends EventEmitter {
       });
 
       this.readline.on("line", (line) => {
+        if (this.child !== child || this.state !== "running") return;
         const trimmed = line.trim();
         if (!trimmed) return;
         try {
@@ -130,6 +132,7 @@ export class StdioTransport extends EventEmitter {
     if (this.child.stderr) {
       this.child.stderr.setEncoding("utf8");
       this.child.stderr.on("data", (chunk) => {
+        if (this.child !== child || this.state !== "running") return;
         const text = String(chunk);
         const lines = text.split(/\r?\n/).filter((l) => l.length > 0);
         for (const l of lines) {
@@ -143,11 +146,13 @@ export class StdioTransport extends EventEmitter {
     }
 
     this.child.on("error", (err) => {
+      if (this.child !== child) return;
       this.state = "error";
       this.emit("error", err);
     });
 
     this.child.on("close", (code, signal) => {
+      if (this.child !== child) return;
       this.state = "stopped";
       this.emit("close", { code, signal });
     });
@@ -181,6 +186,7 @@ export class StdioTransport extends EventEmitter {
     }
 
     if (this.child) {
+      const closingChild = this.child;
       if (this.child.stdin && !this.child.stdin.destroyed) {
         try {
           this.child.stdin.end();
@@ -199,9 +205,9 @@ export class StdioTransport extends EventEmitter {
           } catch (_) {}
 
           setTimeout(() => {
-            if (this.state !== "stopped") {
+            if (closingChild.exitCode === null && closingChild.signalCode === null) {
               try {
-                this.child.kill("SIGKILL");
+                closingChild.kill("SIGKILL");
               } catch (_) {}
             }
           }, 2000).unref?.();

@@ -7,12 +7,14 @@
  * 请求(新 id)",而不是 Last-Event-ID 续传(见 v1.12.0 spec C3)。
  */
 export class SseParser {
-  constructor({ onEvent } = {}) {
+  constructor({ onEvent, maxEventBytes = Infinity } = {}) {
     this.onEvent = typeof onEvent === "function" ? onEvent : () => {};
     this.buffer = "";
     this.dataLines = [];
     this.eventName = null;
     this.lastEventId = null;
+    this.maxEventBytes = maxEventBytes;
+    this.eventBytes = 0;
   }
 
   /** 喂入一段文本(可跨 chunk 边界切断)。 */
@@ -23,6 +25,7 @@ export class SseParser {
     const lines = this.buffer.split("\n");
     this.buffer = lines.pop() ?? "";
     for (const line of lines) this.line(line);
+    if (this.eventBytes + Buffer.byteLength(this.buffer) > this.maxEventBytes) this.tooLarge();
   }
 
   /** 流结束时调用:刷新缓冲区里的最后一行。 */
@@ -41,6 +44,8 @@ export class SseParser {
       return;
     }
     if (raw.startsWith(":")) return; // 注释 / keep-alive
+    this.eventBytes += Buffer.byteLength(raw) + 1;
+    if (this.eventBytes > this.maxEventBytes) this.tooLarge();
 
     const colon = raw.indexOf(":");
     const field = colon === -1 ? raw : raw.slice(0, colon);
@@ -54,6 +59,7 @@ export class SseParser {
   }
 
   dispatch() {
+    this.eventBytes = 0;
     if (this.dataLines.length === 0) {
       this.eventName = null;
       return;
@@ -64,6 +70,10 @@ export class SseParser {
     this.dataLines = [];
     this.eventName = null;
     this.onEvent({ data, event, id });
+  }
+
+  tooLarge() {
+    throw Object.assign(new Error("MCP SSE event exceeds the configured byte limit"), { code: "MCP_SSE_EVENT_LIMIT" });
   }
 }
 
