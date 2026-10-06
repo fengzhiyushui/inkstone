@@ -61,7 +61,8 @@ export function createTransport(config = {}) {
     protocolVersion: config.protocolVersion || null,
     allowlist: config.allowlist || [],
     lookup: config.lookup,
-    maxRedirects: config.maxRedirects
+    maxRedirects: config.maxRedirects,
+    oauth: config.oauthProvider || null
   };
 
   if (type === TRANSPORT_TYPES.SSE) {

@@ -62,7 +62,8 @@ export class McpClient extends EventEmitter {
     lookup,
     maxRedirects,
     retryOnStreamBreak,
-    maxBodyBytes
+    maxBodyBytes,
+    oauthProvider = null
   } = {}) {
     super();
     if (!serverId) {
@@ -82,7 +83,7 @@ export class McpClient extends EventEmitter {
     this.transportConfig = {
       command, args: this.args, env: this.env, cwd,
       url, type, headers, timeoutMs,
-      allowlist, lookup, maxRedirects, retryOnStreamBreak, maxBodyBytes
+      allowlist, lookup, maxRedirects, retryOnStreamBreak, maxBodyBytes, oauthProvider
     };
     this.requestedTransportType = (url || type) ? (type || "streamable-http") : "stdio";
     this.deprecatedTransport = null;

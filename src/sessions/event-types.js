@@ -1,4 +1,6 @@
 export const SESSION_EVENT_TYPES = Object.freeze([
+  "mcp:auth_required",
+  "mcp:auth_status",
   "session:start",
   "session:resume",
   "session:branch_created",

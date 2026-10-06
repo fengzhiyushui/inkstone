@@ -34,6 +34,8 @@ function deepFreeze(value) {
 }
 
 export const SESSION_EVENT_SCHEMAS = deepFreeze({
+  "mcp:auth_required": entry([["serverId", "string"], ["status", "string"]], [["session_id", "string"], ["message", "string"]]),
+  "mcp:auth_status": entry([["serverId", "string"], ["status", "string"]], [["session_id", "string"]]),
   // 生产者:src/sessions/event-log.js:35 append("session:start", meta)。meta 由调用方注入
   //(index.js:99 传 { root, runtime: "v2" }),不同接入路径形状不一 → 无必填,仅登记已知键。
   "session:start": entry([], [["root", "string"], ["runtime", "string"]]),

@@ -180,7 +180,15 @@ export class JsonRpcClient extends EventEmitter {
   }
 
   _handleTransportError(err) {
-    this.emit("error", err);
+    // HTTP errors have no JSON-RPC response. Settle the failed request now so
+    // an OAuth challenge reaches callers instead of being masked by a timeout.
+    for (const [id, pending] of this.pendingRequests) {
+      if (err?.requestId !== undefined && err.requestId !== id) continue;
+      if (pending.timer) clearTimeout(pending.timer);
+      this.pendingRequests.delete(id);
+      pending.reject(err);
+    }
+    if (this.listenerCount("error")) this.emit("error", err);
   }
 
   close(error = null) {

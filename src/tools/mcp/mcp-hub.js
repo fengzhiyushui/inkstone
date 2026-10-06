@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { McpClient } from "./mcp-client.js";
+import { McpOAuthClient } from "./auth/oauth-client.js";
 import { createMcpDisplayRedactor } from "../../security/mcp-content.js";
 import {
   loadMcpConfig,
@@ -43,7 +44,8 @@ export class McpHub extends EventEmitter {
     projectRoot = null,
     loadConfigScopes = false,
     /** v1.12.0:SSRF 私网允许清单(仅对列出的目标放行,默认空 = 全部 fail-closed) */
-    httpAllowlist = []
+    httpAllowlist = [],
+    oauthCredentialRoot = undefined
   } = {}) {
     super();
     this.toolRegistry = toolRegistry;
@@ -53,6 +55,10 @@ export class McpHub extends EventEmitter {
     this.reconnectMaxMs = reconnect.maxMs ?? DEFAULT_RECONNECT_MAX_MS;
     this.maxReconnectAttempts = reconnect.maxAttempts ?? DEFAULT_MAX_RECONNECT_ATTEMPTS;
     this.httpAllowlist = Array.isArray(httpAllowlist) ? [...httpAllowlist] : [];
+    this.oauthCredentialRoot = oauthCredentialRoot;
+    this.oauthClients = new Map();
+    this.oauthSecrets = new Set();
+    this._authRequired = new Set();
 
     this.clients = new Map();
     this.serverTools = new Map();
@@ -99,6 +105,86 @@ export class McpHub extends EventEmitter {
       ...(this.inputs[name] || { type: "promptString" }),
       value
     };
+  }
+
+  _oauthClient(serverId) {
+    const config = this.serverConfigs.get(serverId);
+    if (!config) throw new Error(`MCP server '${serverId}' not found in configuration`);
+    if (config.oauth?.enabled !== true) return null;
+    if (this.oauthClients.has(serverId)) return this.oauthClients.get(serverId);
+    if (!config.url || config.type === "stdio") {
+      throw new Error("MCP OAuth requires a remote HTTP server");
+    }
+    const client = new McpOAuthClient({
+      serverId, config: this._resolveServerConfig(config),
+      allowlist: config.allowlist || this.httpAllowlist,
+      credentialRoot: this.oauthCredentialRoot,
+      onSecrets: (values) => { for (const value of values) if (value) this.oauthSecrets.add(value); },
+      onAuthRequired: () => {
+        if (this.oauthClients.get(serverId) !== client) return;
+        const first = !this._authRequired.has(serverId);
+        this._authRequired.add(serverId);
+        this._clearReconnect(serverId);
+        this.clients.get(serverId)?._invalidateCapabilities();
+        this.toolRegistry?.unmountExternalTools(serverId);
+        this.serverTools.delete(serverId);
+        if (first) this.emit("auth_required", { serverId, status: "AUTH_REQUIRED", message: "Sign in to this MCP server" });
+        this.emit("server_status", { serverId, status: "AUTH_REQUIRED" });
+      },
+      onAuthorized: async () => {
+        if (this.oauthClients.get(serverId) !== client) return;
+        this._authRequired.delete(serverId);
+        if (this.serverConfigs.get(serverId)?.disabled || this._stopping.has(serverId)) return;
+        try { await this.restartServer(serverId); }
+        catch (error) {
+          this.emit("server_error", { serverId, error: sanitizedMcpError(error, createMcpDisplayRedactor({ hub: this })) });
+        }
+        if (this.oauthClients.get(serverId) === client) this.emit("auth_status", { serverId, status: "authenticated" });
+      }
+    });
+    this.oauthClients.set(serverId, client);
+    return client;
+  }
+
+  async getAuthStatus(serverId) {
+    const oauth = this._oauthClient(serverId);
+    if (!oauth) return { serverId, status: "disabled" };
+    if (!this.serverConfigs.get(serverId)?.disabled && oauth.getStatus().status !== "pending") await oauth.getAccessToken();
+    return { serverId, ...oauth.getStatus() };
+  }
+
+  async startAuth(serverId) {
+    if (this.serverConfigs.get(serverId)?.disabled) throw new Error("Enable the MCP server before signing in");
+    const oauth = this._oauthClient(serverId);
+    if (!oauth) throw new Error("OAuth is not enabled for this MCP server");
+    const result = await oauth.startAuthorization();
+    this.emit("auth_status", { serverId, status: "pending" });
+    return { serverId, ...result };
+  }
+
+  async cancelAuth(serverId) {
+    const oauth = this._oauthClient(serverId);
+    await oauth?.cancelAuthorization();
+    const result = { serverId, ...(oauth?.getStatus() || { status: "disabled" }) };
+    this.emit("auth_status", { serverId, status: result.status });
+    return result;
+  }
+
+  async logoutAuth(serverId) {
+    const oauth = this._oauthClient(serverId);
+    this._stopping.add(serverId);
+    try {
+      this._clearReconnect(serverId);
+      await this.clients.get(serverId)?.disconnect();
+      this.clients.delete(serverId);
+      this.toolRegistry?.unmountExternalTools(serverId);
+      this.serverTools.delete(serverId);
+      await oauth?.logout();
+      if (oauth) this._authRequired.add(serverId);
+      this.emit("server_status", { serverId, status: oauth ? "AUTH_REQUIRED" : "DISCONNECTED" });
+      this.emit("auth_status", { serverId, status: oauth ? "unauthenticated" : "disabled" });
+      return { serverId, status: oauth ? "unauthenticated" : "disabled" };
+    } finally { this._stopping.delete(serverId); }
   }
 
   _resolveServerConfig(srvConfig) {
@@ -169,7 +255,8 @@ export class McpHub extends EventEmitter {
       headers: resolved.headers,
       allowlist: resolved.allowlist || this.httpAllowlist,
       maxRedirects: resolved.maxRedirects,
-      retryOnStreamBreak: resolved.retryOnStreamBreak
+      retryOnStreamBreak: resolved.retryOnStreamBreak,
+      oauthProvider: resolved.oauth?.enabled === true ? this._oauthClient(serverId) : null
     });
 
     // v1.12.0:legacy SSE 为已废弃通道 —— 透出事件,供 event-contract 与三端提示
@@ -178,7 +265,7 @@ export class McpHub extends EventEmitter {
     });
 
     client.on("error", (err) => {
-      this.emit("server_error", { serverId, error: err });
+      this.emit("server_error", { serverId, error: sanitizedMcpError(err, createMcpDisplayRedactor({ hub: this })) });
     });
 
     client.on("disconnected", () => {
@@ -208,13 +295,27 @@ export class McpHub extends EventEmitter {
   }
 
   async _connectAndMount(serverId, client, srvConfig) {
+    const configIdentity = this.serverConfigs.get(serverId);
+    const assertCurrent = () => {
+      if (this.clients.get(serverId) !== client || this.serverConfigs.get(serverId) !== configIdentity
+          || configIdentity?.disabled || this._stopping.has(serverId)) {
+        throw Object.assign(new Error("MCP connection was stopped or replaced"), { code: "MCP_CONNECTION_SUPERSEDED" });
+      }
+    };
+    // Metadata and token refresh must not consume the short protocol-era probe budget.
+    await this.oauthClients.get(serverId)?.getAccessToken();
+    assertCurrent();
     await client.connect();
+    assertCurrent();
+    this._authRequired.delete(serverId);
 
     // Older servers omitted capabilities even when they exposed tools. Preserve
     // that compatibility, but never probe tools on an explicit resources/prompts-only server.
     const caps = client.serverCapabilities || {};
     const supportsTools = caps.tools !== false && (caps.tools !== undefined || (!caps.resources && !caps.prompts));
     const mcpTools = supportsTools ? await client.listTools() : [];
+    assertCurrent();
+    if (this._authRequired.has(serverId)) throw Object.assign(new Error("MCP authorization required"), { code: "MCP_AUTH_REQUIRED" });
     this._mountTools(serverId, mcpTools, client, srvConfig);
 
     const st = this._reconnectState.get(serverId) || {
@@ -318,13 +419,15 @@ export class McpHub extends EventEmitter {
     try {
       const srvConfig = this.serverConfigs.get(serverId) || {};
       const mcpTools = await client.listTools();
+      if (this.clients.get(serverId) !== client || this.serverConfigs.get(serverId) !== srvConfig
+          || srvConfig.disabled || this._stopping.has(serverId) || this._authRequired.has(serverId)) return;
       this._mountTools(serverId, mcpTools, client, srvConfig);
       this.emit("tools_changed", {
         serverId,
         count: mcpTools.length
       });
     } catch (err) {
-      this.emit("server_error", { serverId, error: err });
+      this.emit("server_error", { serverId, error: sanitizedMcpError(err, createMcpDisplayRedactor({ hub: this })) });
     } finally {
       this._remounting.delete(serverId);
     }
@@ -420,6 +523,7 @@ export class McpHub extends EventEmitter {
     srvConfig.disabled = !enabled;
 
     if (!enabled) {
+      await this.oauthClients.get(serverId)?.cancelAuthorization();
       this._stopping.add(serverId);
       try {
         this._clearReconnect(serverId);
@@ -510,6 +614,9 @@ export class McpHub extends EventEmitter {
       }
 
       this.serverConfigs.delete(serverId);
+      this.oauthClients.get(serverId)?.dispose();
+      this.oauthClients.delete(serverId);
+      this._authRequired.delete(serverId);
       this._reconnectState.delete(serverId);
       this.emit("server_removed", { serverId });
       return { ok: true, serverId };
@@ -519,6 +626,8 @@ export class McpHub extends EventEmitter {
   }
 
   async stopAll() {
+    for (const oauth of this.oauthClients.values()) oauth.dispose();
+    this.oauthClients.clear();
     for (const serverId of this.serverConfigs.keys()) {
       this._stopping.add(serverId);
       this._clearReconnect(serverId);
@@ -543,6 +652,7 @@ export class McpHub extends EventEmitter {
 
   listServers() {
     const list = [];
+    const clean = createMcpDisplayRedactor({ hub: this });
     for (const [serverId, srvConfig] of this.serverConfigs.entries()) {
       const client = this.clients.get(serverId);
       const tools = this.serverTools.get(serverId) || [];
@@ -551,6 +661,8 @@ export class McpHub extends EventEmitter {
       let status = "DISCONNECTED";
       if (srvConfig.disabled) {
         status = "DISABLED";
+      } else if (this._authRequired.has(serverId)) {
+        status = "AUTH_REQUIRED";
       } else if (reconnect?.attempts >= this.maxReconnectAttempts) {
         status = "DEGRADED";
       } else if (client) {
@@ -559,12 +671,14 @@ export class McpHub extends EventEmitter {
 
       list.push({
         serverId,
-        command: srvConfig.command || null,
-        url: srvConfig.url || null,
+        command: clean(srvConfig.command || null),
+        url: clean(srvConfig.url || null),
         type: srvConfig.type || (srvConfig.url ? "streamable-http" : "stdio"),
-        args: srvConfig.args || [],
+        args: clean(srvConfig.args || []),
         disabled: Boolean(srvConfig.disabled),
         autoApprove: srvConfig.autoApprove || [],
+        oauth: { enabled: srvConfig.oauth?.enabled === true },
+        authStatus: this.oauthClients.get(serverId)?.getStatus() || { status: srvConfig.oauth?.enabled ? "unauthenticated" : "disabled" },
         status,
         protocolMode: client?.getProtocolMode?.() || "unknown",
         protocolVersion: client?.protocolVersion || null,
@@ -572,15 +686,15 @@ export class McpHub extends EventEmitter {
         deprecatedTransport: client?.deprecatedTransport || null,
         configSource: this.configSources?.[serverId] || null,
         reconnectAttempts: reconnect?.attempts || 0,
-        serverInfo: client?.serverInfo || null,
-        capabilities: { ...(client?.serverCapabilities || {}) },
+        serverInfo: clean(client?.serverInfo || null),
+        capabilities: Object.fromEntries(Object.entries(client?.serverCapabilities || {}).map(([key, value]) => [key, clean(value)])),
         toolCount: tools.length,
         tools: tools.map((t) => {
           const badge = riskBadge(t.category);
           return {
-            name: t.name,
-            originalName: t.originalName,
-            description: t.description,
+            name: clean(t.name),
+            originalName: clean(t.originalName),
+            description: clean(t.description),
             category: t.category,
             autoApprove: t.autoApprove,
             // v1.13.0:风险徽章与推导依据,供 GUI 展示"这条放行是凭据来的"
@@ -593,8 +707,8 @@ export class McpHub extends EventEmitter {
             riskOverride: t.riskOverride || null
           };
         }),
-        error: client?.getLastError()?.message || null,
-        stderr: client?.getRecentStderr() || ""
+        error: clean(client?.getLastError()?.message || null),
+        stderr: clean(client?.getRecentStderr() || "")
       });
     }
     return list;

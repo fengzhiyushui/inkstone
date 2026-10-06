@@ -100,6 +100,8 @@ test("锚定有效性:删去任一必填键即 not ok(证明 ② 非空转)", ()
 // context:semantic_degraded),并对其余已登记类型同样锁死三项展示语义。
 
 const DESCRIPTOR_EXPECTATIONS = new Map([
+  ["mcp:auth_required", { kind: "mcp-approval", severity: "warn", quiet: false, fields: { serverId: "remote", status: "AUTH_REQUIRED", protocolMode: null, protocolVersion: null, toolCount: null, message: "Sign in to this MCP server" } }],
+  ["mcp:auth_status", { kind: "mcp-status", severity: "info", quiet: false, fields: { serverId: "remote", status: "authenticated", protocolMode: null, protocolVersion: null, toolCount: null, message: null } }],
   // ── 通用 other 回落 / NOISY 静默(与 event-schema-coverage.test.js 的 QUIET_TYPES 同源) ──
   ["session:start", { kind: "other", severity: "info", quiet: false, fields: {} }],
   ["session:resume", { kind: "other", severity: "info", quiet: false, fields: {} }],
