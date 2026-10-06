@@ -1,9 +1,12 @@
 import { EventEmitter } from "node:events";
+import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { JsonRpcClient, JSONRPC_ERRORS } from "./jsonrpc-client.js";
 import { createTransport } from "./transport.js";
+import { createCapabilityCache, CAPABILITY_CACHE_LIMITS } from "./capability-cache.js";
+import { boundCapabilityContent, capabilityLimit, CAPABILITY_CONTENT_DEFAULT_BYTES, CAPABILITY_CONTENT_MAX_BYTES } from "./capability-content.js";
 import {
   MODERN_PROTOCOL_VERSION,
   LEGACY_PROTOCOL_VERSION,
@@ -91,11 +94,16 @@ export class McpClient extends EventEmitter {
     this.serverCapabilities = {};
     this.clientCapabilities = { ...DEFAULT_CLIENT_CAPABILITIES };
     this.lastError = null;
+    this._capabilityCache = createCapabilityCache();
+    this._capabilityCursors = new Map();
+    this._capabilityGeneration = 0;
+    this._capabilityIdentity = null;
 
     this.transport = transport;
     this.rpc = new JsonRpcClient({ defaultTimeoutMs: this.timeoutMs });
 
     this._onTransportClose = (info) => {
+      this._invalidateCapabilities();
       if (this.status === "CONNECTED") {
         this.status = "ERROR";
         this.lastError = new Error(
@@ -107,6 +115,7 @@ export class McpClient extends EventEmitter {
     };
 
     this._onTransportError = (err) => {
+      this._invalidateCapabilities();
       this.status = "ERROR";
       this.lastError = err;
       // 有监听者才 emit:EventEmitter 在没有 'error' 监听者时会直接抛出,
@@ -122,8 +131,10 @@ export class McpClient extends EventEmitter {
     this._onNotification = (message) => {
       const method = message?.method || "";
       if (method.endsWith("/list_changed") || method === "notifications/tools/list_changed") {
+        this._invalidateCapabilities();
         this.emit("list_changed", { method, params: message?.params });
       }
+      if (method === "notifications/resources/updated") this._invalidateCapabilities();
       if (method === "notifications/cancelled") {
         this.emit("cancelled", message?.params);
       }
@@ -207,6 +218,8 @@ export class McpClient extends EventEmitter {
       return;
     }
     this.status = "CONNECTING";
+    this._invalidateCapabilities();
+    this.serverCapabilities = {};
     this.lastError = null;
     this.protocolMode = PROTOCOL_MODE.UNKNOWN;
     this.protocolVersion = null;
@@ -409,7 +422,7 @@ export class McpClient extends EventEmitter {
     return result?.tools || [];
   }
 
-  async callTool(name, toolArguments = {}) {
+  async callTool(name, toolArguments = {}, opts = {}) {
     if (this.status !== "CONNECTED") {
       throw new Error(
         `MCP client '${this.serverId}' is not connected (current status: ${this.status})`
@@ -422,13 +435,182 @@ export class McpClient extends EventEmitter {
         name,
         arguments: toolArguments
       },
-      { timeoutMs: this.timeoutMs }
+      { timeoutMs: this.timeoutMs, ...opts }
     );
 
     return result || { content: [], isError: false, resultType: "complete" };
   }
 
+  supportsCapability(name) {
+    if (!Object.prototype.hasOwnProperty.call(this.serverCapabilities || {}, name)) return false;
+    const value = this.serverCapabilities[name];
+    return value === true || (value !== null && typeof value === "object" && !Array.isArray(value));
+  }
+
+  _assertCapability(capability) {
+    if (!this.supportsCapability(capability)) {
+      const error = new Error(`MCP server '${this.serverId}' does not advertise ${capability}`);
+      error.code = "MCP_CAPABILITY_UNSUPPORTED";
+      throw error;
+    }
+    if (this.status !== "CONNECTED") throw new Error(`MCP client '${this.serverId}' is not connected (current status: ${this.status})`);
+  }
+
+  _invalidateCapabilities() {
+    this._capabilityCache.clear();
+    this._capabilityCursors.clear();
+    this._capabilityGeneration += 1;
+  }
+
+  _syncCapabilityIdentity() {
+    const identity = createHash("sha256").update(JSON.stringify({
+      serverId: this.serverId, transport: this.transportConfig,
+      protocolMode: this.protocolMode, protocolVersion: this.protocolVersion
+    })).digest("hex");
+    if (identity !== this._capabilityIdentity) {
+      this._invalidateCapabilities();
+      this._capabilityIdentity = identity;
+    }
+  }
+
+  async _cachedCapability(key, opts, run) {
+    opts.signal?.throwIfAborted?.();
+    this._syncCapabilityIdentity();
+    const cacheKey = createHash("sha256").update(JSON.stringify(key)).digest("hex");
+    if (!opts.forceRefresh) {
+      const hit = this._capabilityCache.get(cacheKey);
+      if (hit) return hit;
+    }
+    const generation = this._capabilityGeneration;
+    const { value, hints } = await run();
+    if (generation === this._capabilityGeneration && this.status === "CONNECTED") this._capabilityCache.set(cacheKey, value, hints);
+    return value;
+  }
+
+  // Local opaque cursors retain an offset into a server page. When maxItems
+  // cuts through one page, the next call re-reads it and skips exactly that
+  // prefix, rather than silently dropping all remaining entries in the page.
+  _continuation(method, cursor, offset, generation) {
+    while (this._capabilityCursors.size >= CAPABILITY_CACHE_LIMITS.maxEntries) this._capabilityCursors.delete(this._capabilityCursors.keys().next().value);
+    const token = `inkstone-page:${randomUUID()}`;
+    this._capabilityCursors.set(token, { method, cursor, offset, generation, expiresAt: Date.now() + CAPABILITY_CACHE_LIMITS.maxTtlMs });
+    return token;
+  }
+
+  _resolveCapabilityCursor(method, cursor) {
+    if (cursor === undefined || cursor === null) return { cursor: undefined, offset: 0 };
+    if (typeof cursor !== "string" || cursor.length > 8192) throw new TypeError("MCP cursor must be a string of at most 8192 characters");
+    if (!cursor.startsWith("inkstone-page:")) return { cursor, offset: 0 };
+    const saved = this._capabilityCursors.get(cursor);
+    if (!saved || saved.method !== method || saved.generation !== this._capabilityGeneration || saved.expiresAt <= Date.now()) {
+      this._capabilityCursors.delete(cursor);
+      const error = new Error("MCP pagination cursor expired or belongs to another capability/client; restart the listing");
+      error.code = "MCP_CURSOR_EXPIRED";
+      throw error;
+    }
+    return saved;
+  }
+
+  async _listCapability(capability, method, field, opts = {}) {
+    if (!this.supportsCapability(capability)) return { [field]: [], supported: false };
+    this._assertCapability(capability);
+    const maxPages = capabilityLimit(opts.maxPages, 5, 20);
+    const maxItems = capabilityLimit(opts.maxItems, 200, 1000);
+    const maxBytes = capabilityLimit(opts.maxBytes, CAPABILITY_CONTENT_MAX_BYTES, CAPABILITY_CONTENT_MAX_BYTES, 2);
+    this._syncCapabilityIdentity();
+    const start = this._resolveCapabilityCursor(method, opts.cursor);
+    return this._cachedCapability([method, opts.cursor ?? null, maxPages, maxItems, maxBytes], opts, async () => {
+      const collected = [];
+      let bytes = 2;
+      const generation = this._capabilityGeneration;
+      const seen = new Set();
+      let cursor = start.cursor, offset = start.offset;
+      const hints = {};
+      let expiresAt = Infinity;
+      let nextCursor;
+      let truncationReason;
+      for (let page = 0; page < maxPages; page += 1) {
+        opts.signal?.throwIfAborted?.();
+        seen.add(cursor ?? null);
+        const result = await this._request(method, cursor == null ? {} : { cursor }, { timeoutMs: this.timeoutMs, ...(opts.signal ? { signal: opts.signal } : {}) });
+        const rawItems = result?.[field] ?? (method === "templates/list" ? result?.templates : undefined);
+        const items = Array.isArray(rawItems) ? rawItems : [];
+        const ttl = Number.isFinite(result?.ttlMs) && result.ttlMs > 0 ? result.ttlMs : 0;
+        expiresAt = Math.min(expiresAt, Date.now() + Math.min(ttl, CAPABILITY_CACHE_LIMITS.maxTtlMs));
+        if (result?.cacheScope === "none" || result?.cacheScope === "request") hints.cacheScope = "none";
+        while (offset < items.length && collected.length < maxItems) {
+          const json = JSON.stringify(items[offset]);
+          const itemBytes = typeof json === "string" ? Buffer.byteLength(json, "utf8") : Infinity;
+          const needed = itemBytes + (collected.length ? 1 : 0);
+          if (bytes + needed > maxBytes) {
+            truncationReason = collected.length ? "max_bytes" : "item_too_large";
+            break;
+          }
+          collected.push(JSON.parse(json));
+          bytes += needed;
+          offset += 1;
+        }
+        if (offset < items.length) {
+          // A single descriptor larger than the entire byte cap cannot make
+          // progress with the same options; report it without a looping cursor.
+          if (truncationReason !== "item_too_large") nextCursor = this._continuation(method, cursor, offset, generation);
+          truncationReason ||= "max_items";
+          break;
+        }
+        offset = 0;
+        const next = result?.nextCursor;
+        if (next == null || next === "") break;
+        if (typeof next !== "string" || next.length > 8192) { truncationReason = "invalid_cursor"; break; }
+        if (seen.has(next)) { truncationReason = "repeated_cursor"; break; }
+        nextCursor = next;
+        if (collected.length >= maxItems) { truncationReason = "max_items"; break; }
+        if (page + 1 >= maxPages) { truncationReason = "max_pages"; break; }
+        cursor = next;
+        nextCursor = undefined;
+      }
+      const value = { [field]: collected, supported: true, ...(truncationReason ? { truncated: true, truncationReason } : {}), ...(nextCursor ? { nextCursor } : {}) };
+      // A continuation depends on mutable server pagination state; do not cache
+      // a truncated aggregate whose client-side cursor could expire or evict.
+      hints.ttlMs = truncationReason ? 0 : Math.max(0, expiresAt - Date.now());
+      return { value, hints };
+    });
+  }
+
+  listResources(opts = {}) {
+    return this._listCapability("resources", "resources/list", "resources", opts);
+  }
+
+  listResourceTemplates(opts = {}) {
+    const method = this.protocolMode === PROTOCOL_MODE.MODERN ? "templates/list" : "resources/templates/list";
+    return this._listCapability("resources", method, "resourceTemplates", opts);
+  }
+
+  listPrompts(opts = {}) {
+    return this._listCapability("prompts", "prompts/list", "prompts", opts);
+  }
+
+  async _readCapability(capability, method, params, field, opts) {
+    this._assertCapability(capability);
+    const identifier = params.uri ?? params.name;
+    if (typeof identifier !== "string" || !identifier.trim() || identifier.length > 8192) throw new TypeError("MCP resource URI/prompt name must be a non-empty string of at most 8192 characters");
+    if ("arguments" in params && (!params.arguments || typeof params.arguments !== "object" || Array.isArray(params.arguments))) throw new TypeError("MCP prompt arguments must be an object");
+    const maxBytes = capabilityLimit(opts.maxBytes, CAPABILITY_CONTENT_DEFAULT_BYTES, CAPABILITY_CONTENT_MAX_BYTES, 2);
+    return this._cachedCapability([method, params, maxBytes], opts, async () => {
+      const result = await this._request(method, params, { timeoutMs: this.timeoutMs, ...(opts.signal ? { signal: opts.signal } : {}) });
+      return { value: boundCapabilityContent(result?.[field], field, maxBytes), hints: { ttlMs: result?.ttlMs, cacheScope: result?.cacheScope } };
+    });
+  }
+
+  readResource(uri, opts = {}) {
+    return this._readCapability("resources", "resources/read", { uri }, "contents", opts);
+  }
+
+  getPrompt(name, args = {}, opts = {}) {
+    return this._readCapability("prompts", "prompts/get", { name, arguments: args }, "messages", opts);
+  }
+
   async disconnect({ keepStatus = false } = {}) {
+    this._invalidateCapabilities();
     if (!keepStatus) this.status = "DISCONNECTED";
 
     if (this.transport) {
