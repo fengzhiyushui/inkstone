@@ -65,14 +65,14 @@ test("session approval does not become persistent and destructive remains denied
   const paused = await first.agent.send("inspect external record", { autonomy: "gated" });
   await first.agent.approve(paused.approval.id, "approve", { scope: "session" });
   await first.dispose();
+  const destructive = "mcp__demo__destroy_all";
+  createPolicyStore({ projectRoot: root, userRoot }).grant(destructive, "project");
   const second = await makeKernel(root, userRoot, executions);
   t.after(() => second.dispose());
   const next = await second.agent.send("inspect external record", { autonomy: "gated" });
   assert.equal(next.status, "awaiting_approval");
   assert.equal(executions.length, 1);
-  const destructive = "mcp__demo__destroy_all";
   second.tools.registry.register({ name: destructive, description: "Forbidden operation", category: "destructive", source: "mcp", execute: () => { throw new Error("must not run"); } });
-  createPolicyStore({ projectRoot: root, userRoot }).grant(destructive, "project");
   const result = await second.tools.execute({ id: "denied", name: destructive, params: {} }, { autonomy: "full-auto" });
   assert.equal(result.status, "denied");
 });

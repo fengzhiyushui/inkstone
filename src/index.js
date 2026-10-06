@@ -14,6 +14,7 @@ import { createBuiltinTools } from "./tools/builtin/index.js";
 import { createToolRegistry } from "./tools/registry.js";
 import { createToolExecutor } from "./tools/executor.js";
 import { McpHub } from "./tools/mcp/mcp-hub.js";
+import { mountMcpCapabilityTools } from "./tools/mcp/capability-tools.js";
 import { createPolicyStore, validateApprovalScope, normalizeApprovalScope } from "./tools/mcp/tool-policy.js";
 import { createPermissionEngine } from "./tools/permissions/permission-engine.js";
 import { createApprovalCache } from "./tools/permissions/approval-cache.js";
@@ -192,6 +193,7 @@ export async function createKernel(root, options = {}) {
     projectRoot: root,
     loadConfigScopes: options.loadMcpConfigScopes === true
   });
+  const unmountMcpCapabilities = mountMcpCapabilityTools(mcpHub, toolRegistry, options.deepseek || {});
   if (options.autoInitMcp !== false && mcpHub.serverConfigs.size > 0) {
     await mcpHub.initAll().catch(() => {});
   }
@@ -520,6 +522,7 @@ export async function createKernel(root, options = {}) {
       kernelDisposed = true;
       try { await orchestrator.flushExperience?.(); } catch { /* best-effort */ }
       try { await experienceStore?.flush?.(); } catch { /* best-effort */ }
+      unmountMcpCapabilities();
       try { await mcpHub?.stopAll?.(); } catch { /* best-effort */ }
       try { sessionManager.dispose?.(); } catch { /* best-effort */ }
       try { await projectLock?.release?.(); } catch { /* best-effort */ }
@@ -533,6 +536,11 @@ export async function createKernel(root, options = {}) {
       toggleServer: (serverId, enabled) => mcpHub.toggleServer(serverId, enabled),
       addServer: (serverId, config, opts) => mcpHub.addServer(serverId, config, opts),
       removeServer: (serverId) => mcpHub.removeServer(serverId),
+      listResources: (serverId, opts) => mcpHub.listResources(serverId, opts),
+      listResourceTemplates: (serverId, opts) => mcpHub.listResourceTemplates(serverId, opts),
+      readResource: (serverId, uri, opts) => mcpHub.readResource(serverId, uri, opts),
+      listPrompts: (serverId, opts) => mcpHub.listPrompts(serverId, opts),
+      getPrompt: (serverId, name, args, opts) => mcpHub.getPrompt(serverId, name, args, opts),
       callTool: (namespacedName, params) => mcpHub.callTool(namespacedName, params)
     },
     metrics: {
