@@ -102,6 +102,8 @@ export class McpClient extends EventEmitter {
 
     this.transport = transport;
     this.rpc = new JsonRpcClient({ defaultTimeoutMs: this.timeoutMs });
+    this.rpc.on("trace", (event) => this.emit("trace", event));
+    this.rpc.on("request_completed", (event) => this.emit("request_completed", event));
 
     this._onTransportClose = (info) => {
       this._invalidateCapabilities();
@@ -116,6 +118,7 @@ export class McpClient extends EventEmitter {
     };
 
     this._onTransportError = (err) => {
+      if (err?.name === "AbortError" || err?.code === JSONRPC_ERRORS.CANCELLED || err?.code === JSONRPC_ERRORS.TIMEOUT) return;
       this._invalidateCapabilities();
       this.status = "ERROR";
       this.lastError = err;
@@ -139,6 +142,10 @@ export class McpClient extends EventEmitter {
       if (method === "notifications/cancelled") {
         this.emit("cancelled", message?.params);
       }
+    };
+    this._onDeprecated = ({ reason }) => {
+      this.deprecatedTransport = reason;
+      this.emit("deprecated", { reason });
     };
   }
 
@@ -231,22 +238,21 @@ export class McpClient extends EventEmitter {
         this.transport = createTransport(this.transportConfig);
       }
 
+      this.transport.removeListener("close", this._onTransportClose);
+      this.transport.removeListener("error", this._onTransportError);
       this.transport.on("close", this._onTransportClose);
       this.transport.on("error", this._onTransportError);
       if (typeof this.transport.on === "function") {
         // legacy SSE 是已废弃通道:透出标记,供事件契约与诊断提示
-        this.transport.on("deprecated", ({ reason }) => {
-          this.deprecatedTransport = reason;
-          this.emit("deprecated", { reason });
-        });
+        this.transport.removeListener("deprecated", this._onDeprecated);
+        this.transport.on("deprecated", this._onDeprecated);
         if (this.transport.deprecated) this.deprecatedTransport = "legacy transport";
       }
 
       this.rpc.setTransport(this.transport);
       this.rpc.on("notification", this._onNotification);
-      // JsonRpcClient 会把传输错误再 emit 一次;没有监听者时 EventEmitter 会把它
-      // 当未处理异常抛出 → 进程级崩溃。这里必须接住,转成本客户端的 error 事件。
-      this.rpc.on("error", this._onTransportError);
+      // Transport errors are already handled above. JsonRpcClient conditionally
+      // emits its own error event; subscribing twice would report each twice.
 
       // v1.12.0:传输是在这里才创建的,协商结果要重新回填一次
       // (connect() 开头已把 protocolVersion 置空,但那时 transport 还不存在)。
@@ -412,14 +418,14 @@ export class McpClient extends EventEmitter {
     this.rpc.notify("notifications/initialized");
   }
 
-  async listTools() {
+  async listTools(opts = {}) {
     if (this.status !== "CONNECTED") {
       throw new Error(
         `MCP client '${this.serverId}' is not connected (current status: ${this.status})`
       );
     }
 
-    const result = await this._request("tools/list", {}, { timeoutMs: this.timeoutMs });
+    const result = await this._request("tools/list", {}, { timeoutMs: this.timeoutMs, ...opts });
     return result?.tools || [];
   }
 
@@ -484,6 +490,7 @@ export class McpClient extends EventEmitter {
     }
     const generation = this._capabilityGeneration;
     const { value, hints } = await run();
+    opts.signal?.throwIfAborted?.();
     if (generation === this._capabilityGeneration && this.status === "CONNECTED") this._capabilityCache.set(cacheKey, value, hints);
     return value;
   }
@@ -616,6 +623,7 @@ export class McpClient extends EventEmitter {
 
     if (this.transport) {
       this.transport.removeListener("close", this._onTransportClose);
+      this.transport.removeListener("deprecated", this._onDeprecated);
       // 故意**保留** error 监听:close() 之后仍可能有迟到的网络错误(如 abort、
       // 连接重置)。移除监听会让 EventEmitter 把 'error' 当未处理异常直接抛出,
       // 把一次可控的传输失败变成进程级崩溃。

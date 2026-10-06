@@ -25,6 +25,9 @@ import { fetchModelIds } from "../model-catalog.js";
 import { testDeepSeekConnection } from "../../provider.js";
 import { configureProject } from "../../config.js";
 import { CONFIG_ACTIONS, CONFIG_FIELDS, initialConfigState, reduceConfig, renderConfigLines } from "./config-flow.js";
+import { createMcpDisplayRedactor } from "../../security/mcp-content.js";
+import { parseMcpArgs, formatMcpServerLines, formatMcpLogLines, mcpText } from "./mcp-actions.js";
+import { cleanMcpLogResult } from "../cli/mcp-logs.js";
 
 const CTRLC_WINDOW_MS = 3000;
 const HISTORY_CAP = 20; // 与 kernel-runner appendHistory 同语义:10 轮
@@ -60,6 +63,7 @@ export function createTuiApp({
   let sensitiveResolve = null;
   let finishResolve = null;
   let modalHandler = null; // T13:config 等全接管视图的按键处理器
+  let mcpOperation = null;
   const painter = createPainter({ write: (s) => output.write(s) });
   const columns = () => output.columns || 80;
 
@@ -160,7 +164,8 @@ export function createTuiApp({
     subscription = kernel.session.subscribe((event) => {
       refreshStatus();
       if (!event?.type || QUIET.has(event.type)) return;
-      pushLines(eventToLines(event, T));
+      const clean = event.type.startsWith("mcp:") ? createMcpDisplayRedactor({ config: kernel.config, hub: kernel.mcp?.hub }) : undefined;
+      pushLines(eventToLines(event, T, clean));
     });
   }
 
@@ -520,6 +525,33 @@ export function createTuiApp({
         pushLines([` ${color.dim(`· fim${meta ? ` ${meta}` : ""}`)}`, ...content.split("\n").map((l) => ` ${l}`), ""]);
       } catch (e) { pushLines([` ${color.dim(T("msg.fimFailed", { err: e?.message || e }))}`, ""]); } // D-0:失败静默一行,不阻塞输入
     },
+    mcp: async (arg) => {
+      const parsed = parseMcpArgs(arg);
+      if (parsed.action === "invalid") { pushLines([` ${T("msg.mcpUsage")}`, ""]); return; }
+      const method = { list: "listServers", logs: "getLogs", restart: "restartServer", enable: "toggleServer", disable: "toggleServer" }[parsed.action];
+      if (typeof kernel?.mcp?.[method] !== "function") { pushLines([` ${T("msg.mcpUnavailable")}`, ""]); return; }
+      const clean = createMcpDisplayRedactor({ config: kernel.config, hub: kernel.mcp.hub });
+      const operation = {};
+      mcpOperation = operation;
+      dispatch({ type: "busy", busy: true });
+      try {
+        let lines;
+        if (parsed.action === "list") lines = formatMcpServerLines(await kernel.mcp.listServers(), T, clean);
+        else if (parsed.action === "logs") lines = formatMcpLogLines(cleanMcpLogResult(await kernel.mcp.getLogs(parsed.serverId, { limit: parsed.limit }), clean), T);
+        else {
+          const result = parsed.action === "restart"
+            ? await kernel.mcp.restartServer(parsed.serverId)
+            : await kernel.mcp.toggleServer(parsed.serverId, parsed.action === "enable");
+          lines = [` ${mcpText(clean(parsed.serverId))}: ${mcpText(clean(result?.status || "ok"))}`];
+        }
+        if (!state.exit) pushLines([...lines, ""]);
+      } catch (error) {
+        if (!state.exit) pushLines([` ${color.red(T("ev.error"))}: ${mcpText(clean(error?.message || String(error)))}`, ""]);
+      } finally {
+        if (mcpOperation === operation) mcpOperation = null;
+        if (!state.exit) { dispatch({ type: "busy", busy: false }); refreshStatus(); }
+      }
+    },
     quit: async () => { dispatch({ type: "exit" }); }
   };
 
@@ -612,8 +644,12 @@ export function createTuiApp({
       case "down": dispatch({ type: "input_hist_next" }); return;
       case "esc":
         if (state.busy) {
-          kernel?.agent?.interrupt?.();
-          dispatch({ type: "hint", text: T("hint.interruptRequested") });
+          if (mcpOperation) {
+            dispatch({ type: "hint", text: T("hint.mcpPending") });
+          } else {
+            kernel?.agent?.interrupt?.();
+            dispatch({ type: "hint", text: T("hint.interruptRequested") });
+          }
         }
         return;
       default: return;

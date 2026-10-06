@@ -4,6 +4,7 @@ const path = require("path");
 const fs = require("node:fs");
 const os = require("node:os");
 const { createKernelHost, resolveProjectRoot } = require("./kernel-host.js");
+const { saveDiagnosticExport } = require("./mcp-diagnostics.js");
 
 // Remove Electron's default native menu bar (File/Edit/View/Window/Help) — the app
 // has its own custom title bar; the native one would be a redundant second row.
@@ -36,6 +37,7 @@ const IPC_CHANNELS = [
   "recovery:list", "recovery:report", "recovery:resume", "recovery:cancel", "recovery:clear",
   "mcp:list", "mcp:restart", "mcp:toggle", "mcp:add", "mcp:remove", "mcp:inputs", "mcp:set-input",
   "mcp:auth-status", "mcp:auth-start", "mcp:auth-cancel", "mcp:auth-logout",
+  "mcp:logs", "mcp:logs-export", "mcp:tools-list", "mcp:tool-test", "mcp:tool-test-approve", "mcp:tool-test-cancel",
   "mcp:resources-list", "mcp:resource-templates-list", "mcp:resource-read", "mcp:prompts-list", "mcp:prompt-get"
 ];
 
@@ -220,6 +222,7 @@ async function createWindow() {
          * 读写 offsetWidth 强制回流，把观测回调唤醒。
          */
         const settleLayout = async (wantW, tries = 25) => {
+          let emulatedViewport = false;
           for (let i = 0; i < tries; i += 1) {
             const state = await win.webContents.executeJavaScript(`
               (() => {
@@ -238,6 +241,18 @@ async function createWindow() {
             // 窗宽没到位就再推一次(setSize 在高负载下会丢)
             if (state && Math.abs(state.w - wantW) >= 4) {
               try { win.setSize(wantW, win.getSize()[1]); } catch { /* 尽力而为 */ }
+              // Windows without an active display surface can acknowledge the
+              // native size while Chromium retains the previous viewport. In
+              // smoke only, drive the real renderer viewport through Electron's
+              // emulation API; the layout and Inspector DOM checks still run.
+              if (!emulatedViewport && i >= 2 && Math.abs(win.getSize()[0] - wantW) < 4) {
+                const height = win.getContentSize()[1];
+                win.webContents.enableDeviceEmulation({ screenPosition: "desktop",
+                  screenSize: { width: wantW, height }, viewPosition: { x: 0, y: 0 },
+                  deviceScaleFactor: 0, viewSize: { width: wantW, height }, scale: 1 });
+                emulatedViewport = true;
+                console.log("GUI_SMOKE_DIAG:viewport_emulated:" + wantW);
+              }
             }
             await new Promise((r) => setTimeout(r, 200));
           }
@@ -642,6 +657,13 @@ function registerIpcHandlers() {
   handle("mcp:resource-read", wrap((_e, id, uri, options) => host.readMcpResource(id, uri, options)));
   handle("mcp:prompts-list", wrap((_e, id, options) => host.listMcpPrompts(id, options)));
   handle("mcp:prompt-get", wrap((_e, id, name, args, options) => host.getMcpPrompt(id, name, args, options)));
+  handle("mcp:logs", wrap((_e, id, options) => host.getMcpLogs(id, options)));
+  handle("mcp:logs-export", wrap((_e, id, options) => saveDiagnosticExport({ host, serverId: id, options,
+    showSaveDialog: (settings) => dialog.showSaveDialog(mainWindow, settings), writeFile: fs.promises.writeFile })));
+  handle("mcp:tools-list", wrap((_e, id) => host.listMcpTools(id)));
+  handle("mcp:tool-test", wrap((_e, id, name, params, options) => host.startMcpToolTest(id, name, params, options)));
+  handle("mcp:tool-test-approve", wrap((_e, id) => host.approveMcpToolTest(id)));
+  handle("mcp:tool-test-cancel", wrap((_e, id) => host.cancelMcpToolTest(id)));
 handle("mcp:inputs", wrap(() => host.listMcpInputs()));
 handle("mcp:set-input", wrap((_e, name, value) => host.setMcpInput(name, value)));
 }

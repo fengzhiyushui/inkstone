@@ -56,6 +56,12 @@ const MODEL_RESPONSE_EXPECTED_FIELDS = {
   sessionId: "sess_7f3a1c"
 };
 
+const mcpFields = (overrides = {}) => ({
+  serverId: "remote", status: null, protocolMode: null, protocolVersion: null, toolCount: null, message: null,
+  method: null, requestId: null, durationMs: null, level: null, category: null, direction: null,
+  progress: null, total: null, runId: null, toolName: null, ...overrides
+});
+
 // ── ① 覆盖:fixtures 键集合 ↔ SESSION_EVENT_TYPES 双向锁死 ──────────────────
 
 test("fixtures 覆盖 SESSION_EVENT_TYPES 全部类型且无越界键", () => {
@@ -100,8 +106,23 @@ test("锚定有效性:删去任一必填键即 not ok(证明 ② 非空转)", ()
 // context:semantic_degraded),并对其余已登记类型同样锁死三项展示语义。
 
 const DESCRIPTOR_EXPECTATIONS = new Map([
-  ["mcp:auth_required", { kind: "mcp-approval", severity: "warn", quiet: false, fields: { serverId: "remote", status: "AUTH_REQUIRED", protocolMode: null, protocolVersion: null, toolCount: null, message: "Sign in to this MCP server" } }],
-  ["mcp:auth_status", { kind: "mcp-status", severity: "info", quiet: false, fields: { serverId: "remote", status: "authenticated", protocolMode: null, protocolVersion: null, toolCount: null, message: null } }],
+  ["mcp:auth_required", { kind: "mcp-approval", severity: "warn", quiet: false, fields: mcpFields({ status: "AUTH_REQUIRED", message: "Sign in to this MCP server" }) }],
+  ["mcp:auth_status", { kind: "mcp-status", severity: "info", quiet: false, fields: mcpFields({ status: "authenticated" }) }],
+  ["mcp:config_warn", { kind: "mcp-status", severity: "warn", quiet: false, fields: mcpFields({ serverId: null, message: "Ignored malformed server configuration" }) }],
+  ["mcp:server_deprecated", { kind: "mcp-status", severity: "warn", quiet: false, fields: mcpFields({ message: "Legacy SSE transport is deprecated" }) }],
+  ["mcp:server_error", { kind: "mcp-error", severity: "danger", quiet: false, fields: mcpFields({ message: "Connection closed" }) }],
+  ["mcp:server_disconnected", { kind: "mcp-status", severity: "info", quiet: false, fields: mcpFields({ status: "DISCONNECTED" }) }],
+  ["mcp:resources_changed", { kind: "mcp-status", severity: "info", quiet: false, fields: mcpFields({ method: "notifications/resources/list_changed" }) }],
+  ["mcp:prompts_changed", { kind: "mcp-status", severity: "info", quiet: false, fields: mcpFields({ method: "notifications/prompts/list_changed" }) }],
+  ["mcp:server_status", { kind: "mcp-status", severity: "warn", quiet: false, fields: mcpFields({ status: "RECONNECTING" }) }],
+  ["mcp:tools_mounted", { kind: "mcp-tools", severity: "success", quiet: false, fields: mcpFields({ toolCount: 3 }) }],
+  ["mcp:tools_changed", { kind: "mcp-tools", severity: "success", quiet: false, fields: mcpFields({ toolCount: 4 }) }],
+  ["mcp:server_added", { kind: "mcp-status", severity: "info", quiet: false, fields: mcpFields({ status: "CONFIGURED" }) }],
+  ["mcp:server_removed", { kind: "mcp-status", severity: "info", quiet: false, fields: mcpFields({ status: "REMOVED" }) }],
+  ["mcp:protocol_mode", { kind: "mcp-status", severity: "info", quiet: false, fields: mcpFields({ protocolMode: "modern", protocolVersion: "2025-06-18" }) }],
+  ["mcp:input_required", { kind: "mcp-approval", severity: "warn", quiet: false, fields: mcpFields({ message: "Configure the required server input" }) }],
+  ["mcp:log", { kind: "mcp-status", severity: "info", quiet: true, fields: mcpFields({ status: "ok", method: "tools/call", requestId: 7, durationMs: 42, level: "info", category: "protocol", direction: "outbound", message: "Request completed" }) }],
+  ["mcp:tool_test", { kind: "mcp-status", severity: "info", quiet: false, fields: mcpFields({ status: "complete", runId: "test_1", toolName: "mcp__remote__ping", durationMs: 42 }) }],
   // ── 通用 other 回落 / NOISY 静默(与 event-schema-coverage.test.js 的 QUIET_TYPES 同源) ──
   ["session:start", { kind: "other", severity: "info", quiet: false, fields: {} }],
   ["session:resume", { kind: "other", severity: "info", quiet: false, fields: {} }],
@@ -203,6 +224,26 @@ test("experience:retrieved 的 count===0 折叠语义(登记后仍保静默门�
   // (期望表覆盖 count>0 形态);此处补钉 count===0 时 quiet 的门控语义。
   assert.equal(describeEvent({ type: "experience:retrieved", count: 0 }).quiet, true);
   assert.equal(describeEvent({ type: "experience:retrieved", count: 0 }).fields.count, 0);
+});
+
+test("MCP diagnostics keep normal logs quiet and show errors/cancellation without losing request correlation", () => {
+  for (const [level, severity, quiet] of [["debug", "info", true], ["info", "info", true], ["warn", "warn", false], ["error", "danger", false]]) {
+    const descriptor = describeEvent({ type: "mcp:log", entry: { serverId: "remote", level, method: "tools/call", requestId: 0, durationMs: 0 } });
+    assert.equal(descriptor.severity, severity);
+    assert.equal(descriptor.quiet, quiet);
+    assert.equal(descriptor.fields.requestId, 0);
+    assert.equal(descriptor.fields.durationMs, 0);
+  }
+  for (const status of ["cancelled", "denied", "awaiting_approval", "approval_required"]) {
+    assert.equal(describeEvent({ type: "mcp:tool_test", status }).severity, "warn");
+  }
+  for (const [type, key] of [["mcp:log", "entry"], ["mcp:tool_test", "runId"], ["mcp:server_status", "serverId"]]) {
+    const payload = { ...samples[type] };
+    delete payload[key];
+    assert.equal(validateEvent(type, payload).ok, false, `${type} requires ${key}`);
+  }
+  assert.equal(validateEvent("mcp:log", { entry: {} }).ok, true);
+  assert.equal(validateEvent("mcp:config_warn", { message: "Invalid config" }).ok, true);
 });
 
 // ── ④ model:response 专项:对照样本断言 E2 全套字段 ──────────────────────────

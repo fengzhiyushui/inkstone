@@ -4,6 +4,7 @@ import { buildInitialLoads, branchesAction, eventToAction, errorToAction, refres
 import { targetFromCheckpoint } from "../state/workbench-state.js";
 import { checkedMcpResult } from "../state/mcp-content.js";
 import { subscribeMcpAuthChanges } from "../state/mcp-oauth.js";
+import { checkedDiagnosticResult, includeMcpActivity } from "../state/mcp-diagnostics.js";
 
 // Subscribes to window.deepseek events → dispatch, runs first-paint loads, and exposes
 // action wrappers. Pure mapping lives in kernel-loads.js (node:test-covered).
@@ -18,7 +19,7 @@ export function useKernel(dispatch) {
     let cancelled = false;
     const unsub = typeof api.onKernelEvent === "function"
       ? api.onKernelEvent((e) => {
-          dispatch(eventToAction(e));
+          if (includeMcpActivity(e)) dispatch(eventToAction(e));
           for (const load of refreshLoadsFor(e && e.type)) {
             const fn = api[load.call];
             if (typeof fn !== "function") continue;
@@ -61,6 +62,10 @@ export function useKernel(dispatch) {
     async function mcpContent(call, ...args) {
       if (typeof api?.[call] !== "function") throw new Error("MCP content API unavailable");
       return checkedMcpResult(await api[call](...args));
+    }
+    async function mcpDiagnostic(call, ...args) {
+      if (typeof api?.[call] !== "function") throw new Error("MCP diagnostics API unavailable");
+      return checkedDiagnosticResult(await api[call](...args));
     }
     async function refreshBranches() {
       if (!api?.listBranches) return;
@@ -300,6 +305,12 @@ export function useKernel(dispatch) {
       readMcpResource: (...args) => mcpContent("readMcpResource", ...args),
       listMcpPrompts: (...args) => mcpContent("listMcpPrompts", ...args),
       getMcpPrompt: (...args) => mcpContent("getMcpPrompt", ...args),
+      getMcpLogs: (...args) => mcpDiagnostic("getMcpLogs", ...args),
+      exportMcpLogs: (...args) => mcpDiagnostic("exportMcpLogs", ...args),
+      listMcpTools: (...args) => mcpDiagnostic("listMcpTools", ...args),
+      startMcpToolTest: (...args) => mcpDiagnostic("startMcpToolTest", ...args),
+      approveMcpToolTest: (...args) => mcpDiagnostic("approveMcpToolTest", ...args),
+      cancelMcpToolTest: (...args) => mcpDiagnostic("cancelMcpToolTest", ...args),
       // v1.11.2:${input:*} 密钥引用(定义来自 .mcp.json / config.json 的 inputs)
       listMcpInputs: () => (api?.listMcpInputs ? api.listMcpInputs() : Promise.resolve([])),
       setMcpInput: (name, value) => (api?.setMcpInput ? api.setMcpInput(name, value) : Promise.resolve(null))

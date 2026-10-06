@@ -149,7 +149,8 @@ test("agent runtime interrupt cancels in-flight turn and prevents stale events",
 
 test("interrupted turn cleanup does not corrupt a new turn", async () => {
   const bus = createEventBus();
-  let releaseA, releaseB;
+  let releaseA, releaseB, enteredA;
+  const startedA = new Promise((resolve) => { enteredA = resolve; });
   const blockedA = new Promise((r) => { releaseA = r; });
   const blockedB = new Promise((r) => { releaseB = r; });
   let callCount = 0;
@@ -160,7 +161,7 @@ test("interrupted turn cleanup does not corrupt a new turn", async () => {
     modelGateway: {
       reply: async () => {
         callCount++;
-        if (callCount === 1) { await blockedA; return { content: "A" }; }
+        if (callCount === 1) { enteredA(); await blockedA; return { content: "A" }; }
         if (callCount === 2) { await blockedB; return { content: "B" }; }
         return { content: "C" };
       }
@@ -169,6 +170,7 @@ test("interrupted turn cleanup does not corrupt a new turn", async () => {
 
   // Turn A: blocks on modelGateway
   const turnA = runtime.send("task A");
+  await startedA;
 
   // Interrupt A
   runtime.interrupt();

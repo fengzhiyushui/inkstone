@@ -1,5 +1,6 @@
 import { describeEvent } from "../event-contract.js";
 import { color } from "../../theme.js";
+import { redactSecrets } from "../../security/redactor.js";
 
 const QUIET_EVENTS = new Set(["model:request", "model:response", "agent:step", "agent:turn_started"]);
 
@@ -35,6 +36,14 @@ function orchestrationSummary(d) {
 
 export function summarizeKernelEvent(event = {}) {
   const d = describeEvent(event);
+  if (d.kind.startsWith("mcp-")) {
+    const f = d.fields;
+    return ["mcp", f.serverId, f.status || String(event.type).slice(4), f.toolName, f.method,
+      f.requestId != null ? `#${f.requestId}` : "", f.durationMs != null ? `${f.durationMs}ms` : "",
+      f.protocolMode, f.toolCount != null ? `${f.toolCount} tools` : "", f.message]
+      .filter((value) => value !== null && value !== undefined && value !== "")
+      .map((value) => redactSecrets(String(value)).replace(/[\x00-\x1f\x7f-\x9f]/g, " ").replace(/\s+/g, " ").trim()).join(" · ");
+  }
   const orch = orchestrationSummary(d);
   if (orch) return orch;
   if (d.kind === "experience-retrieved") return `experience: ${d.fields.count ?? 0} recalled`;
@@ -117,7 +126,7 @@ export function createEventRenderer({ write = console.log } = {}) {
     const line = summarizeKernelEvent(event);
     // experience:retrieved 在 count===0 时不打印(契约 quiet);其余照原行为。
     const d = describeEvent(event);
-    if (d.kind === "experience-retrieved" && d.quiet) return;
+    if ((d.kind === "experience-retrieved" || d.kind.startsWith("mcp-")) && d.quiet) return;
     write(`- ${line}`);
   };
 }

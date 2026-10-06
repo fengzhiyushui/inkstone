@@ -2,7 +2,7 @@
 
 - 类型：架构设计规格 (Spec)
 - 日期：2026-09-29
-- 状态：设计定稿；v1.15 OAuth 已实现（2026-10-06），可观测 / MRTR 仍按后续版本推进
+- 状态：设计定稿；v1.16 可观测、工具试跑、三端事件与在途取消已实现（2026-10-06），MRTR 留待 v1.17
 - 关联：[v1.11.0 MCP 首版](2026-09-28-v1.11.0-mcp-integration-design.md) · [post-V3 路线图](2026-09-17-post-v3-roadmap-design.md) (B1) · [权限引擎](../backend/2026-05-30-v2-7-approval-resume-design.md) · [GUI 壳层](../frontend/2026-09-20-v1.8.1-dsh-shell-design.md) · [实施计划](../../plans/architecture/2026-09-29-mcp-client-v2-multi-version-plan.md)
 
 > **取证说明**：MCP 协议事实以 [modelcontextprotocol.io](https://modelcontextprotocol.io/specification) **2026-07-28** 现行规范为准（2026-09-29 联网核对）。产品配置/交互形态综合官方文档与公开资料；调研副本见 `tmp/mcp-market-research.md`。
@@ -240,7 +240,7 @@ connect(server)
 - token 过期前刷新；同一客户端合并并发刷新。每次 MCP HTTP 请求最多一次 401 刷新重试，第二次拒绝清凭据并要求重新登录；刷新失败、旧刷新迟到、issuer 切换不能复活或覆盖新授权。注销按 serverId + resource 清理，保留其他资源的同名服务。OAuth metadata、注册、token 和带 OAuth 的资源请求均禁止重定向，仍经 DNS 固定与 SSRF 校验；HTTP 仅允许显式放行的本机回环。
 - `kernel.mcp` 提供 `getAuthStatus/startAuth/cancelAuth/logoutAuth`。安全状态为 disabled/unauthenticated/pending/authenticated/error。Hub 登录完成自动重连；`mcp:auth_required`、`mcp:auth_status` 已登记会话 schema 与回放样本，authenticated 事件在重连结束后发出。
 - GUI 只由主进程打开授权 URL，IPC 仅返回安全状态；CLI `mcp auth <server> [login|status|cancel|logout]` 显示授权 URL 并等待回调。该专用授权 URL 保留 state，普通内容/错误/日志动态脱敏新旧 token、code 和 verifier；它们不进入 IPC 或会话事件。
-- 传输错误现在及时拒绝对应 JSON-RPC pending，401 不再被掩盖成超时。此改动不代表在途 AbortSignal 取消已完成，后者仍在 v1.16。
+- 传输错误及时拒绝对应 JSON-RPC pending，401 不再被掩盖成超时。v1.15 当时未包含的在途 AbortSignal 取消已于 v1.16 补齐，见 §6.1。
 - 验收使用真实本地 HTTP mock AS 与 MCP、完整内核、CLI、GUI host/IPC/状态测试；未验证真实外部 IdP。legacy SSE 复用同一 HTTP 鉴权层，建议新服务使用 Streamable HTTP。
 
 ---
@@ -262,7 +262,7 @@ connect(server)
 - `security/mcp-content.js` 是 CLI、GUI、内容工具与 Hub 共享的展示脱敏边界：清理已配置的密钥值、敏感字段与对象键，省略 binary，并限制深度 / 节点。输出结构保留普通 `data` 字段；脱敏后重名不会静默覆盖已有字段。RPC 错误也必须经过相同脱敏边界。
 - `output-schema.js` 是**有界 JSON Schema 2020-12 子集**，不是完整实现：支持类型 / 枚举 / const、数值和字符串边界、对象字段 / required / additionalProperties / dependentRequired / dependentSchemas、数组 / prefixItems / contains / uniqueItems、组合 / 条件及本地 JSON Pointer `$ref`。不支持远程引用、锚点、`format`、`unevaluated*` 或任意正则；未知断言、复杂正则、超出预算、缺少或不匹配的 structuredContent 都明确返回校验错误，不静默通过。校验发生在原始 structuredContent 上，随后脱敏进入 metadata。
 - 挂载的 MCP 工具返回标准 `{status,content,metadata}`，修复文本返回值在 ToolExecutor 中丢失的问题；`isError`、校验失败与尚未支持的 `input_required` 均呈 error。`kernel.mcp.callTool` 兼容原有字符串返回。
-- CLI/GUI 默认浏览预算为 1 页 / 50 项 / 64 KiB，按需连接目标服务，失败不拖住其它服务器。资源/提示词的强制刷新可用 API `forceRefresh:true`；取消信号检查覆盖请求前和分页间，在途 JSON-RPC 仍依赖既有超时，不承诺即时取消。OAuth、诊断事件收口、MRTR 不在 v1.14 范围内。
+- CLI/GUI 默认浏览预算为 1 页 / 50 项 / 64 KiB，按需连接目标服务，失败不拖住其它服务器。资源/提示词的强制刷新可用 API `forceRefresh:true`；v1.14 的取消检查仅覆盖请求前与分页间，v1.16 已将 signal 透传到在途 JSON-RPC 与 HTTP 请求。OAuth、诊断事件收口、MRTR 不在 v1.14 当时的范围内。
 
 ### 4.2 风险推导优先级
 
@@ -313,19 +313,32 @@ connect(server)
 
 | 事件 | 说明 |
 |------|------|
-| `mcp:server_status` | DISCONNECTED/CONNECTING/CONNECTED/DEGRADED/ERROR |
-| `mcp:protocol_mode` | modern \| legacy \| degraded |
+| `mcp:server_status` / `mcp:server_error` / `mcp:server_disconnected` | 连接、重连、错误与断开 |
+| `mcp:server_added` / `mcp:server_removed` / `mcp:server_deprecated` | 配置生命周期与废弃传输提示 |
+| `mcp:protocol_mode` | 保留规格事件；实际协议模式由 `server_status` 携带 |
 | `mcp:tools_mounted` / `mcp:tools_changed` | 挂载与 list_changed |
-| `mcp:call` / `mcp:call_result` | 调用与耗时（脱敏） |
-| `mcp:auth_required` | OAuth 介入 |
-| `mcp:input_required` | MRTR 待用户补输入 |
-| `mcp:error` | timeout/transport/protocol/permission |
+| `mcp:resources_changed` / `mcp:prompts_changed` | 内容列表失效 |
+| `mcp:auth_required` / `mcp:auth_status` | OAuth 介入与状态变化 |
+| `mcp:config_warn` | 配置警告，可不含 serverId |
+| `mcp:log` | 脱敏诊断 `entry`，含方法、请求 ID、耗时与错误分类 |
+| `mcp:tool_test` | runId、toolName、status、durationMs；不包含参数或结果正文 |
+| `mcp:input_required` | 保留规格事件；MRTR 表单尚未实现 |
 
 | 端 | 目标形态 |
 |----|----------|
 | GUI | 服务卡 + 工具树 + 试跑 + 日志抽屉 + 逐工具批准 + OAuth/inputs |
-| TUI | `/mcp` 列表/重启/禁用；状态计数 |
+| TUI | `/mcp` 列表/重启/启停/历史日志；模型回合与管理操作互斥 |
 | CLI | `list\|check\|add\|remove\|toggle\|logs\|auth` |
+
+### 6.1 v1.16 实际契约（2026-10-06）
+
+- **诊断存储**：`diagnostics.js` 每进程环形缓冲最多 500 条 / 1 MiB，落在项目 `.deepseek-code/mcp-logs/`，保留最近 8 个运行文件。100 ms 合并写入，停止时 flush；JSON 原子替换，拒绝符号链接目录/文件。存储失败通过 `storageError` 显示，不阻止正常 MCP 操作。内核查询默认 100 条、最多 4000 条；CLI/TUI 默认 50 条、最多 500 条。
+- **采集内容**：仅保留帧结构摘要、方向、方法、请求 ID、耗时、状态和分类；参数、结果正文、OAuth 交换、HTTP 头和原始 stderr 不写帧日志。已知配置值和动态 OAuth 密钥在采集、读取与显示边界脱敏；JSON 导出遵守相同边界。level 为 debug/info/warn/error，category 为 transport/protocol/auth/permission/timeout/cancelled/tool/lifecycle。
+- **查看入口**：CLI `mcp logs [server]` 支持 limit/level/category/method/search 与 JSON；创建内核时 `autoInitMcp:false`，可读取已移除服务器的历史。TUI `/mcp [list|restart <server>|disable <server>|enable <server>|logs [server] [limit]]` 不调用模型。GUI 日志按需加载、过滤、刷新、导出。
+- **工具试跑**：`kernel.mcp.listTools/startToolTest/approveToolTest/cancelToolTest` 经同一 ToolExecutor 和权限引擎，固定 supervised。先校验原始 inputSchema 的有界 JSON Schema 子集；不支持的约束明确拒绝。GUI 简单 schema 生成字段，复杂 schema 可输入 JSON，仍受服务端校验。参数与可见结果限制 64 KiB；二进制省略，过长结果提示截断。批准只用于当前调用及固定参数，不写永久授权；最多 32 个待处理任务、批准有效期 5 分钟，重启/禁用/移除/身份变化使旧操作失效。destructive 仍拒绝。
+- **试跑权限与显示**：既有 autoApprove、用户信任和项目授权仍按权限引擎生效；需要新批准时，该批准只绑定当前试跑。批准前重新检查权限、工具定义及配置，取消后清除参数引用。参数内敏感字段在批准后的返回结果中仍脱敏。Schema 的关键字、类型与参数标识保持调用契约，描述/default/examples 等自由内容脱敏；日志不保留可能回显参数的远端 RPC 错误正文。
+- **真实取消**：工具执行、资源/提示词与 JSON-RPC 透传 AbortSignal；取消及时结束对应 pending，请求发出后发送 `notifications/cancelled`，HTTP 同时关闭该请求而保留其它并行请求。超时与用户取消分别记为 timeout/cancelled，迟到响应不能重新结算或触发重试。GUI 试跑取消与模型中断接入此路径。取消不承诺撤销服务端已经完成的副作用；TUI restart/enable/disable 等管理操作不支持 Esc 中断，会保持忙碌并明确提示等待。
+- **事件一致性**：17 类 MCP 事件进入登记、schema、回放 fixtures 和同一展示描述符；CLI/TUI/GUI 使用统一 serverId/status/method/requestId/durationMs 等字段。普通 debug/info 诊断默认不刷对话流，warn/error 可见；完整历史保留在诊断入口。`protocol_mode` 与 `input_required` 仅保留兼容登记，不代表 MRTR 已落地。
 
 ---
 

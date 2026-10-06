@@ -12,6 +12,7 @@ import { runTui } from "./tui.js";
 import { banner, color, commandLine, section, statusLine } from "./theme.js";
 import { buildEditPrompt, buildKernelOptions, runKernelAgentCommand, runKernelChatCommand, runKernelTestCommand } from "./apps/cli/kernel-runner.js";
 import { runMcpAuth } from "./apps/cli/mcp-auth.js";
+import { runMcpLogs } from "./apps/cli/mcp-logs.js";
 
 export async function runCli(argv, deps = {}) {
   const root = deps.root || process.cwd();
@@ -89,6 +90,11 @@ function parseArgs(argv) {
     const inline = equalAt < 0 ? undefined : raw.slice(equalAt + 1);
     if (inline !== undefined) {
       appendFlag(flags, key, inline);
+      continue;
+    }
+
+    if (command === "mcp" && rest[0] === "logs" && key === "json") {
+      appendFlag(flags, key, true);
       continue;
     }
 
@@ -442,6 +448,9 @@ function collectHttpAllowlist(srvConfig = {}, config = {}, flags = null) {
 
 export async function runMcp(root, args, flags = new Map(), deps = {}) {
   const action = args[0] || "list";
+  if (action === "logs") return runMcpLogs(root, args, flags, {
+    createKernelImpl: createKernel, buildKernelOptionsImpl: buildKernelOptions, loadConfigImpl: loadConfig, ...deps
+  });
   if (action === "resources" || action === "prompts") return runMcpContent(root, args, flags, deps);
   if (action === "auth") return runMcpAuth(root, args, flags, {
     createKernelImpl: createKernel, buildKernelOptionsImpl: buildKernelOptions, loadConfigImpl: loadConfig, ...deps
@@ -705,7 +714,7 @@ export async function runMcp(root, args, flags = new Map(), deps = {}) {
     return;
   }
 
-  throw new Error(`未知 MCP 操作 "${action}"。可使用 list、check、add、remove、toggle、policy、resources、prompts 或 auth。运行 inkstone help 查看用法。`);
+  throw new Error(`未知 MCP 操作 "${action}"。可使用 list、check、add、remove、toggle、policy、resources、prompts、logs 或 auth。运行 inkstone help 查看用法。`);
 }
 
 async function runMcpContent(root, args, flags, deps) {
@@ -852,6 +861,7 @@ ${commandLine("inkstone changes show latest", "查看修改详情")}
 ${commandLine("inkstone rollback latest", "回退最近修改")}
 ${commandLine("inkstone resume", "查看最近会话记录")}
 ${commandLine("inkstone mcp [list|check]", "管理与检查 MCP 外部扩展服务与工具")}
+${commandLine("inkstone mcp logs [server] [--limit 50] [--json]", "读取历史诊断日志；支持 --level/--category/--method/--search 过滤")}
 ${commandLine("inkstone mcp auth <server> [login|status|cancel|logout]", "OAuth 登录、查看状态、取消或清除本地凭据")}
 ${commandLine("inkstone mcp add <server> --url <url> --oauth", "添加 OAuth 服务；可指定 --client-id 和 --scopes")}
 ${commandLine("inkstone mcp resources <server> [list|templates]", "按需列出资源或 URI 模板")}

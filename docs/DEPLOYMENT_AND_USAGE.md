@@ -330,6 +330,35 @@ GUI 添加远程服务时勾选 OAuth，填写可选客户端 ID 与 scopes，�
 
 默认凭据位于 `~/.deepseek-code/credentials/mcp-oauth/`，加密落盘、自动刷新，按 server/issuer/resource/client/scopes 隔离。`DEEPSEEK_CODE_HOME` 替代用户 home 后仍追加 `.deepseek-code`。退出会清除该服务该资源的本地凭据，不代表远端撤销授权；需要彻底撤销时使用服务方账户设置。OAuth 仅接受 HTTPS，显式私网放行清单中的回环 HTTP 用于本机服务/测试；OAuth 请求不跟随重定向。
 
+### MCP 诊断与工具试跑（v1.16）
+
+CLI 可以读取以前运行留下的诊断，无需模型 API Key，也不会连接 MCP 服务：
+
+```bash
+node ./bin/inkstone.js mcp logs
+node ./bin/inkstone.js mcp logs filesystem --limit 100
+node ./bin/inkstone.js mcp logs remote --level error --category timeout
+node ./bin/inkstone.js mcp logs remote --method tools/call --search timeout
+node ./bin/inkstone.js mcp logs remote --limit 500 --json
+```
+
+`--limit` 默认 50，范围 1–500；`--level` 为 debug/info/warn/error，`--category` 为 transport/protocol/auth/permission/timeout/cancelled/tool/lifecycle。`--method` 精确匹配，`--search` 忽略大小写搜索。JSON 可重定向保存。历史按项目保存在 `.deepseek-code/mcp-logs/`，每次运行最多 500 条 / 1 MiB，保留最近 8 个运行文件；已移除服务仍可查询。日志只有结构摘要、请求 ID、耗时与错误，不保存完整参数、结果或原始 stderr。没有记录时会提示无匹配日志；读写失败会显示存储错误。
+
+TUI 输入以下命令直接管理当前内核：
+
+```text
+/mcp
+/mcp list
+/mcp restart filesystem
+/mcp disable filesystem
+/mcp enable filesystem
+/mcp logs filesystem 100
+```
+
+`/mcp logs` 默认查询全部服务的最近 50 条。管理命令不会调用模型；操作进行时等待其完成，再发送对话。Esc 仍用于中断模型回合，不能取消服务重启/启停；界面会提示等待。
+
+GUI 在服务卡片展开「诊断与工具试跑」，切到日志页后按需加载、筛选、刷新或导出 JSON。工具试跑页选择工具，填写参数字段或切换 JSON，点击运行；缺失参数、类型错误或不支持的 Schema 约束会先报告错误。需要审批时检查工具与参数后仅批准本次；该批准不变成永久规则，5 分钟过期。运行中可取消，服务切换/禁用/移除后旧结果不会覆盖新界面。参数和显示结果有 64 KiB 限制，二进制省略，超长输出提示截断。试跑直接执行工具，其实际副作用取决于工具本身；取消只能停止尚未结束的请求，不能撤销已完成的远端操作。
+
 ### 环境变量
 
 | 变量 | 对应配置 | 默认 |

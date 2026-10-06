@@ -101,25 +101,38 @@ export function describeEvent(event) {
 
   // MCP host events (v1.11.1) — protocol_mode / server_status / tools_* / auth / errors
   if (type.startsWith("mcp:") || type.startsWith("server_")) {
-    const payload = event;
-    const status = str(payload.status);
-    const serverId = str(payload.serverId) || str(payload.server);
-    const isError = type.includes("error") || status === "ERROR";
+    const payload = type === "mcp:log" && event.entry && typeof event.entry === "object" ? event.entry : event;
+    const status = str(payload.status) || ({ "mcp:server_disconnected": "DISCONNECTED", "mcp:server_removed": "REMOVED" })[type] || null;
+    const serverId = str(payload.serverId) || str(event.serverId) || str(payload.server);
+    const level = str(payload.level);
+    const isError = type.includes("error") || ["ERROR", "error", "failed"].includes(status) || level === "error";
     const severity = isError ? "danger"
-      : status === "DEGRADED" || type === "mcp:auth_required" || type === "mcp:input_required" ? "warn"
+      : level === "warn" || ["DEGRADED", "RECONNECTING", "cancelled", "denied", "awaiting_approval", "approval_required"].includes(status)
+        || ["mcp:auth_required", "mcp:input_required", "mcp:server_deprecated", "mcp:config_warn"].includes(type) ? "warn"
       : status === "CONNECTED" || status === "CONNECTING" || type === "mcp:tools_mounted" || type === "mcp:tools_changed" ? "success"
       : "info";
     const kind = isError ? "mcp-error"
       : type === "mcp:auth_required" || type === "mcp:input_required" ? "mcp-approval"
       : type === "mcp:tools_mounted" || type === "mcp:tools_changed" ? "mcp-tools"
       : "mcp-status";
-    return d(kind, src, severity, status === "CONNECTED" && kind === "mcp-status", {
+    const quiet = type === "mcp:log" ? severity === "info" : status === "CONNECTED" && kind === "mcp-status";
+    return d(kind, src, severity, quiet, {
       serverId,
       status,
       protocolMode: str(payload.protocolMode) || str(payload.protocol_mode),
       protocolVersion: str(payload.protocolVersion) || str(payload.protocol_version),
       toolCount: num(payload.toolCount) ?? num(payload.count),
-      message: str(payload.message) || str(payload.error?.message) || (payload.error ? str(String(payload.error)) : null)
+      message: str(payload.message) || str(payload.error?.message) || (payload.error ? str(String(payload.error)) : null) || str(payload.reason),
+      method: str(payload.method),
+      requestId: typeof payload.requestId === "number" ? payload.requestId : str(payload.requestId),
+      durationMs: num(payload.durationMs),
+      level,
+      category: str(payload.category),
+      direction: str(payload.direction),
+      progress: num(payload.progress),
+      total: num(payload.total),
+      runId: str(payload.runId),
+      toolName: str(payload.toolName)
     });
   }
 

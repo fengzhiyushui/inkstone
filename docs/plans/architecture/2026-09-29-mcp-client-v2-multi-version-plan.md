@@ -2,7 +2,7 @@
 
 - 类型：实施计划 (Plan)
 - 日期：2026-09-29
-- 状态：进行中（已推进至 v1.15.0，2026-10-06；v1.16.0+ 未开工）
+- 状态：进行中（已推进至 v1.16.0，2026-10-06；v1.17.0 未开工）
 - 关联：[MCP Client v2 设计规格](../../specs/architecture/2026-09-29-mcp-client-v2-design.md) · [v1.11.0 MCP 首版](../../specs/architecture/2026-09-28-v1.11.0-mcp-integration-design.md) · [post-V3 路线图](../../specs/architecture/2026-09-17-post-v3-roadmap-design.md) · [权限引擎](../../specs/backend/2026-05-30-v2-7-approval-resume-design.md)
 
 > 协议事实以 modelcontextprotocol.io **2026-07-28** 为准（2026-09-29 联网核对）：Modern 无握手、per-request `_meta`；Legacy `initialize`；标准 transport = stdio + Streamable HTTP。
@@ -52,7 +52,7 @@
 | 注册表 | `src/tools/registry.js` | ● | | | ● | | | | |
 | 权限 | `src/tools/permissions/**` | | | | ● | | | | |
 | 配置 | `src/config.js` · `src/apps/kernel-options.js` | | ● | ● | ● | | ● | | |
-| 组合根 | `src/index.js` | ● | ● | ● | ● | ● | ● | | |
+| 组合根 | `src/index.js` | ● | ● | ● | ● | ● | ● | ● | |
 | CLI | `src/cli.js` | ● | ● | ● | | ● | ● | ● | |
 | 事件契约 | `src/apps/event-contract.js` | ● | | | | | | ● | ● |
 | GUI | `gui/src/**` · host/preload | | ● | | ● | ● | ● | ● | ● |
@@ -188,22 +188,21 @@
 
 **验证**：26 项 OAuth 核心测试；真实 kernel + HTTP AS + MCP 覆盖登录、401 刷新、token 脱敏、重启恢复、注销、停止/移除竞态；fresh CLI 直接登录非默认 metadata 服务器；GUI host/IPC/浏览器与状态控制回归。全量 **1604 通过、0 失败、0 跳过**；`npm run check` 检查 **608 个 JS 文件**；GUI 构建与 `git diff --check` 通过。未调用真实外部 IdP。
 
-**下一步**：v1.16 G1–G6：诊断环形日志、工具试跑、TUI `/mcp`、事件一致性及在途请求取消。
+**后续衔接**：诊断环形日志、工具试跑、TUI `/mcp`、事件一致性及在途请求取消已在下节 v1.16 落地。
 
 ---
 
 ### v1.16.0 — 可观测与三端收口（minor）
 
-| ID | 任务 | 产出 |
-|----|------|------|
-| G1 | diagnostics | 帧日志环形缓冲、延迟、分类、脱敏 |
-| G2 | GUI 日志/试跑 | 过滤导出；schema 表单单次 call |
-| G3 | TUI `/mcp` | list/restart/disable/logs |
-| G4 | CLI `mcp logs` | 近 N 条 |
-| G5 | 事件契约补全 | 全部 `mcp:*` |
-| G6 | 测试 | 事件 schema、脱敏、CLI |
+**目标**：在三端查看同源诊断与服务状态，GUI 按权限安全试跑单个工具，补齐在途取消。
 
-**验收**：排障不靠手抓 stderr；三端状态一致。
+**结果（2026-10-06）**：G1–G6 实现完成。Hub 采集结构化帧摘要、请求耗时、错误分类与生命周期，按进程持久化环形日志；CLI 历史查询、TUI list/restart/disable/enable/logs、GUI 日志过滤/导出和 schema 表单试跑贯通。17 类 MCP 事件登记、schema、回放与三端展示统一；工具/内容请求的 signal 到达 JSON-RPC 与 HTTP 传输。
+
+**关键决策**：诊断每进程 500 条 / 1 MiB、保留 8 个运行文件；不记录参数/结果正文、OAuth 交换和原始 stderr，失败显示 storageError。内核历史查询默认 100、最多 4000 条，CLI/TUI 默认 50、最多 500 条；CLI 读取不初始化服务器。试跑固定 supervised，复用权限引擎和 ToolExecutor，原始 inputSchema 子集校验先于调用；32 个待处理上限、5 分钟一次性批准、64 KiB 参数/输出边界。取消只结束相应请求；TUI 管理操作仍等待完成，不宣称 Esc 可撤销重启。
+
+**验证**：CLI 参数前验与 fresh 子进程读取、stdio 不启动、日志动态脱敏及结构键保护、TUI busy/状态/错误回归、事件 schema 与 fixtures 回放、GUI 状态和 host/IPC、工具审批/重复批准/生命周期、真实 stdio/HTTP/SSE 取消及聊天执行/验证/修复/审批续跑中断均已覆盖。全量 **1674 通过、0 失败、0 跳过**；`npm run check` 检查 **623 个 JS 文件**；GUI 构建与 `git diff --check` 通过。Windows 冒烟测试在 native 尺寸与 renderer 视口不同步时恢复视口，保留真实 Inspector DOM 断言。
+
+**下一步**：v1.17 MRTR、elicitation 与订阅；默认关闭，显式开启，不属于本版交付。
 
 ---
 
@@ -276,7 +275,7 @@ git diff --check
 | v1.13.0 | **已完成**（2026-10-04，annotations 治理 + 三级批准 + destructive 硬约束） |
 | v1.14.0 | **已完成**（2026-10-06，resources/prompts 上下文闭环 + outputSchema 子集校验 + CLI/GUI） |
 | v1.15.0 | **已完成**（2026-10-06，OAuth 发现/PKCE/issuer 隔离/刷新 + CLI/GUI 登录） |
-| v1.16.0 | 未开工 |
+| v1.16.0 | **已完成**（2026-10-06，诊断/试跑/CLI/TUI/三端事件/在途取消） |
 | v1.17.0 | 未开工 |
 
 每版本落地后，将本文件对应小节收成「目标 / 结果 / 关键决策 / 验证」摘要，并在 CHANGELOG 记录。

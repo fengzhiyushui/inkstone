@@ -14,6 +14,8 @@ import { createBuiltinTools } from "./tools/builtin/index.js";
 import { createToolRegistry } from "./tools/registry.js";
 import { createToolExecutor } from "./tools/executor.js";
 import { McpHub } from "./tools/mcp/mcp-hub.js";
+import { MCP_HUB_EVENTS, safeMcpEvent } from "./tools/mcp/diagnostics.js";
+import { createMcpToolTrials } from "./tools/mcp/tool-trials.js";
 import { mountMcpCapabilityTools } from "./tools/mcp/capability-tools.js";
 import { createPolicyStore, validateApprovalScope, normalizeApprovalScope } from "./tools/mcp/tool-policy.js";
 import { createPermissionEngine } from "./tools/permissions/permission-engine.js";
@@ -195,10 +197,15 @@ export async function createKernel(root, options = {}) {
     oauthCredentialRoot: options.mcpOAuthCredentialRoot
   });
   const unmountMcpCapabilities = mountMcpCapabilityTools(mcpHub, toolRegistry, options.deepseek || {});
-  const authSubscriptions = ["auth_required", "auth_status"].map((name) => {
-    const forward = (event) => eventBus.publish(`mcp:${name}`, { session_id: sessionId, ...event });
+  const mcpSubscriptions = MCP_HUB_EVENTS.map((name) => {
+    const forward = (event) => eventBus.publish(`mcp:${name}`, { session_id: sessionId, ...safeMcpEvent(event, mcpHub) });
     mcpHub.on?.(name, forward);
     return () => mcpHub.removeListener?.(name, forward);
+  });
+  const mcpTrials = createMcpToolTrials({
+    hub: mcpHub, registry: toolRegistry, permissionEngine,
+    getContext: () => createPolicyContext({ projectId, projectRoot: root,
+      trustStore: options.trustStore || { rules: [] }, projectRules: mergeProjectRules() })
   });
   if (options.autoInitMcp !== false && mcpHub.serverConfigs.size > 0) {
     await mcpHub.initAll().catch(() => {});
@@ -469,6 +476,8 @@ export async function createKernel(root, options = {}) {
         turnId: executionOptions.turnId
       });
       policyContext.turnId = executionOptions.turnId;
+      policyContext.signal = executionOptions.signal;
+      policyContext.toolTimeoutMs = executionOptions.toolTimeoutMs ?? executionOptions.timeoutMs;
       return toolExecutor.execute(toolCall, policyContext);
     }
   };
@@ -524,35 +533,42 @@ export async function createKernel(root, options = {}) {
       flush: () => orchestrator.flushExperience()
     },
     async dispose() {
-      for (const unsubscribe of authSubscriptions) unsubscribe();
       if (kernelDisposed) return;
       kernelDisposed = true;
+      mcpTrials.dispose();
       try { await orchestrator.flushExperience?.(); } catch { /* best-effort */ }
       try { await experienceStore?.flush?.(); } catch { /* best-effort */ }
       unmountMcpCapabilities();
       try { await mcpHub?.stopAll?.(); } catch { /* best-effort */ }
+      for (const unsubscribe of mcpSubscriptions) unsubscribe();
       try { sessionManager.dispose?.(); } catch { /* best-effort */ }
       try { await projectLock?.release?.(); } catch { /* best-effort */ }
     },
     mcp: {
       hub: mcpHub,
+      getLogs: (serverId, options) => mcpHub.getLogs(serverId, options),
+      exportLogs: (serverId, options) => mcpHub.exportLogs(serverId, options),
+      listTools: (serverId) => mcpHub.listTools(serverId),
+      startToolTest: (serverId, toolName, params, options) => mcpTrials.start(serverId, toolName, params, options),
+      approveToolTest: (runId) => mcpTrials.approve(runId),
+      cancelToolTest: (runId) => mcpTrials.cancel(runId),
       listServers: () => mcpHub.listServers(),
       listInputs: () => mcpHub.listInputs(),
       setInputValue: (name, value) => mcpHub.setInputValue(name, value),
       getAuthStatus: (serverId) => mcpHub.getAuthStatus(serverId),
       startAuth: (serverId) => mcpHub.startAuth(serverId),
       cancelAuth: (serverId) => mcpHub.cancelAuth(serverId),
-      logoutAuth: (serverId) => mcpHub.logoutAuth(serverId),
-      restartServer: (serverId) => mcpHub.restartServer(serverId),
-      toggleServer: (serverId, enabled) => mcpHub.toggleServer(serverId, enabled),
-      addServer: (serverId, config, opts) => mcpHub.addServer(serverId, config, opts),
-      removeServer: (serverId) => mcpHub.removeServer(serverId),
+      logoutAuth: (serverId) => { mcpTrials.cancelServer(serverId); return mcpHub.logoutAuth(serverId); },
+      restartServer: (serverId) => { mcpTrials.cancelServer(serverId); return mcpHub.restartServer(serverId); },
+      toggleServer: (serverId, enabled) => { mcpTrials.cancelServer(serverId); return mcpHub.toggleServer(serverId, enabled); },
+      addServer: (serverId, config, opts) => { mcpTrials.cancelServer(serverId); return mcpHub.addServer(serverId, config, opts); },
+      removeServer: (serverId) => { mcpTrials.cancelServer(serverId); return mcpHub.removeServer(serverId); },
       listResources: (serverId, opts) => mcpHub.listResources(serverId, opts),
       listResourceTemplates: (serverId, opts) => mcpHub.listResourceTemplates(serverId, opts),
       readResource: (serverId, uri, opts) => mcpHub.readResource(serverId, uri, opts),
       listPrompts: (serverId, opts) => mcpHub.listPrompts(serverId, opts),
       getPrompt: (serverId, name, args, opts) => mcpHub.getPrompt(serverId, name, args, opts),
-      callTool: (namespacedName, params) => mcpHub.callTool(namespacedName, params)
+      callTool: (namespacedName, params, options) => mcpHub.callTool(namespacedName, params, options)
     },
     metrics: {
       getUsage() {

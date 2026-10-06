@@ -46,6 +46,8 @@ export class SseTransport extends EventEmitter {
     this.deprecated = true;
     this.supportsRetry = false; // legacy 通道靠长连复用,不适用"断流重发"语义
     this._controller = null;
+    this._postControllers = new Set();
+    this._requestControllers = new Map();
   }
 
   setProtocolVersion(version) {
@@ -83,11 +85,12 @@ export class SseTransport extends EventEmitter {
   start() {
     if (this.state === "running" || this.state === "starting") return;
     this.state = "starting";
+    this.endpoint = null;
     this.emit("deprecated", { reason: LEGACY_SSE_DEPRECATION });
     // 长连 GET:不阻塞 start();失败经 error 事件上报。
     this._openStream()
-      .then(() => { this.state = "running"; this.emit("connected", { url: this.url, legacy: true }); })
       .catch((err) => {
+        if (this.state === "stopped" || this.state === "stopping") return;
         this.state = "error";
         this.lastError = err;
         this.emit("error", err);
@@ -109,6 +112,10 @@ export class SseTransport extends EventEmitter {
       { method: "GET", headers, timeoutMs: 0, signal: controller.signal, stream: true },
       this.oauth
     );
+    if (controller.signal.aborted) {
+      response.stream?.destroy?.();
+      controller.signal.throwIfAborted();
+    }
 
     if (response.status >= 400) {
       throw Object.assign(new Error(`HTTP ${response.status} opening SSE stream`), {
@@ -141,6 +148,9 @@ export class SseTransport extends EventEmitter {
       }
     });
 
+    this.state = "running";
+    this.emit("connected", { url: this.url, legacy: true });
+
     response.stream.setEncoding?.("utf8");
     await new Promise((resolve, reject) => {
       response.stream.on("data", (chunk) => parser.feed(String(chunk)));
@@ -155,7 +165,7 @@ export class SseTransport extends EventEmitter {
     }
   }
 
-  send(message) {
+  send(message, { timeoutMs = this.timeoutMs } = {}) {
     if (this.state === "stopped" || this.state === "stopping") {
       throw new Error(`SseTransport: cannot send message while state is '${this.state}'`);
     }
@@ -163,13 +173,30 @@ export class SseTransport extends EventEmitter {
       throw new Error("SseTransport: endpoint not established yet");
     }
     // POST 到 endpoint;响应经长连回流,这里只关心是否被接受。
-    this._post(message).catch((err) => {
+    const controller = new AbortController();
+    this._postControllers.add(controller);
+    if (message?.id != null) this._requestControllers.set(message.id, controller);
+    this._post(message, { controller, timeoutMs }).catch((err) => {
+      if (controller.signal.aborted) return;
+      if (message?.id != null) err.requestId = message.id;
       this.lastError = err;
       this.emit("error", err);
+    }).finally(() => {
+      this._postControllers.delete(controller);
+      if (this._requestControllers.get(message?.id) === controller) this._requestControllers.delete(message.id);
     });
   }
 
-  async _post(message) {
+  cancelRequest(id, reason = new Error("SSE request cancelled")) {
+    const controller = this._requestControllers.get(id);
+    if (!controller) return false;
+    this._requestControllers.delete(id);
+    this._postControllers.delete(controller);
+    controller.abort(reason);
+    return true;
+  }
+
+  async _post(message, { controller, timeoutMs }) {
     const body = JSON.stringify(message);
     const headers = {
       "Content-Type": "application/json",
@@ -183,7 +210,7 @@ export class SseTransport extends EventEmitter {
     const response = await oauthHttpRequest(
       this.endpoint,
       { allowlist: this.allowlist, lookup: this.lookup, maxRedirects: this.maxRedirects },
-      { method: "POST", headers, body, timeoutMs: this.timeoutMs },
+      { method: "POST", headers, body, timeoutMs, signal: controller.signal },
       this.oauth,
       this.url
     );
@@ -196,13 +223,16 @@ export class SseTransport extends EventEmitter {
   }
 
   async close() {
-    if (this.state === "stopped" || this.state === "idle") {
+    if (this.state === "stopped" && !this._controller && !this._postControllers.size) {
       this.state = "stopped";
       return;
     }
     this.state = "stopping";
     try { this._controller?.abort(new Error("SseTransport closed")); } catch { /* best-effort */ }
     this._controller = null;
+    for (const controller of this._postControllers) controller.abort(new Error("SseTransport closed"));
+    this._postControllers.clear();
+    this._requestControllers.clear();
     this.state = "stopped";
     this.emit("close", { code: 0, signal: null });
   }
