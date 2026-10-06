@@ -14,6 +14,18 @@
 
 ---
 
+## v1.14.0 — 2026-10-06 · MCP 资源、提示词与输出校验（preview）
+
+- **能力面 E1–E3**：resources list/read/templates、prompts list/get 贯通 Client → Hub → kernel；按已连接服务的 capability 动态挂载 `mcp_resources` / `mcp_prompts`，资源和提示词以普通 tool 内容进入模型上下文，外部 system 角色不会提升权限。能力缺失不发业务请求，内容服务可不提供 tools。
+- **边界与缓存**：列表默认 5 页 / 200 项 / 1 MiB，read/get 默认 64 KiB；内存缓存最多 64 项 / 2 MiB / 5 分钟，遵守 ttlMs 并在断开/变更时失效。分页截断可续读，重复游标停止；`inkstone-page:` 仅当前客户端有效，不能跨 CLI 进程复用。
+- **输出 E4**：有界 JSON Schema 2020-12 子集校验原始 structuredContent；未知断言、复杂正则、远程引用、缺失内容或不匹配明确报错。挂载 MCP 工具返回 ToolExecutor 的标准对象，修复原先返回字符串导致模型看不到结果的问题，并保留 isError/resultType/脱敏 metadata。
+- **CLI / GUI E5**：`mcp resources|prompts` 支持分页上限、资源读取和提示词参数；GUI 增资源树、URI 模板、提示词浏览、预览与「放入对话」草稿，不自动发送。CLI/GUI 默认 1 页 / 50 项 / 64 KiB，按需连接目标服务。共享脱敏覆盖值、对象键、RPC 错误和 binary；异常服务描述符以错误呈现。
+- **治理接线修复**：持久授权进入正常 runtime 与公开 tools.execute；工具配置归一化保留 risk；动态 add 保留 headers/allowlist/trust/tools；公开 add/remove 门面与 GUI 添加错误处理补齐。跨新 kernel 的真实批准回归覆盖 project/always、session 不持久化及 destructive 硬拒绝。
+- **验证 E6**：本地 stdio mock → 内核 → 模拟模型完整验证资源/提示词上下文、错误脱敏、能力卸载；CLI、GUI host/IPC/草稿及权限/缓存/分页/Schema 回归通过。全量 `npm test` **1549 通过、零失败、零跳过**；`npm run check` 逐一检查 **596 个 JS 文件**，GUI 构建及 `git diff --check` 通过。check 脚本修复旧版 Node 多路径参数漏检。
+- **版本边界**：OAuth 留待 v1.15，诊断与 TUI `/mcp` 留待 v1.16，MRTR 留待 v1.17。在途 AbortSignal 尚未接入 JSON-RPC，当前仍依赖请求前检查和既有 RPC 超时；不将其记为即时取消完成。
+
+---
+
 ## v1.13.1 — 2026-10-05 · MCP 工具治理闭环与回归修复
 
 > 补丁版本：修复 v1.13.0「三级批准」在产品中不可达的接线断裂，恢复被误改的 `autoApprove` 语义，并补上用户显式风险覆盖的逃生阀。
