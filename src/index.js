@@ -133,8 +133,7 @@ export async function createKernel(root, options = {}) {
    * 顺序:MCP 策略在前 —— 它们是用户在批准菜单里点"本项目/永久"得到的最明确决定,
    * 应优先于更笼统的既有规则命中。destructive 仍由引擎在规则匹配**之前**硬拒绝。
    */
-  function mergeProjectRules() {
-    const base = options.projectRules || [];
+  function mergeProjectRules(base = options.projectRules || []) {
     const fromPolicy = mcpPolicyStore?.asRules?.() || [];
     return [...fromPolicy, ...base];
   }
@@ -226,7 +225,7 @@ export async function createKernel(root, options = {}) {
         projectId: executionOptions.projectId || projectId,
         projectRoot: executionOptions.projectRoot || root,
         trustStore: executionOptions.trustStore || options.trustStore || { rules: [] },
-        projectRules: executionOptions.projectRules || options.projectRules || [],
+        projectRules: mergeProjectRules(executionOptions.projectRules || options.projectRules || []),
         approvalCache,
         memoryRoot: "memoryRoot" in executionOptions ? executionOptions.memoryRoot : (options.memoryRoot || null)
       });
@@ -251,7 +250,7 @@ export async function createKernel(root, options = {}) {
         projectId: permissionContext?.project_id || approvalContext.options?.projectId || projectId,
         projectRoot: permissionContext?.project_root || root,
         trustStore: permissionContext ? { rules: permissionContext.trust_store_rules || [] } : (options.trustStore || { rules: [] }),
-        projectRules: mergeProjectRules(),
+        projectRules: mergeProjectRules(permissionContext?.project_rules || approvalContext.options?.projectRules || options.projectRules || []),
         approvalCache,
         memoryRoot: permissionContext?.memory_root ?? options.memoryRoot ?? null
       });
@@ -453,10 +452,10 @@ export async function createKernel(root, options = {}) {
     async execute(toolCall, executionOptions = {}) {
       const policyContext = createPolicyContext({
         autonomy: executionOptions.autonomy || "gated",
-        projectId: executionOptions.projectId || sessionId,
+        projectId: executionOptions.projectId || projectId,
         projectRoot: root,
-        trustStore: options.trustStore || { rules: [] },
-        projectRules: options.projectRules || [],
+        trustStore: executionOptions.trustStore || options.trustStore || { rules: [] },
+        projectRules: mergeProjectRules(executionOptions.projectRules || options.projectRules || []),
         approvalCache,
         memoryRoot: options.memoryRoot || null,
         turnId: executionOptions.turnId
@@ -532,6 +531,8 @@ export async function createKernel(root, options = {}) {
       setInputValue: (name, value) => mcpHub.setInputValue(name, value),
       restartServer: (serverId) => mcpHub.restartServer(serverId),
       toggleServer: (serverId, enabled) => mcpHub.toggleServer(serverId, enabled),
+      addServer: (serverId, config, opts) => mcpHub.addServer(serverId, config, opts),
+      removeServer: (serverId) => mcpHub.removeServer(serverId),
       callTool: (namespacedName, params) => mcpHub.callTool(namespacedName, params)
     },
     metrics: {
