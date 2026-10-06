@@ -58,6 +58,35 @@ export function createAgentRuntime({
   function getState() { return { ...lifecycle }; }
   function assertNotInterrupted(generation) { if (turnGeneration !== generation) throw new InterruptedError(); }
 
+  // Bind each execution phase to its turn's signal. Reading the mutable current
+  // controller inside a late tool callback could attach an old turn to a new one.
+  function toolExecutorFor(signal) {
+    if (!executeTool) return null;
+    return async (call, context = {}) => {
+      if (!signal || signal.aborted) throw new InterruptedError();
+      const sources = context.signal && context.signal !== signal ? [signal, context.signal] : [signal];
+      const controller = new AbortController();
+      const listeners = sources.map((source) => {
+        const onAbort = () => controller.abort(source.reason);
+        if (source.aborted) onAbort();
+        else source.addEventListener("abort", onAbort, { once: true });
+        return [source, onAbort];
+      });
+      try {
+        controller.signal.throwIfAborted();
+        const result = await executeTool(call, { ...context, signal: controller.signal });
+        if (signal.aborted) throw new InterruptedError();
+        controller.signal.throwIfAborted();
+        return result;
+      } catch (error) {
+        if (signal.aborted) throw new InterruptedError();
+        throw error;
+      } finally {
+        for (const [source, onAbort] of listeners) source.removeEventListener("abort", onAbort);
+      }
+    };
+  }
+
   async function send(message, options = {}) {
     if (pausedTurnStore.size() > 0) {
       const err = new Error("approval is awaiting resolution");
@@ -67,6 +96,7 @@ export function createAgentRuntime({
     if (currentTurnId) { const err = new Error("another turn is in progress"); err.code = "BUSY"; throw err; }
     const generation = ++turnGeneration;
     currentAbortController = new AbortController();
+    const signal = currentAbortController.signal;
     let turn = createAgentTurn({ sessionId, userMessage: message, autonomy: options.autonomy || "gated" });
     const permissionContext = buildPermissionContext(options, turn);
     currentTurnId = turn.id;
@@ -89,12 +119,13 @@ export function createAgentRuntime({
         phase: "execute",
         options
       });
+      assertNotInterrupted(generation);
 
       let response;
       if (classification.task_type === "query" || !modelGateway?.invoke || !executeTool) {
-        response = await runReplyFastPath({ message, classification, turn, options, signal: currentAbortController.signal, context });
+        response = await runReplyFastPath({ message, classification, turn, options, signal, context });
       } else {
-        response = await runToolLoopPath({ message, classification, turn, options, signal: currentAbortController.signal, context, permissionContext });
+        response = await runToolLoopPath({ message, classification, turn, options, signal, context, permissionContext });
       }
       assertNotInterrupted(generation);
 
@@ -173,7 +204,7 @@ export function createAgentRuntime({
       permissionContext,
       modelGateway,
       toolSchemas: typeof toolSchemas === "function" ? toolSchemas() : toolSchemas,
-      executeTool,
+      executeTool: toolExecutorFor(signal),
       createPolicyContext: ({ turnId, toolCall, phase }) => createPolicyContext({
         ...policyOptionsFromPermissionContext(permissionContext, { autonomy: options.autonomy || turn.autonomy }),
         turnId,
@@ -201,7 +232,7 @@ export function createAgentRuntime({
       turnId: turn.id,
       autonomy: permissionContext?.autonomy || options.autonomy || turn.autonomy,
       toolResults: loop.toolResults,
-      executeTool,
+      executeTool: toolExecutorFor(signal),
       createPolicyContext: ({ turnId, toolCall, phase }) => createPolicyContext({
         ...policyOptionsFromPermissionContext(permissionContext, { autonomy: "auto" }),
         turnId,
@@ -245,7 +276,7 @@ export function createAgentRuntime({
         classification,
         modelGateway,
         toolSchemas: typeof toolSchemas === "function" ? toolSchemas() : toolSchemas,
-        executeTool,
+        executeTool: toolExecutorFor(signal),
         createPolicyContext: ({ turnId, toolCall, phase }) => createPolicyContext({
           ...policyOptionsFromPermissionContext(permissionContext, {
             autonomy: phase === "verify" ? "auto" : (options.autonomy || turn.autonomy)
@@ -290,9 +321,12 @@ export function createAgentRuntime({
     const recordPermissionContext = permissionContextForRecord(record);
     currentTurnId = record.turn_id;
     currentAbortController = new AbortController();
+    const signal = currentAbortController.signal;
+    const generation = ++turnGeneration;
     try {
       publish(eventBus, "approval:resolved", { approval_id: approvalId, decision: normalized });
       await flushEvents();
+      assertNotInterrupted(generation);
 
       if (normalized === "deny") {
         await clearConsumedPausedRecord(approvalId);
@@ -312,10 +346,10 @@ export function createAgentRuntime({
 
       lifecycle = transitionLifecycle(lifecycle, { to: "execute", reason: "approval resolved", channel: "act" });
       if (record.resume_state.repair_context?.approval_phase === "verify") {
-        return await resumeRepairVerifierApproval({ record, approvalId, permissionContext: recordPermissionContext });
+        return await resumeRepairVerifierApproval({ record, approvalId, permissionContext: recordPermissionContext, signal });
       }
       if (record.resume_state.verification_context?.approval_phase === "verify") {
-        return await resumeRuntimeVerifierApproval({ record, approvalId, permissionContext: recordPermissionContext });
+        return await resumeRuntimeVerifierApproval({ record, approvalId, permissionContext: recordPermissionContext, signal });
       }
 
       await grantApprovalForToolCall(record.resume_state.pending_tool_call, {
@@ -326,6 +360,7 @@ export function createAgentRuntime({
         scope: approvalScope
       });
       await publishTurnResumed(record, approvalId);
+      assertNotInterrupted(generation);
       const resumeOptions = record.resume_state.options || {};
       // 暂停时已消耗的预算续扣(executor-loop 在 resume_state.budget_spent 落盘),
       // 避免审批暂停/续跑把已计 token/调用次数清零而实际超限。
@@ -339,7 +374,7 @@ export function createAgentRuntime({
       const loop = await runAfterClearingConsumedPause(approvalId, () => resumeExecutorLoop({
         resumeState: record.resume_state,
         modelGateway,
-        executeTool,
+        executeTool: toolExecutorFor(signal),
         createPolicyContext: ({ turnId, toolCall, phase }) => createPolicyContext({
           ...policyOptionsFromPermissionContext(recordPermissionContext, { autonomy: recordPermissionContext.autonomy || record.turn.autonomy }),
           turnId,
@@ -347,12 +382,13 @@ export function createAgentRuntime({
           phase
         }),
         eventBus,
-        signal: currentAbortController.signal,
+        signal,
         budget,
         modelTimeoutMs: resumeOptions.modelTimeoutMs ?? modelTimeoutMs,
         maxToolCallRepairs: resumeOptions.maxToolCallRepairs ?? maxToolCallRepairs,
         sessionId
       }));
+      assertNotInterrupted(generation);
       if (loop.status === "awaiting_approval") {
         const resumeState = preserveRepairContextOnRePause(record.resume_state, loop.resume_state);
         await savePausedRecord({
@@ -387,7 +423,7 @@ export function createAgentRuntime({
           classification: record.resume_state.classification || { task_type: "edit" },
           modelGateway,
           toolSchemas: typeof toolSchemas === "function" ? toolSchemas() : toolSchemas,
-          executeTool,
+          executeTool: toolExecutorFor(signal),
           createPolicyContext: ({ turnId, toolCall, phase }) => createPolicyContext({
             ...policyOptionsFromPermissionContext(recordPermissionContext, {
               autonomy: phase === "verify" ? "auto" : (recordPermissionContext.autonomy || record.turn.autonomy)
@@ -400,7 +436,7 @@ export function createAgentRuntime({
           initialVerification: ctx.initial_verification,
           initialToolResults: ctx.initial_tool_results || [],
           eventBus,
-          signal: currentAbortController.signal,
+          signal,
           maxRepairAttempts: ctx.max_repair_attempts,
           modelTimeoutMs: record.resume_state.options?.modelTimeoutMs ?? modelTimeoutMs,
           options: record.resume_state.options || {},
@@ -462,7 +498,7 @@ export function createAgentRuntime({
         classification: record.resume_state.classification || { task_type: "edit" },
         loop,
         options: record.resume_state.options || {},
-        signal: currentAbortController.signal,
+        signal,
         context: record.resume_state.context || null,
         permissionContext: recordPermissionContext,
         budget
@@ -503,6 +539,15 @@ export function createAgentRuntime({
       currentAbortController = null;
       return { status: "complete", state: "idle", content: repaired.content, turn: finalTurn, verification: repaired.verification, repair: repaired.repair || null };
     } catch (error) {
+      // An interrupted approval must not mark the runtime failed or clear a
+      // newer turn that started while the cancelled tool was unwinding.
+      if (turnGeneration !== generation || currentTurnId !== record.turn_id) throw error;
+      if (error instanceof InterruptedError || error.name === "AbortError") {
+        currentTurnId = null;
+        currentAbortController = null;
+        lifecycle = transitionLifecycle(lifecycle, { to: "idle", reason: error.message, channel: null });
+        throw error instanceof InterruptedError ? error : new InterruptedError(error.message);
+      }
       lifecycle = transitionLifecycle(lifecycle, { to: "failed", reason: error.message, channel: lifecycle.channel });
       publish(eventBus, "agent:error", { turn_id: record.turn_id, message: error.message });
       currentTurnId = null;
@@ -546,7 +591,7 @@ export function createAgentRuntime({
     return pausedTurnStore.restore(record);
   }
 
-  async function resumeRuntimeVerifierApproval({ record, approvalId, permissionContext }) {
+  async function resumeRuntimeVerifierApproval({ record, approvalId, permissionContext, signal }) {
     const ctx = record.resume_state.verification_context;
     const pendingToolCall = verifierPendingToolCallForResume(
       record.resume_state.pending_tool_call,
@@ -561,7 +606,7 @@ export function createAgentRuntime({
       permission_context: permissionContext
     });
     await publishTurnResumed(record, approvalId);
-    const verifierResult = await runAfterClearingConsumedPause(approvalId, () => executeTool(
+    const verifierResult = await runAfterClearingConsumedPause(approvalId, () => toolExecutorFor(signal)(
       pendingToolCall,
       createPolicyContext({
         ...policyOptionsFromPermissionContext(permissionContext, { autonomy: "auto" }),
@@ -621,7 +666,7 @@ export function createAgentRuntime({
         classification: record.resume_state.classification || { task_type: "edit" },
         modelGateway,
         toolSchemas: typeof toolSchemas === "function" ? toolSchemas() : toolSchemas,
-        executeTool,
+        executeTool: toolExecutorFor(signal),
         createPolicyContext: ({ turnId, toolCall, phase }) => createPolicyContext({
           ...policyOptionsFromPermissionContext(permissionContext, {
             autonomy: phase === "verify" ? "auto" : (permissionContext.autonomy || record.turn.autonomy)
@@ -634,7 +679,7 @@ export function createAgentRuntime({
         initialVerification: verification,
         initialToolResults: ctx.tool_results || [],
         eventBus,
-        signal: currentAbortController.signal,
+        signal,
         maxRepairAttempts: record.resume_state.options?.maxRepairAttempts || maxRepairAttempts,
         options: record.resume_state.options || {},
         permissionContext,
@@ -687,7 +732,7 @@ export function createAgentRuntime({
     );
   }
 
-  async function resumeRepairVerifierApproval({ record, approvalId, permissionContext }) {
+  async function resumeRepairVerifierApproval({ record, approvalId, permissionContext, signal }) {
     const ctx = record.resume_state.repair_context;
     const pendingToolCall = verifierPendingToolCallForResume(
       record.resume_state.pending_tool_call,
@@ -702,7 +747,7 @@ export function createAgentRuntime({
       permission_context: permissionContext
     });
     await publishTurnResumed(record, approvalId);
-    const verifierResult = await runAfterClearingConsumedPause(approvalId, () => executeTool(
+    const verifierResult = await runAfterClearingConsumedPause(approvalId, () => toolExecutorFor(signal)(
       pendingToolCall,
       createPolicyContext({
         ...policyOptionsFromPermissionContext(permissionContext, { autonomy: "auto" }),
@@ -777,7 +822,7 @@ export function createAgentRuntime({
         classification: record.resume_state.classification || { task_type: "edit" },
         modelGateway,
         toolSchemas: typeof toolSchemas === "function" ? toolSchemas() : toolSchemas,
-        executeTool,
+        executeTool: toolExecutorFor(signal),
         createPolicyContext: ({ turnId, toolCall, phase }) => createPolicyContext({
           ...policyOptionsFromPermissionContext(permissionContext, {
             autonomy: phase === "verify" ? "auto" : (permissionContext.autonomy || record.turn.autonomy)
@@ -790,7 +835,7 @@ export function createAgentRuntime({
         initialVerification: ctx.initial_verification,
         initialToolResults: ctx.initial_tool_results || [],
         eventBus,
-        signal: currentAbortController.signal,
+        signal,
         maxRepairAttempts: ctx.max_repair_attempts,
         options: record.resume_state.options || {},
         permissionContext,
