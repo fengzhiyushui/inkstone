@@ -15,8 +15,9 @@ import Dock from "./components/v4/Dock.jsx";
 import SettingsPanels from "./components/Settings/Settings.jsx";
 import SensitiveNoticeModal from "./components/v4/SensitiveNoticeModal.jsx";
 import ConfirmModal from "./components/v4/ConfirmModal.jsx";
+import McpInputRequests from "./components/v4/McpInputRequests.jsx";
 
-const VERSION = "1.16.0";
+const VERSION = "1.17.0";
 
 export default function App() {
   const [state, dispatch] = useWorkbench();
@@ -25,6 +26,7 @@ export default function App() {
   const view = state.view;
   const settingsOpen = Boolean(state.settingsOpen);
   const [confirmState, setConfirmState] = useState(null);
+  const [mcpInputOpen, setMcpInputOpen] = useState(false);
 
   const requestConfirm = useCallback((config) => {
     return new Promise((resolve) => {
@@ -175,7 +177,7 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e) => {
-      const modalOpen = Boolean(state.sensitiveNotice);
+      const modalOpen = Boolean(state.sensitiveNotice || mcpInputOpen);
       if (!shouldHandleShellShortcut(e, { settingsOpen, modalOpen })) return;
       const k = e.key.toLowerCase();
       if (k === "n") { e.preventDefault(); onNewSession(state.currentProject); }
@@ -186,9 +188,9 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onNewSession, toggleRail, toggleRightbar, openSettings, toggleTheme, state.currentProject, settingsOpen, state.sensitiveNotice]);
+  }, [onNewSession, toggleRail, toggleRightbar, openSettings, toggleTheme, state.currentProject, settingsOpen, state.sensitiveNotice, mcpInputOpen]);
 
-  const hasModal = Boolean(settingsOpen || state.sensitiveNotice);
+  const hasModal = Boolean(settingsOpen || state.sensitiveNotice || mcpInputOpen);
   useEffect(() => {
     if (typeof kernel?.setModalActive === "function") {
       kernel.setModalActive(hasModal).catch(() => {});
@@ -287,6 +289,7 @@ export default function App() {
       />
       <SettingsPanels t={t} state={state} kernel={kernel} dispatch={dispatch} version={VERSION}
         open={settingsOpen} onClose={closeSettings} />
+      <McpInputRequests key={state.currentProject || "mcp-input"} kernel={kernel} t={t} onOpenChange={setMcpInputOpen} />
       <SensitiveNoticeModal
         notice={state.sensitiveNotice}
         t={t}

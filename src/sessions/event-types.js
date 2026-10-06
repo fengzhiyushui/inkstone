@@ -14,6 +14,8 @@ export const SESSION_EVENT_TYPES = Object.freeze([
   "mcp:server_removed",
   "mcp:protocol_mode",
   "mcp:input_required",
+  "mcp:input_resolved",
+  "mcp:subscription_status",
   "mcp:log",
   "mcp:tool_test",
   "session:start",

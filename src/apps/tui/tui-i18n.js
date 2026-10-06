@@ -3,6 +3,11 @@ export const STRINGS = {
   zh: {
     "input.placeholder": "输入消息,/ 呼出命令",
     "input.approval": "审批:y 仅本次 · p 本项目 · a 永久 · n·Esc 拒绝",
+    "mcpInput.title": "MCP 输入 · {server}",
+    "mcpInput.hidden": "输入已隐藏,确认后才发送到服务;Esc 取消。",
+    "mcpInput.optional": "可选",
+    "mcpInput.next": "Enter 下一项 · Esc 取消",
+    "mcpInput.confirm": "发送 {count} 项到 {server}? y 确认 · n 拒绝 · Esc 取消",
     "sensitive.title": "!! 敏感文件写入 —— 这不是权限审批",
     "sensitive.body": "完整原文将写入变更记录以支持回滚,记录不脱敏:",
     "sensitive.reason.secret": "密钥文件",
@@ -107,6 +112,11 @@ export const STRINGS = {
   en: {
     "input.placeholder": "Type a message, / for commands",
     "input.approval": "Approval: y once · p this project · a always · n·Esc deny",
+    "mcpInput.title": "MCP input · {server}",
+    "mcpInput.hidden": "Values hidden; sent only after confirmation. Esc cancels.",
+    "mcpInput.optional": "optional",
+    "mcpInput.next": "Enter next field · Esc cancel",
+    "mcpInput.confirm": "Send {count} field(s) to {server}? y confirm · n decline · Esc cancel",
     "sensitive.title": "!! SENSITIVE FILE WRITE -- this is NOT a permission prompt",
     "sensitive.body": "Full contents go into the change record for rollback; that record is not redacted:",
     "sensitive.reason.secret": "secret file",

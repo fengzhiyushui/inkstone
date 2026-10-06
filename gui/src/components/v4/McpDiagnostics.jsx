@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { checkedDiagnosticLogs, checkedDiagnosticTools, createToolTestController, schemaFields, toolParameters } from "../../state/mcp-diagnostics.js";
 
-function SchemaField({ field, value, onChange, disabled }) {
+export function SchemaField({ field, value, onChange, disabled }) {
   const { name, definition, required } = field;
   const common = { className: "mcp-form-input mono", value: value ?? "", disabled, onChange: (event) => onChange(event.target.value), autoComplete: "off" };
   const choices = Array.isArray(definition.enum) ? definition.enum : definition.type === "boolean" ? [true, false] : null;

@@ -212,6 +212,8 @@ export function AddMcpModal({ open, onClose, onAdd, onAdded, t }) {
   const [allowPrivate, setAllowPrivate] = React.useState("");
   // v1.13.0:是否信任该 server 自报的 annotations
   const [trustServer, setTrustServer] = React.useState(false);
+  const [elicitationEnabled, setElicitationEnabled] = React.useState(false);
+  const [subscriptionsEnabled, setSubscriptionsEnabled] = React.useState(false);
 
   const PRESETS = [
     {
@@ -338,6 +340,8 @@ export function AddMcpModal({ open, onClose, onAdd, onAdded, t }) {
           autoApprove: parsedAutoApprove,
           headers: parsedHeaders,
           ...oauthConfig,
+          ...(elicitationEnabled ? { elicitation: { enabled: true } } : {}),
+          ...(subscriptionsEnabled ? { subscriptions: { enabled: true } } : {}),
           ...(allowlist.length ? { allowlist } : {}),
           ...(trustServer ? { trust: true } : {})
         });
@@ -385,6 +389,8 @@ export function AddMcpModal({ open, onClose, onAdd, onAdded, t }) {
         args: parsedArgs,
         autoApprove: parsedAutoApprove,
         env: parsedEnv,
+        ...(elicitationEnabled ? { elicitation: { enabled: true } } : {}),
+        ...(subscriptionsEnabled ? { subscriptions: { enabled: true } } : {}),
         ...(trustServer ? { trust: true } : {})
       });
 
@@ -582,6 +588,12 @@ export function AddMcpModal({ open, onClose, onAdd, onAdded, t }) {
               />
             </div>
 
+            <label className="mcp-trust-row"><input type="checkbox" checked={elicitationEnabled}
+              onChange={(event) => setElicitationEnabled(event.target.checked)} /> {t("mcp.input.enable")}</label>
+            <p className="mcp-input-desc">{t("mcp.input.enableHint")}</p>
+            <label className="mcp-trust-row"><input type="checkbox" checked={subscriptionsEnabled}
+              onChange={(event) => setSubscriptionsEnabled(event.target.checked)} /> {t("mcp.subscriptions.enable")}</label>
+            <p className="mcp-input-desc">{t("mcp.subscriptions.enableHint")}</p>
             <div className="cm-actions" style={{ marginTop: "20px" }}>
               <button type="button" className="cm-btn cm-cancel" onClick={onClose} disabled={submitting}>
                 取消
@@ -647,6 +659,7 @@ export function McpView({ t, kernel, onRequestConfirm, onUseContent }) {
   }, [refresh]);
 
   React.useEffect(() => kernel?.subscribeMcpAuthChanges?.(() => { void refresh(); }), [kernel, refresh]);
+  React.useEffect(() => kernel?.subscribeMcpSubscriptionChanges?.(() => { void refresh(); }), [kernel, refresh]);
 
   const refreshInputs = React.useCallback(async () => {
     if (!kernel?.listMcpInputs) {
@@ -917,6 +930,10 @@ export function McpView({ t, kernel, onRequestConfirm, onUseContent }) {
 
                     {srv.oauth?.enabled && <McpOAuthControls serverId={srv.serverId} initialStatus={srv.authStatus}
                       disabled={srv.disabled} kernel={kernel} t={t} onChanged={refresh} />}
+                    {srv.elicitation?.enabled && <p className="mcp-input-desc">{t("mcp.input.enabled")}</p>}
+                    {srv.subscriptions?.enabled && <p className="mcp-input-desc">{t("mcp.subscriptions.label")}: {t(`mcp.subscriptions.status.${
+                      ["connecting", "active", "closed", "cancelled", "error"].includes(srv.subscriptionStatus?.status ?? srv.subscriptionStatus)
+                        ? (srv.subscriptionStatus?.status ?? srv.subscriptionStatus) : "inactive"}`)}</p>}
 
                     {/* Error details */}
                     {srv.error && (

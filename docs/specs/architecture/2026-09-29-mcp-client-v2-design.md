@@ -2,7 +2,7 @@
 
 - 类型：架构设计规格 (Spec)
 - 日期：2026-09-29
-- 状态：设计定稿；v1.16 可观测、工具试跑、三端事件与在途取消已实现（2026-10-06），MRTR 留待 v1.17
+- 状态：实现至 v1.17.0（2026-10-06）；Modern MRTR 表单与列表变更订阅默认关闭，显式开启
 - 关联：[v1.11.0 MCP 首版](2026-09-28-v1.11.0-mcp-integration-design.md) · [post-V3 路线图](2026-09-17-post-v3-roadmap-design.md) (B1) · [权限引擎](../backend/2026-05-30-v2-7-approval-resume-design.md) · [GUI 壳层](../frontend/2026-09-20-v1.8.1-dsh-shell-design.md) · [实施计划](../../plans/architecture/2026-09-29-mcp-client-v2-multi-version-plan.md)
 
 > **取证说明**：MCP 协议事实以 [modelcontextprotocol.io](https://modelcontextprotocol.io/specification) **2026-07-28** 现行规范为准（2026-09-29 联网核对）。产品配置/交互形态综合官方文档与公开资料；调研副本见 `tmp/mcp-market-research.md`。
@@ -129,6 +129,8 @@ MCP 现行版本为 **`2026-07-28`（Modern）**，与 **`2025-11-25` 及更早�
 | 转换 | `mcp/schema-converter.js` | 命名空间、schema 2020-12、annotations、structuredContent |
 | 治理 | `mcp/tool-policy.js` | enable/auto-approve/风险（annotations 优先） |
 | 可观测 | `mcp/diagnostics.js` | 帧日志、延迟、错误分类；脱敏 |
+| 人工输入 | `mcp/input-broker.js` + `mcp/elicitation-schema.js` | 内存表单、显式确认、校验、超时与生命周期绑定 |
+| 订阅 | `mcp/subscriptions.js` | Modern 列表变更过滤、确认与关联 ID、断流清理 |
 
 ### 2.2 配置模型（三级作用域）
 
@@ -160,7 +162,9 @@ MCP 现行版本为 **`2026-07-28`（Modern）**，与 **`2025-11-25` 及更早�
       "url": "https://mcp.example.com/mcp",
       "headers": { "Authorization": "Bearer ${input:db_token}" },
       "oauth": { "enabled": true, "scopes": ["mcp:read"] },
-      "timeoutMs": 60000
+      "timeoutMs": 60000,
+      "elicitation": { "enabled": false, "timeoutMs": 120000 },
+      "subscriptions": { "enabled": false }
     }
   },
   "inputs": {
@@ -172,6 +176,7 @@ MCP 现行版本为 **`2026-07-28`（Modern）**，与 **`2025-11-25` 及更早�
 
 - `${input:name}` 加载时解析；**明文 secret 不得写入可提交项目配置**。
 - 兼容：只有 `command` → stdio；只有 `url` → streamable-http（可回退 sse）。
+- `elicitation.enabled` 与 `subscriptions.enabled` 是相互独立的服务级布尔开关，缺省均为 `false`。表单超时 `elicitation.timeoutMs` 默认 120000 ms，允许整数 1000–300000；它不会延长外围工具执行超时。开关与 `autoApprove`、`trust` 无关，工具批准不能代替用户提交表单。
 
 ---
 
@@ -289,7 +294,7 @@ connect(server)
 
 - `text`：拼接；`structuredContent`：保留 JSON 进 metadata（并校验 `outputSchema`，若有）。
 - `resource_link` / embedded `resource`：可解析引用。
-- `input_required`：转为三端表单/`ask_user`，重试回填（新 JSON-RPC id）。
+- `input_required`：Modern 且显式启用时转为三端人工表单，经内存 broker 确认后重试回填（新 JSON-RPC id）；模型不能代填。未启用或 Legacy 路径只返回需要输入的状态，不暴露原始表单或继续状态。
 - `isError`：`[MCP Error]` 前缀；协议错误 vs 工具执行错误分流（后者可给模型自纠）。
 
 ---
@@ -322,7 +327,8 @@ connect(server)
 | `mcp:config_warn` | 配置警告，可不含 serverId |
 | `mcp:log` | 脱敏诊断 `entry`，含方法、请求 ID、耗时与错误分类 |
 | `mcp:tool_test` | runId、toolName、status、durationMs；不包含参数或结果正文 |
-| `mcp:input_required` | 保留规格事件；MRTR 表单尚未实现 |
+| `mcp:input_required` / `mcp:input_resolved` | 表单请求 ID、serverId、method、status；正文与输入值不进入事件 |
+| `mcp:subscription_status` | connecting/active/closed/error/cancelled、通知计数与安全提示 |
 
 | 端 | 目标形态 |
 |----|----------|
@@ -338,7 +344,19 @@ connect(server)
 - **工具试跑**：`kernel.mcp.listTools/startToolTest/approveToolTest/cancelToolTest` 经同一 ToolExecutor 和权限引擎，固定 supervised。先校验原始 inputSchema 的有界 JSON Schema 子集；不支持的约束明确拒绝。GUI 简单 schema 生成字段，复杂 schema 可输入 JSON，仍受服务端校验。参数与可见结果限制 64 KiB；二进制省略，过长结果提示截断。批准只用于当前调用及固定参数，不写永久授权；最多 32 个待处理任务、批准有效期 5 分钟，重启/禁用/移除/身份变化使旧操作失效。destructive 仍拒绝。
 - **试跑权限与显示**：既有 autoApprove、用户信任和项目授权仍按权限引擎生效；需要新批准时，该批准只绑定当前试跑。批准前重新检查权限、工具定义及配置，取消后清除参数引用。参数内敏感字段在批准后的返回结果中仍脱敏。Schema 的关键字、类型与参数标识保持调用契约，描述/default/examples 等自由内容脱敏；日志不保留可能回显参数的远端 RPC 错误正文。
 - **真实取消**：工具执行、资源/提示词与 JSON-RPC 透传 AbortSignal；取消及时结束对应 pending，请求发出后发送 `notifications/cancelled`，HTTP 同时关闭该请求而保留其它并行请求。超时与用户取消分别记为 timeout/cancelled，迟到响应不能重新结算或触发重试。GUI 试跑取消与模型中断接入此路径。取消不承诺撤销服务端已经完成的副作用；TUI restart/enable/disable 等管理操作不支持 Esc 中断，会保持忙碌并明确提示等待。
-- **事件一致性**：17 类 MCP 事件进入登记、schema、回放 fixtures 和同一展示描述符；CLI/TUI/GUI 使用统一 serverId/status/method/requestId/durationMs 等字段。普通 debug/info 诊断默认不刷对话流，warn/error 可见；完整历史保留在诊断入口。`protocol_mode` 与 `input_required` 仅保留兼容登记，不代表 MRTR 已落地。
+- **事件一致性**：v1.16 的 17 类 MCP 事件进入登记、schema、回放 fixtures 和同一展示描述符；CLI/TUI/GUI 使用统一 serverId/status/method/requestId/durationMs 等字段。普通 debug/info 诊断默认不刷对话流，warn/error 可见；完整历史保留在诊断入口。该版本的 `input_required` 是预留事件；v1.17 实际表单契约见下节。
+
+### 6.2 v1.17 MRTR、人工表单与订阅（2026-10-06）
+
+**协议依据**：本次重新核对官方 [MRTR](https://modelcontextprotocol.io/specification/2026-07-28/basic/patterns/mrtr.md)、[订阅](https://modelcontextprotocol.io/specification/2026-07-28/basic/patterns/subscriptions.md)、[Streamable HTTP](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http.md)、[stdio](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/stdio.md) 与 [2026-07-28 schema](https://raw.githubusercontent.com/modelcontextprotocol/modelcontextprotocol/main/schema/2026-07-28/schema.ts)。不使用独立的 `subscriptions` 服务能力位；订阅过滤来自各类能力的 `listChanged`。
+
+- **MRTR 范围**：仅允许 `tools/call`、`resources/read`、`prompts/get`。Modern 请求按配置宣告 `clientCapabilities.elicitation.form`，Legacy initialize 不宣告此能力。收到 `resultType:"input_required"` 后，broker 先校验全部 `inputRequests`；每份仅支持 `elicitation/create` 的 form 模式。每次确认重试使用新的 RPC ID、保留最初业务参数，`requestState` 仅回送当前轮服务端给出的字符串；不接受调用方自行注入的 `inputResponses`/`requestState`。仅有 `requestState` 的继续请求也必须显示空表单并确认。
+- **有界等待**：每次调用最多 4 轮追加输入，每轮最多 8 份表单，内核最多同时保留 32 个待处理表单；表单逐份确认。每份默认等待 120 秒，配置范围 1–300 秒；工具执行的总超时、AbortSignal 或连接生命周期可先终止等待。禁用、移除、重启、注销、连接/配置/工具挂载身份变化、过期和重复响应均不能重放旧确认；工具目录变更立即取消旧表单。内核开始关闭时同步取消表单并拒绝新输入，不等待异步存储清理。输入流程只在当前内核进程存活，重启后需重新发起操作。
+- **严格表单 schema**：顶层为 `type:"object"`、`properties`、可选 `required`/`$schema`，最多 64 个字段。字段支持 string、number、integer、boolean；单选支持 string `enum`、带 `const/title` 的 `oneOf`、旧 `enumNames`；多选仅支持字符串枚举数组（`items.enum` 或带 `const/title` 的 `items.anyOf`）。支持字符串长度、数值范围、数组项数及 email/uri/date/date-time 格式；拒绝嵌套对象、任意数组、未知约束和额外响应字段。显式 `$schema` 仅接受 2020-12 URI，default 保留为描述但不会自动填充。schema 与输入内容各最多 64 KiB UTF-8，每个输入字符串最多 16 KiB；MRTR 的整个 input_required 结果也受 64 KiB 限制。先做有界 JSON 深度/节点检查，再复制和校验，错误仅返回安全 `MCP_INPUT_INVALID`。
+- **三端操作**：`kernel.mcp.listInputRequests()` 返回当前表单描述，`respondInputRequest(requestId,{action,content?})` 仅回应指定待处理请求；action 为 accept/decline/cancel，返回不含内容的状态确认。CLI/TUI 在 `agent.send`/批准续跑仍等待时处理表单；CLI 非交互输入立即 decline，交互终端隐藏输入并再次确认。TUI 使用独立于聊天历史的隐藏输入区，Enter 下一项、y 确认、n 拒绝、Esc 取消。GUI 在应用层显示来源明确的弹窗，适用于聊天和工具试跑；必须勾选确认才能提交，支持拒绝与取消。schema 校验失败可重新填写。
+- **隐私与事件**：原始 `requestState`、输入内容只留内存，不进入会话事件、诊断文件、恢复记录或聊天草稿。描述字段经共享脱敏器处理；私有表单保留 schema 结构、字段标识、枚举值和校验边界，避免短答案脱敏改变后续表单的可选值。已提交输入及不透明状态加入当前内核的动态脱敏集合，覆盖原文与 JSON 转义回显；外部结构化内容中的布尔答案也脱敏，框架状态布尔值保持类型。该集合最多 4096 个值 / 512 KiB，达到上限需新建内核，不静默丢弃脱敏记录。新增 `input_resolved`、`subscription_status` 后，共 19 类 MCP 事件登记/schema/回放/三端描述符一致；输入事件仅携带 ID、serverId、method 和状态，内核生成的表单 UUID 不因短答案脱敏而改变。
+- **Modern 订阅**：`subscriptions.enabled:true` 后，仅为服务端声明 `tools/prompts/resources.listChanged:true` 的类别发送一个 `subscriptions/listen` 长请求。10 秒内必须收到 `notifications/subscriptions/acknowledged`；通知和最终结果的 `_meta.io.modelcontextprotocol/subscriptionId` 需与该请求 ID 一致，通知还必须命中服务接受的过滤项。有效通知沿既有路径使列表缓存失效、重挂载工具；不订阅单个资源内容更新。HTTP 订阅必须使用 SSE，解析按单帧 64 KiB 上限处理长流，不累计无限正文；拒绝错误关联、提前通知、错误帧与无完成结果的断流。
+- **取消与兼容**：Modern HTTP 取消关闭对应 HTTP 请求；stdio 发送 `notifications/cancelled`，均不影响其它请求。订阅在断线/注销/禁用/停止时清理；断流或确认失败不会自动循环重试，需用户重启该服务后重新订阅。两开关默认关闭，保留既有普通工具/内容与 Legacy 行为；不实现 URL-mode elicitation、Sampling、Roots 或 Logging，也不添加运行时依赖。取消不撤销服务端已经完成的副作用。
 
 ---
 

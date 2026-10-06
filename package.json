@@ -1,6 +1,6 @@
 {
   "name": "inkstone",
-  "version": "1.16.0",
+  "version": "1.17.0",
   "description": "A local DeepSeek-powered coding agent CLI.",
   "type": "module",
   "bin": {

@@ -107,6 +107,7 @@ export function inferCategory(name = "", description = "") {
 }
 
 export function formatToolResult(callResult) {
+  if (callResult?.resultType === "input_required") return "[MCP Input Required] Additional user input is required; elicitation must be explicitly enabled.";
   if (!callResult) {
     return "";
   }
@@ -213,7 +214,7 @@ export function toToolExecutionResult(callResult, { outputSchema, redact = (valu
     metadata.outputValidation = redact(redactStructuredContent(validation));
   }
   try {
-    if (callResult?.structuredContent !== undefined) metadata.structuredContent = redact(redactStructuredContent(callResult.structuredContent));
+    if (callResult?.structuredContent !== undefined) metadata.structuredContent = redact(redactStructuredContent(callResult.structuredContent), { inputContent: true });
   } catch {
     return { status: "error", content: [{ type: "error", text: "MCP structuredContent could not be safely retained" }], metadata: { ...metadata, errorCode: "MCP_OUTPUT_CONTENT_INVALID" } };
   }

@@ -46,19 +46,17 @@ export const META_KEYS = Object.freeze({
   SUBSCRIPTION_ID: "io.modelcontextprotocol/subscriptionId"
 });
 
-export const DEFAULT_CLIENT_CAPABILITIES = Object.freeze({
-  tools: {},
-  // resources/prompts appear in later versions; harmless if ignored
-  resources: {},
-  prompts: {}
-});
+// Tools, resources and prompts are server capabilities, not client capabilities.
+// Elicitation is advertised per client only when its explicit consent handler exists.
+export const DEFAULT_CLIENT_CAPABILITIES = Object.freeze({});
+
+export const MRTR_METHODS = Object.freeze(["tools/call", "resources/read", "prompts/get"]);
+export const MRTR_MAX_ROUNDS = 4;
 
 export function isUnsupportedProtocolVersionError(err) {
   if (!err) return false;
-  return (
-    err.code === MCP_SERVER_ERRORS.UNSUPPORTED_PROTOCOL_VERSION ||
-    err.code === -32004 /* pre-renumber draft */
-  );
+  // -32000..-32019 are implementation-defined and cannot identify an era.
+  return err.code === MCP_SERVER_ERRORS.UNSUPPORTED_PROTOCOL_VERSION;
 }
 
 export function isModernProbeError(err) {

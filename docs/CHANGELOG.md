@@ -14,6 +14,16 @@
 
 ---
 
+## v1.17.0 — 2026-10-06 · MCP 多轮人工输入与 Modern 列表订阅（preview）
+
+- **MRTR H1/H2**：为每服务显式开启的 elicitation 接入 tools/call、resources/read、prompts/get 多轮表单；确认后以新 RPC ID 回送当前轮 state，state-only 继续同样需确认。最多 4 轮、每轮 8 份、32 份待处理；表单默认 120 秒，可配 1–300 秒，外围工具超时与生命周期取消仍生效。
+- **三端确认与隐私 H2/H5**：CLI/TUI 在模型等待期间处理独立表单，隐藏输入且不进入聊天历史；非交互 CLI 立即拒绝。GUI 全局表单可供聊天和试跑使用，需勾选确认，提供拒绝/取消。仅内存保存 state/输入，事件不含正文，返回值不回显；动态脱敏覆盖远端后续回显。schema/输入各 64 KiB、字段字符串 16 KiB、64 字段；严格校验平面标量/枚举/枚举数组及 email/uri/date/date-time，default 不填充，额外/未知约束拒绝，校验失败可重填。
+- **订阅与协议 H3/H4**：独立的 `subscriptions.enabled` 开关，按 Modern capabilities.listChanged 订阅三类列表；10 秒确认、subscriptionId/过滤关联、有界 HTTP SSE 单帧 64 KiB，断流不自动重试。补齐 Modern 请求能力宣告、-32020/-32021/-32022 错误码、HTTP 请求关闭与 stdio 取消区别。输入/订阅状态进入统一的 19 类 MCP 事件契约。
+- **验证 H6**：全量 **1763 通过、0 失败、0 取消、0 跳过**；`npm run check` 检查 **638 个 JS 文件**，GUI 构建与 `git diff --check` 通过。覆盖 MRTR/订阅、内核 broker、严格 schema、三端输入、事件契约，以及真实 host/kernel/stdio 中的转义回显与关闭竞态；短答案不能破坏后续表单约束或生命周期 ID，工具定义变化不能重放旧确认。取消测试模拟服务补齐 Legacy 握手以稳定高负载下的探测回退。四处代码版本同步为 `1.17.0`。
+- **边界**：两开关默认 false，Legacy 与普通调用保持兼容；输入流程不跨进程恢复，取消不撤销远端副作用。仅支持 form elicitation 与列表变更订阅，不实现 URL-mode、Sampling、Roots、Logging 或单资源内容订阅；显式 schema 方言仅接受 JSON Schema 2020-12。未引入运行时依赖。
+
+---
+
 ## v1.16.0 — 2026-10-06 · MCP 诊断、工具试跑与三端完善（preview）
 
 - **诊断 G1/G4**：结构化帧摘要、延迟和错误分类进入每进程 500 条 / 1 MiB 环形日志，项目内保留最近 8 个运行文件；参数/结果正文、OAuth 交换和原始 stderr 不落帧日志。CLI `mcp logs [server]` 提供过滤、近 N 条和 JSON，fresh 进程读取历史不连接服务；动态脱敏、存储错误提示和 JSON 结构键保护完整接线。

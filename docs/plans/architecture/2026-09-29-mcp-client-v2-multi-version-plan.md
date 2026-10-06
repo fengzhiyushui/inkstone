@@ -2,7 +2,7 @@
 
 - 类型：实施计划 (Plan)
 - 日期：2026-09-29
-- 状态：进行中（已推进至 v1.16.0，2026-10-06；v1.17.0 未开工）
+- 状态：实现至 v1.17.0（2026-10-06）；H1–H6 已落地，发布验证见 CHANGELOG
 - 关联：[MCP Client v2 设计规格](../../specs/architecture/2026-09-29-mcp-client-v2-design.md) · [v1.11.0 MCP 首版](../../specs/architecture/2026-09-28-v1.11.0-mcp-integration-design.md) · [post-V3 路线图](../../specs/architecture/2026-09-17-post-v3-roadmap-design.md) · [权限引擎](../../specs/backend/2026-05-30-v2-7-approval-resume-design.md)
 
 > 协议事实以 modelcontextprotocol.io **2026-07-28** 为准（2026-09-29 联网核对）：Modern 无握手、per-request `_meta`；Legacy `initialize`；标准 transport = stdio + Streamable HTTP。
@@ -52,12 +52,12 @@
 | 注册表 | `src/tools/registry.js` | ● | | | ● | | | | |
 | 权限 | `src/tools/permissions/**` | | | | ● | | | | |
 | 配置 | `src/config.js` · `src/apps/kernel-options.js` | | ● | ● | ● | | ● | | |
-| 组合根 | `src/index.js` | ● | ● | ● | ● | ● | ● | ● | |
-| CLI | `src/cli.js` | ● | ● | ● | | ● | ● | ● | |
+| 组合根 | `src/index.js` | ● | ● | ● | ● | ● | ● | ● | ● |
+| CLI | `src/cli.js` · `src/apps/cli/**` · `src/apps/mcp-input-form.js` | ● | ● | ● | | ● | ● | ● | ● |
 | 事件契约 | `src/apps/event-contract.js` | ● | | | | | | ● | ● |
 | GUI | `gui/src/**` · host/preload | | ● | | ● | ● | ● | ● | ● |
-| TUI | `src/apps/tui/**` | ● | | | | | | ● | |
-| 安全 | `src/security/**` | | | ● | | | ● | | |
+| TUI | `src/apps/tui/**` | ● | | | | | | ● | ● |
+| 安全 | `src/security/**` | | | ● | | | ● | | ● |
 | 测试 | `tests/unit/mcp-*.test.js` 等 | ● | ● | ● | ● | ● | ● | ● | ● |
 | 文档 | specs/plans/overview/CHANGELOG/索引 | ● | ● | ● | ● | ● | ● | ● | ● |
 
@@ -202,22 +202,21 @@
 
 **验证**：CLI 参数前验与 fresh 子进程读取、stdio 不启动、日志动态脱敏及结构键保护、TUI busy/状态/错误回归、事件 schema 与 fixtures 回放、GUI 状态和 host/IPC、工具审批/重复批准/生命周期、真实 stdio/HTTP/SSE 取消及聊天执行/验证/修复/审批续跑中断均已覆盖。全量 **1674 通过、0 失败、0 跳过**；`npm run check` 检查 **623 个 JS 文件**；GUI 构建与 `git diff --check` 通过。Windows 冒烟测试在 native 尺寸与 renderer 视口不同步时恢复视口，保留真实 Inspector DOM 断言。
 
-**下一步**：v1.17 MRTR、elicitation 与订阅；默认关闭，显式开启，不属于本版交付。
+**后续衔接**：默认关闭的 MRTR、elicitation 与 Modern 列表订阅已在下节 v1.17 落地。
 
 ---
 
 ### v1.17.0 — MRTR 与协议收齐（minor，opt-in）
 
-| ID | 任务 | 产出 |
-|----|------|------|
-| H1 | MRTR | `input_required` → 三端表单 → `inputResponses`+`requestState` 重试（**新 id**） |
-| H2 | elicitation | 默认关；开启必经确认 |
-| H3 | `subscriptions/listen` | tools/prompts/resources 变更订阅收齐 |
-| H4 | 协议面收齐 | 对齐 2026-07-28 文档与错误码（-32020…） |
-| H5 | 安全审查 | 不做 Sampling/Roots/Logging；表单输入脱敏 |
-| H6 | 测试与文档 | 默认与 16.x 行为一致 |
+**目标**：为显式开启的 Modern 服务提供有界的多轮人工输入及列表变更订阅，默认行为保持兼容。
 
-**验收**：默认无 MRTR 副作用；显式开启后完整确认流。
+**结果（2026-10-06）**：H1–H6 实现完成。H1 仅在 tools/call、resources/read、prompts/get 接受 input_required，以新 RPC ID 回送本轮 requestState 和用户 inputResponses；H2 由内存 broker 连接 CLI/TUI/GUI，连 state-only 继续也需确认；H3 按服务 capabilities.listChanged 建立 subscriptions/listen 并核对确认、过滤和关联；H4 依官方 2026-07-28 文档校正能力宣告、Modern HTTP/stdio 取消语义和保留错误码；H5 完成输入/状态脱敏、schema 与生命周期边界；H6 增补协议、内核、三端及事件测试，文档与四处版本同步。
+
+**关键决策**：每服务 `elicitation.enabled` 与 `subscriptions.enabled` 缺省 false，互不绑定。最多 4 轮、每轮 8 份、32 个待处理；表单默认 120 秒，可配 1000–300000 ms，外围工具超时仍可提前结束。表单只支持官方平面标量/枚举/枚举数组子集，64 个字段、schema/输入各 64 KiB、字段字符串 16 KiB；default 不填充，email/uri/date/date-time 实际校验，未知约束/额外字段拒绝。输入和不透明状态仅留内存，确认绑定服务器/配置/连接身份；GUI 明示确认，CLI/TUI 隐藏输入，非交互 CLI 即时拒绝。详细边界见 [规格 §6.2](../../specs/architecture/2026-09-29-mcp-client-v2-design.md#62-v117-mrtr人工表单与订阅2026-10-06)。
+
+**订阅与范围**：仅 Modern 的 tools/prompts/resources 列表变更；10 秒确认期限，HTTP SSE 单帧 64 KiB，严格匹配 subscriptionId/过滤，断流不自动重试。Default-off 和 Legacy 行为有回归覆盖；URL-mode、Sampling、Roots、Logging 均不在交付范围。
+
+**验证**：协议 mock 覆盖新 ID、最新 state、多轮上限、Modern/Legacy/default-off、订阅确认/关联/过滤/断流；表单测试覆盖严格 schema、四类格式、UTF-8/深度/节点限制、敏感数据不回显、生命周期失效与动态脱敏；CLI/TUI 覆盖等待中的同进程输入、隐藏 readline、确认/拒绝/Esc/退出、后台校验重填；GUI 覆盖 IPC、全局弹窗及状态清理。全量 **1763 通过、0 失败、0 取消、0 跳过**；`npm run check` 检查 **638 个 JS 文件**，GUI 构建与 `git diff --check` 通过。真实 host/kernel/stdio 回归覆盖 JSON 转义回显和内核同步关闭；连续短答案回归保证后续表单约束与生命周期 UUID 不被脱敏破坏。取消测试模拟服务补齐 Legacy 握手，避免高负载下 Modern 探测回退后空等。
 
 ---
 
@@ -248,7 +247,7 @@ git diff --check
 
 - 测试基线只增不减。
 - 文档顺序：代码 → specs/plans → project-overview → CHANGELOG → 索引。
-- 发布四处同步：`package.json` · `src/theme.js` VERSION · `CHANGELOG` · git tag。
+- 发布四处代码版本同步：`package.json` · `package-lock.json` · `src/theme.js` VERSION · `gui/src/App.jsx` VERSION；另更新 CHANGELOG 并打带注解 tag。
 
 ---
 
@@ -276,6 +275,6 @@ git diff --check
 | v1.14.0 | **已完成**（2026-10-06，resources/prompts 上下文闭环 + outputSchema 子集校验 + CLI/GUI） |
 | v1.15.0 | **已完成**（2026-10-06，OAuth 发现/PKCE/issuer 隔离/刷新 + CLI/GUI 登录） |
 | v1.16.0 | **已完成**（2026-10-06，诊断/试跑/CLI/TUI/三端事件/在途取消） |
-| v1.17.0 | 未开工 |
+| v1.17.0 | **已完成**（2026-10-06，默认关闭的 MRTR 人工表单 + Modern 列表订阅；1763 项测试通过） |
 
 每版本落地后，将本文件对应小节收成「目标 / 结果 / 关键决策 / 验证」摘要，并在 CHANGELOG 记录。

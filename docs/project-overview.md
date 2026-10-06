@@ -41,6 +41,7 @@ kernel facade：
 - `mcp.*`（v1.11.0，v1.12.0 增 inputs API）：listServers / restartServer / toggleServer / callTool / listInputs / setInputValue
 - `mcp.*`（v1.15 OAuth）：getAuthStatus / startAuth / cancelAuth / logoutAuth；resources/prompts 接口见 §3.1
 - `mcp.*`（v1.16 诊断/试跑）：getLogs / exportLogs / listTools / startToolTest / approveToolTest / cancelToolTest
+- `mcp.*`（v1.17 人工输入）：listInputRequests / respondInputRequest；表单内容经专用接口读取，事件只通知状态
 - `metrics.*`：用量与上下文统计
 
 ### turn 生命周期
@@ -121,7 +122,7 @@ ToolCall
 
 工具超时：`executor` 支持 `defaultToolTimeoutMs` / `context.toolTimeoutMs`；超时落为 `status:"error"`（`metadata.timeout = true`），不抛错、不强杀进程。
 
-### 3.1 MCP (Model Context Protocol) 外部工具与内容接入（至 v1.16.0）
+### 3.1 MCP (Model Context Protocol) 外部工具与内容接入（至 v1.17.0）
 
 Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（**dual-era × 三种传输 × 工具治理**）：
 
@@ -154,6 +155,9 @@ Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（
 - **诊断（v1.16）**：[`diagnostics.js`](../src/tools/mcp/diagnostics.js) 每进程最多 500 条 / 1 MiB，100 ms 合并写入 `.deepseek-code/mcp-logs/`，停止 flush，保留最近 8 个运行文件。仅保存结构摘要/请求 ID/耗时/分类，不含参数、结果正文、OAuth 交换、HTTP 头或原始 stderr；采集与读取时动态脱敏。`getLogs` 默认 100、最多 4000 条；CLI/TUI 默认 50、最多 500 条。CLI `autoInitMcp:false`，新进程可查询已移除服务历史；存储问题显示 `storageError`。
 - **工具试跑（v1.16）**：[`tool-trials.js`](../src/tools/mcp/tool-trials.js) 复用 ToolExecutor、权限引擎与原始 inputSchema 子集校验，固定 supervised，destructive 拒绝。GUI 可填写字段或 JSON，按需连接指定服务；审批绑定单个 runId 和固定参数，仅本次有效。32 个待处理上限、5 分钟批准期限，参数/显示结果 64 KiB 上限；重复批准、过期与连接/配置身份变化不能重放旧调用。
 - **取消与事件（v1.16）**：工具、资源/提示词 signal 贯通 JSON-RPC 与 HTTP，请求级取消及时清除 pending，HTTP 中止对应请求，迟到响应丢弃，其它服务与并行请求不受影响。17 类 MCP 事件统一登记/schema/fixtures/三端描述符；普通诊断不刷对话流，warn/error 显示。TUI 模型回合 Esc 中断保留；restart/enable/disable 等管理操作等待结束，明确提示不支持取消。详见 [规格 §6.1](specs/architecture/2026-09-29-mcp-client-v2-design.md#61-v116-实际契约2026-10-06)。
+- **MRTR 人工输入（v1.17）**：[`input-broker.js`](../src/tools/mcp/input-broker.js) 为显式启用 `elicitation.enabled:true` 的 Modern 服务提供 tools/call、resources/read、prompts/get 多轮表单；最多 4 轮、每轮 8 份、32 份待处理。确认后以新请求 ID 回送本轮 state，只有 state 的继续请求也需确认。CLI/TUI 在模型等待期间服务独立表单，隐藏输入且不进入聊天历史；GUI 全局弹窗需勾选确认，非交互 CLI 立即拒绝。默认 120 秒表单期限可配 1000–300000 ms，外围工具超时仍优先；重启/禁用/移除/注销/工具定义变更使旧请求失效，内核关闭同步取消所有待处理表单。
+- **表单与隐私（v1.17）**：[`elicitation-schema.js`](../src/tools/mcp/elicitation-schema.js) 严格接受 MCP 平面标量、单选与枚举数组 schema，最多 64 字段、schema/输入各 64 KiB UTF-8、字符串 16 KiB；校验 email/uri/date/date-time，不填 default，未知/嵌套约束和额外字段拒绝。表单、输入和 requestState 只留内存，输入事件不含正文；已提交内容及 opaque state 加入动态脱敏集合，避免远端回显泄漏。`input_required`、`input_resolved`、`subscription_status` 连同既有事件共 19 类 MCP 契约完整登记。
+- **列表订阅（v1.17）**：[`subscriptions.js`](../src/tools/mcp/subscriptions.js) 在 `subscriptions.enabled:true` 时，仅订阅 Modern 服务声明 `listChanged:true` 的 tools/prompts/resources 列表；10 秒确认，严格关联 subscriptionId 和服务接受的过滤项。HTTP 采用单帧 64 KiB 的有界 SSE 解析，断流不自动重试；状态进入服务卡与诊断，用户重启服务可重新订阅。两项能力均默认关闭，Legacy 不宣告 elicitation；不包含 URL-mode、Sampling、Roots、Logging，详见 [规格 §6.2](specs/architecture/2026-09-29-mcp-client-v2-design.md#62-v117-mrtr人工表单与订阅2026-10-06)。
 
 ---
 
@@ -339,9 +343,9 @@ tests/            单元 / 集成 / e2e
 
 - 持久化恢复默认关闭；未开启时会话 / 变更 / 分支无跨进程文件锁，勿在同一项目目录并发运行多个写状态实例。
 - repair executor 目前是单轮修复执行器。
-- MCP 在途 AbortSignal 已接入，但不能撤销服务端已完成的副作用；TUI 服务管理操作不支持 Esc 取消。MRTR/elicitation 与新订阅协议仍待 v1.17。OAuth 真实外部 IdP 尚未验证，以本地 HTTP mock 验收；凭据加密密钥与密文同存于用户目录，不是操作系统密钥链。
+- MCP 取消不能撤销服务端已完成的副作用；TUI 服务管理操作不支持 Esc 取消。MRTR 人工输入与 Modern 列表订阅默认关闭；输入仅支持有界平面 schema，表单不跨进程恢复，不实现 URL-mode、Sampling/Roots/Logging 或单个资源更新订阅。OAuth 真实外部 IdP 尚未验证，以本地 HTTP mock 验收；凭据加密密钥与密文同存于用户目录，不是操作系统密钥链。
 - GUI 用量统计在离线或未接入真实模型调用时可能显示零值。
-- `src/theme.js` 的 `VERSION` 可能滞后于 `package.json`；发布真源是 `package.json`。
+- 产品版本以 `package.json` 为发布真源，`package-lock.json` 与 CLI/TUI/GUI 的 VERSION 常量由一致性测试约束。
 - 模型 id 默认 `deepseek-flash` / `deepseek-v4-pro`（`deepseek-v4-flash` 已退役，旧 id 加载时静默迁移），以配置覆盖为准。
 
 ---

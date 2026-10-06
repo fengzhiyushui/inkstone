@@ -21,6 +21,7 @@ import {
 import { resolveToolRisk, annotationsFromTool, riskBadge } from "./annotations.js";
 import { isToolEnabled, resolveConfiguredScope, asPolicy } from "./tool-policy.js";
 import { createMcpDiagnostics, MCP_HUB_EVENTS, summarizeFrame, diagnosticCategory } from "./diagnostics.js";
+import { createMcpInputBroker } from "./input-broker.js";
 
 const DEFAULT_MAX_PARALLEL_INIT = 4;
 const DEFAULT_RECONNECT_BASE_MS = 500;
@@ -60,6 +61,8 @@ export class McpHub extends EventEmitter {
     this.oauthCredentialRoot = oauthCredentialRoot;
     this.oauthClients = new Map();
     this.oauthSecrets = new Set();
+    this.inputSecrets = new Set();
+    this.subscriptionStates = new Map();
     this._authRequired = new Set();
 
     this.clients = new Map();
@@ -109,6 +112,7 @@ export class McpHub extends EventEmitter {
         this.serverConfigs.set(serverId, { ...srvConfig });
       }
     }
+    this.inputBroker = createMcpInputBroker({ hub: this });
   }
 
   setInputValue(name, value) {
@@ -125,6 +129,8 @@ export class McpHub extends EventEmitter {
 
   getLogs(serverId, options) { return this.diagnostics.getLogs(serverId, options); }
   exportLogs(serverId, options) { return this.diagnostics.exportLogs(serverId, options); }
+  listInputRequests() { return this.inputBroker.list(); }
+  respondInputRequest(requestId, response) { return this.inputBroker.respond(requestId, response); }
 
   async listTools(serverId) {
     if (this.serverConfigs.get(serverId)?.disabled || this.getServer(serverId)?.getStatus() !== "CONNECTED") return [];
@@ -150,6 +156,7 @@ export class McpHub extends EventEmitter {
       onSecrets: (values) => { for (const value of values) if (value) this.oauthSecrets.add(value); },
       onAuthRequired: () => {
         if (this.oauthClients.get(serverId) !== client) return;
+        this.inputBroker.cancelServer(serverId);
         const first = !this._authRequired.has(serverId);
         this._authRequired.add(serverId);
         this._clearReconnect(serverId);
@@ -199,6 +206,7 @@ export class McpHub extends EventEmitter {
   }
 
   async logoutAuth(serverId) {
+    this.inputBroker.cancelServer(serverId);
     const oauth = this._oauthClient(serverId);
     this._stopping.add(serverId);
     try {
@@ -260,6 +268,7 @@ export class McpHub extends EventEmitter {
   }
 
   _createClient(serverId, srvConfig) {
+    this.inputBroker.cancelServer(serverId);
     if (this.clients.has(serverId)) {
       const existing = this.clients.get(serverId);
       existing.disconnect().catch(() => {});
@@ -284,7 +293,15 @@ export class McpHub extends EventEmitter {
       allowlist: resolved.allowlist || this.httpAllowlist,
       maxRedirects: resolved.maxRedirects,
       retryOnStreamBreak: resolved.retryOnStreamBreak,
-      oauthProvider: resolved.oauth?.enabled === true ? this._oauthClient(serverId) : null
+      oauthProvider: resolved.oauth?.enabled === true ? this._oauthClient(serverId) : null,
+      elicitation: resolved.elicitation,
+      subscriptions: resolved.subscriptions,
+      inputHandler: (request) => this.inputBroker.request(request, client)
+    });
+    client.on("subscription_status", (event) => {
+      if (this.clients.get(serverId) !== client) return;
+      this.subscriptionStates.set(serverId, event.status);
+      this.emit("subscription_status", { serverId, ...event });
     });
 
     client.on("trace", ({ direction, frame }) => this._recordDiagnostic({
@@ -310,6 +327,7 @@ export class McpHub extends EventEmitter {
 
     client.on("disconnected", () => {
       if (this.clients.get(serverId) !== client) return;
+      this.inputBroker.cancelServer(serverId);
       if (this.toolRegistry) {
         this.toolRegistry.unmountExternalTools(serverId);
       }
@@ -328,6 +346,7 @@ export class McpHub extends EventEmitter {
       } else if (method.includes("prompts/")) {
         this.emit("prompts_changed", { serverId, method });
       } else if (method.includes("tools/") || !method) {
+        this.inputBroker.cancelServer(serverId);
         await this._remountTools(serverId, client);
       }
     });
@@ -537,6 +556,7 @@ export class McpHub extends EventEmitter {
   }
 
   async restartServer(serverId) {
+    this.inputBroker.cancelServer(serverId);
     const srvConfig = this.serverConfigs.get(serverId);
     if (!srvConfig) {
       throw new Error(`MCP server '${serverId}' not found in configuration`);
@@ -559,6 +579,7 @@ export class McpHub extends EventEmitter {
   }
 
   async toggleServer(serverId, enabled) {
+    this.inputBroker.cancelServer(serverId);
     const srvConfig = this.serverConfigs.get(serverId);
     if (!srvConfig) {
       throw new Error(`MCP server '${serverId}' not found in configuration`);
@@ -635,6 +656,7 @@ export class McpHub extends EventEmitter {
   }
 
   async removeServer(serverId) {
+    this.inputBroker.cancelServer(serverId);
     if (!this.serverConfigs.has(serverId)) {
       return { ok: false, notFound: true };
     }
@@ -658,6 +680,7 @@ export class McpHub extends EventEmitter {
       }
 
       this.serverConfigs.delete(serverId);
+      this.subscriptionStates.delete(serverId);
       this.oauthClients.get(serverId)?.dispose();
       this.oauthClients.delete(serverId);
       this._authRequired.delete(serverId);
@@ -670,6 +693,7 @@ export class McpHub extends EventEmitter {
   }
 
   async stopAll() {
+    this.inputBroker.cancelAll();
     for (const oauth of this.oauthClients.values()) oauth.dispose();
     this.oauthClients.clear();
     for (const serverId of this.serverConfigs.keys()) {
@@ -723,6 +747,9 @@ export class McpHub extends EventEmitter {
         disabled: Boolean(srvConfig.disabled),
         autoApprove: srvConfig.autoApprove || [],
         oauth: { enabled: srvConfig.oauth?.enabled === true },
+        elicitation: { enabled: srvConfig.elicitation?.enabled === true },
+        subscriptions: { enabled: srvConfig.subscriptions?.enabled === true },
+        subscriptionStatus: this.subscriptionStates.get(serverId) || "disabled",
         authStatus: this.oauthClients.get(serverId)?.getStatus() || { status: srvConfig.oauth?.enabled ? "unauthenticated" : "disabled" },
         status,
         protocolMode: client?.getProtocolMode?.() || "unknown",

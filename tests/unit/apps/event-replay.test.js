@@ -59,7 +59,7 @@ const MODEL_RESPONSE_EXPECTED_FIELDS = {
 const mcpFields = (overrides = {}) => ({
   serverId: "remote", status: null, protocolMode: null, protocolVersion: null, toolCount: null, message: null,
   method: null, requestId: null, durationMs: null, level: null, category: null, direction: null,
-  progress: null, total: null, runId: null, toolName: null, ...overrides
+  progress: null, total: null, runId: null, toolName: null, notificationCount: null, ...overrides
 });
 
 // ── ① 覆盖:fixtures 键集合 ↔ SESSION_EVENT_TYPES 双向锁死 ──────────────────
@@ -120,7 +120,9 @@ const DESCRIPTOR_EXPECTATIONS = new Map([
   ["mcp:server_added", { kind: "mcp-status", severity: "info", quiet: false, fields: mcpFields({ status: "CONFIGURED" }) }],
   ["mcp:server_removed", { kind: "mcp-status", severity: "info", quiet: false, fields: mcpFields({ status: "REMOVED" }) }],
   ["mcp:protocol_mode", { kind: "mcp-status", severity: "info", quiet: false, fields: mcpFields({ protocolMode: "modern", protocolVersion: "2025-06-18" }) }],
-  ["mcp:input_required", { kind: "mcp-approval", severity: "warn", quiet: false, fields: mcpFields({ message: "Configure the required server input" }) }],
+  ["mcp:input_required", { kind: "mcp-approval", severity: "warn", quiet: false, fields: mcpFields({ requestId: "input_1", status: "pending", method: "elicitation/create" }) }],
+  ["mcp:input_resolved", { kind: "mcp-status", severity: "info", quiet: false, fields: mcpFields({ requestId: "input_1", status: "accepted", method: "elicitation/create" }) }],
+  ["mcp:subscription_status", { kind: "mcp-status", severity: "info", quiet: false, fields: mcpFields({ status: "active", notificationCount: 2 }) }],
   ["mcp:log", { kind: "mcp-status", severity: "info", quiet: true, fields: mcpFields({ status: "ok", method: "tools/call", requestId: 7, durationMs: 42, level: "info", category: "protocol", direction: "outbound", message: "Request completed" }) }],
   ["mcp:tool_test", { kind: "mcp-status", severity: "info", quiet: false, fields: mcpFields({ status: "complete", runId: "test_1", toolName: "mcp__remote__ping", durationMs: 42 }) }],
   // ── 通用 other 回落 / NOISY 静默(与 event-schema-coverage.test.js 的 QUIET_TYPES 同源) ──

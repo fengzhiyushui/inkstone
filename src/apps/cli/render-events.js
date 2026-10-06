@@ -40,6 +40,7 @@ export function summarizeKernelEvent(event = {}) {
     const f = d.fields;
     return ["mcp", f.serverId, f.status || String(event.type).slice(4), f.toolName, f.method,
       f.requestId != null ? `#${f.requestId}` : "", f.durationMs != null ? `${f.durationMs}ms` : "",
+      f.notificationCount != null ? `${f.notificationCount} notifications` : "",
       f.protocolMode, f.toolCount != null ? `${f.toolCount} tools` : "", f.message]
       .filter((value) => value !== null && value !== undefined && value !== "")
       .map((value) => redactSecrets(String(value)).replace(/[\x00-\x1f\x7f-\x9f]/g, " ").replace(/\s+/g, " ").trim()).join(" · ");

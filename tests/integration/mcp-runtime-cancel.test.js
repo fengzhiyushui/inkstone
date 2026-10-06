@@ -11,6 +11,9 @@ const held=new Set();
 const send=(id,result)=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',id,result})+'\\n');
 rl.on('line',line=>{const m=JSON.parse(line);if(m.id==null)return;
  if(m.method==='server/discover')return send(m.id,{era:'modern',supportedVersions:['2026-07-28'],capabilities:{tools:{}}});
+ // Under parallel test load the short era probe can fall back before this
+ // child starts. Keep the cancellation fixture usable in both supported eras.
+ if(m.method==='initialize')return send(m.id,{protocolVersion:'2025-11-25',serverInfo:{name:'cancel-fixture',version:'1'},capabilities:{tools:{}}});
  if(m.method==='tools/list')return send(m.id,{tools:['read_wait','write_wait','read_hold','read_release'].map(name=>({name,inputSchema:{type:'object'}}))});
  if(m.method==='tools/call'){
   if(m.params.name==='read_wait'||m.params.name==='write_wait')return;

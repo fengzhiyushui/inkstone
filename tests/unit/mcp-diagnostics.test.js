@@ -6,6 +6,8 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { createMcpDiagnostics, diagnosticCategory, summarizeFrame, safeMcpEvent, MCP_HUB_EVENTS } from "../../src/tools/mcp/diagnostics.js";
 import { McpHub } from "../../src/tools/mcp/mcp-hub.js";
+import { createMcpDisplayRedactor } from "../../src/security/mcp-content.js";
+import { toToolExecutionResult } from "../../src/tools/mcp/schema-converter.js";
 import { mkdtempSync } from "../helpers/tmp.js";
 
 function workspace(t) {
@@ -14,6 +16,32 @@ function workspace(t) {
   return root;
 }
 const directoryFor = (root) => path.join(root, ".deepseek-code", "mcp-logs");
+
+test("boolean form echoes are scrubbed from external content while framework flags remain boolean", () => {
+  const hub = { inputSecrets: new Set(["true", "false"]) };
+  const result = toToolExecutionResult({
+    resultType: "complete", isError: false,
+    content: [{ type: "text", text: '{"answer":true,"other":false}' }],
+    structuredContent: { answer: true, other: false }
+  }, {
+    outputSchema: { type: "object", properties: { answer: { type: "boolean" }, other: { type: "boolean" } } },
+    redact: createMcpDisplayRedactor({ hub })
+  });
+  assert.deepEqual(result.metadata.structuredContent, { answer: "[REDACTED]", other: "[REDACTED]" });
+  assert.equal(result.metadata.isError, false);
+  assert.equal(result.metadata.outputValidation.valid, true);
+  assert.doesNotMatch(result.content[0].text, /true|false/);
+});
+
+test("short form answers cannot corrupt the local input lifecycle identifier or subscription status", () => {
+  const requestId = randomUUID();
+  const hub = { inputSecrets: new Set(["a", "1"]) };
+  const resolved = safeMcpEvent({ requestId, serverId: "server", method: "elicitation/create", status: "accepted" }, hub);
+  assert.equal(resolved.requestId, requestId);
+  assert.equal(resolved.status, "accepted");
+  assert.equal(safeMcpEvent({ status: "active" }, hub).status, "active");
+  assert.notEqual(safeMcpEvent({ requestId: "external-a-1", method: "tools/call" }, hub).requestId, "external-a-1");
+});
 function saveFixture(root, content, stamp = Date.now()) {
   const directory = directoryFor(root);
   fs.mkdirSync(directory, { recursive: true });

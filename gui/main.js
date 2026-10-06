@@ -38,6 +38,7 @@ const IPC_CHANNELS = [
   "mcp:list", "mcp:restart", "mcp:toggle", "mcp:add", "mcp:remove", "mcp:inputs", "mcp:set-input",
   "mcp:auth-status", "mcp:auth-start", "mcp:auth-cancel", "mcp:auth-logout",
   "mcp:logs", "mcp:logs-export", "mcp:tools-list", "mcp:tool-test", "mcp:tool-test-approve", "mcp:tool-test-cancel",
+  "mcp:input-requests", "mcp:input-respond",
   "mcp:resources-list", "mcp:resource-templates-list", "mcp:resource-read", "mcp:prompts-list", "mcp:prompt-get"
 ];
 
@@ -664,6 +665,8 @@ function registerIpcHandlers() {
   handle("mcp:tool-test", wrap((_e, id, name, params, options) => host.startMcpToolTest(id, name, params, options)));
   handle("mcp:tool-test-approve", wrap((_e, id) => host.approveMcpToolTest(id)));
   handle("mcp:tool-test-cancel", wrap((_e, id) => host.cancelMcpToolTest(id)));
+  handle("mcp:input-requests", wrap(() => host.listMcpInputRequests()));
+  handle("mcp:input-respond", wrap((_e, id, response) => host.respondMcpInputRequest(id, response)));
 handle("mcp:inputs", wrap(() => host.listMcpInputs()));
 handle("mcp:set-input", wrap((_e, name, value) => host.setMcpInput(name, value)));
 }

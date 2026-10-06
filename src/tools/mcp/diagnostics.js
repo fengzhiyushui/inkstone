@@ -6,7 +6,7 @@ import { createMcpDisplayRedactor } from "../../security/mcp-content.js";
 export const MCP_HUB_EVENTS = Object.freeze([
   "server_status", "server_error", "server_disconnected", "server_added", "server_removed",
   "tools_mounted", "tools_changed", "resources_changed", "prompts_changed", "server_deprecated",
-  "auth_required", "auth_status", "config_warn", "protocol_mode", "input_required", "log", "tool_test"
+  "auth_required", "auth_status", "config_warn", "protocol_mode", "input_required", "input_resolved", "subscription_status", "log", "tool_test"
 ]);
 export const LOG_LEVELS = Object.freeze(["debug", "info", "warn", "error"]);
 export const LOG_CATEGORIES = Object.freeze(["transport", "protocol", "auth", "permission", "timeout", "cancelled", "tool", "lifecycle"]);
@@ -14,7 +14,7 @@ const FILE_LIMIT = 1_048_576;
 const KEEP_FILES = 8;
 const TEXT_FIELDS = ["kind", "direction", "method", "requestId", "status", "message", "preview"];
 const STATUS_VALUES = new Set(["CONNECTED", "CONNECTING", "DISCONNECTED", "DISABLED", "AUTH_REQUIRED", "ERROR", "DEGRADED", "RECONNECTING", "CONFIGURED", "REMOVED",
-  "success", "error", "cancelled", "timeout", "sent", "running", "approval_required", "awaiting_approval", "denied", "failed", "pending", "authenticated", "unauthenticated", "disabled"]);
+  "success", "error", "cancelled", "timeout", "sent", "running", "approval_required", "awaiting_approval", "denied", "failed", "pending", "authenticated", "unauthenticated", "disabled", "accepted", "declined", "expired", "active", "listening", "connecting", "closed"]);
 const enumValue = (key, value) => key === "status" && STATUS_VALUES.has(value) || key === "direction" && ["in", "out"].includes(value);
 
 export function diagnosticCategory(error, method = "") {
@@ -47,10 +47,14 @@ export function summarizeFrame(frame = {}) {
 export function safeMcpEvent(event = {}, hub) {
   const clean = createMcpDisplayRedactor({ hub });
   const out = {};
-  for (const key of ["serverId", "runId", "status", "protocolMode", "protocolVersion", "toolName", "method", "reason", "message"]) {
-    if (typeof event[key] === "string") out[key] = enumValue(key, event[key]) ? event[key] : clean(event[key]).slice(0, 2048);
+  for (const key of ["serverId", "runId", "requestId", "status", "protocolMode", "protocolVersion", "toolName", "method", "reason", "message"]) {
+    // Input request UUIDs are generated locally and correlate modal lifecycle
+    // events. Short answers must not corrupt them and leave a stale form open.
+    const inputId = key === "requestId" && event.method === "elicitation/create"
+      && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(event[key]);
+    if (typeof event[key] === "string") out[key] = inputId || enumValue(key, event[key]) ? event[key] : clean(event[key]).slice(0, 2048);
   }
-  for (const key of ["count", "toolCount", "attempts", "waitMs", "durationMs"]) {
+  for (const key of ["count", "toolCount", "attempts", "waitMs", "durationMs", "notificationCount"]) {
     if (Number.isFinite(event[key])) out[key] = event[key];
   }
   if (event.error) out.error = { message: clean(event.error.message || String(event.error)).slice(0, 2048) };

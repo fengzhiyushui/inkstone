@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { HttpRedirectError } from "./http-client.js";
 import { SseParser, isEventStream } from "./sse.js";
 import { oauthHttpRequest } from "./oauth-http.js";
+import { META_KEYS, MODERN_PROTOCOL_VERSION } from "./protocol.js";
 
 /**
  * v1.12.0:Streamable HTTP 传输(protocol 2026-07-28 / 2025-11-25)。
@@ -83,6 +84,10 @@ export class HttpTransport extends EventEmitter {
     this.protocolVersion = version || null;
   }
 
+  get cancellationNotifications() {
+    return this.protocolVersion !== MODERN_PROTOCOL_VERSION;
+  }
+
   setSessionId(sessionId) {
     this.sessionId = sessionId || null;
   }
@@ -98,7 +103,7 @@ export class HttpTransport extends EventEmitter {
     this.emit("connected", { url: this.url });
   }
 
-  send(message, { retries = this.retryOnStreamBreak, timeoutMs } = {}) {
+  send(message, { retries = this.retryOnStreamBreak, timeoutMs, subscription = false } = {}) {
     if (this.state === TRANSPORT_STATE.STOPPED || this.state === TRANSPORT_STATE.STOPPING) {
       throw new Error(`HttpTransport: cannot send message while state is '${this.state}'`);
     }
@@ -113,7 +118,7 @@ export class HttpTransport extends EventEmitter {
     timer?.unref?.();
     const clearTimer = () => { if (timer) clearTimeout(timer); };
     controller.signal.addEventListener("abort", clearTimer, { once: true });
-    this._dispatch(message, { retries, timeoutMs: effectiveTimeout, controller }).catch((err) => {
+    this._dispatch(message, { retries: subscription ? 0 : retries, timeoutMs: effectiveTimeout, controller, subscription }).catch((err) => {
       // Explicit cancellation and close are local control flow. Never surface
       // them as a broken server or retry an aborted operation.
       if (this._cancelledControllers.has(controller) || (controller.signal.aborted && controller.signal.reason?.code !== -32000)) return;
@@ -139,13 +144,13 @@ export class HttpTransport extends EventEmitter {
     return true;
   }
 
-  async _dispatch(message, { retries, timeoutMs, controller }) {
+  async _dispatch(message, { retries, timeoutMs, controller, subscription }) {
     const isNotification = message?.id === undefined || message?.id === null;
     let attempt = 0;
     for (;;) {
       try {
         controller.signal.throwIfAborted();
-        await this._postOnce(message, { timeoutMs, controller });
+        await this._postOnce(message, { timeoutMs, controller, subscription });
         return;
       } catch (err) {
         if (controller.signal.aborted) throw controller.signal.reason;
@@ -162,7 +167,7 @@ export class HttpTransport extends EventEmitter {
     }
   }
 
-  async _postOnce(message, { timeoutMs, controller }) {
+  async _postOnce(message, { timeoutMs, controller, subscription }) {
     const effectiveTimeout = timeoutMs ?? this.timeoutMs;
 
     const body = JSON.stringify(message);
@@ -203,6 +208,7 @@ export class HttpTransport extends EventEmitter {
 
     if (response.status === 202 || response.status === 204) {
       response.stream.resume?.();
+      if (subscription) throw Object.assign(new Error("MCP subscription requires an SSE response stream"), { code: "MCP_SUBSCRIPTION_STREAM" });
       return;
     }
     if (response.status >= 400) {
@@ -215,8 +221,12 @@ export class HttpTransport extends EventEmitter {
     }
 
     if (isEventStream(response.getHeader("content-type"))) {
-      await this._consumeSse(response.stream, controller.signal);
+      await this._consumeSse(response.stream, controller.signal, subscription ? message.id : undefined);
       return;
+    }
+    if (subscription) {
+      response.stream.destroy?.();
+      throw Object.assign(new Error("MCP subscription requires an SSE response stream"), { code: "MCP_SUBSCRIPTION_STREAM" });
     }
     await this._consumeJson(response.stream, response.getHeader("content-length"), controller.signal);
   }
@@ -247,26 +257,51 @@ export class HttpTransport extends EventEmitter {
     else this.emit("message", parsed);
   }
 
-  async _consumeSse(stream, signal) {
+  async _consumeSse(stream, signal, subscriptionId) {
+    let completed = false;
+    let finishSubscription = null;
+    const isSubscription = subscriptionId !== undefined;
     const parser = new SseParser({
+      ...(isSubscription ? { maxEventBytes: 64 * 1024 } : {}),
       onEvent: ({ data }) => {
         if (!data || signal?.aborted) return;
         let parsed;
         try {
           parsed = JSON.parse(data);
         } catch {
+          if (isSubscription) throw Object.assign(new Error("MCP subscription received invalid JSON"), { code: "MCP_SUBSCRIPTION_FRAME" });
           // 单条事件解析失败不应中断整条流
           this.emit("protocol_error", { line: data, error: new Error("invalid SSE JSON") });
           return;
         }
-        if (Array.isArray(parsed)) for (const item of parsed) this.emit("message", item);
+        if (isSubscription) {
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw Object.assign(new Error("MCP subscription frame must be a JSON-RPC object"), { code: "MCP_SUBSCRIPTION_FRAME" });
+          if (parsed.id !== undefined) {
+            if (parsed.id !== subscriptionId || parsed.method) throw Object.assign(new Error("MCP subscription response ID mismatch"), { code: "MCP_SUBSCRIPTION_FRAME" });
+            completed = true;
+          } else if (parsed.params?._meta?.[META_KEYS.SUBSCRIPTION_ID] !== subscriptionId) {
+            throw Object.assign(new Error("MCP subscription notification ID mismatch"), { code: "MCP_SUBSCRIPTION_FRAME" });
+          }
+          this.emit("message", parsed);
+          if (completed) finishSubscription?.();
+        } else if (Array.isArray(parsed)) for (const item of parsed) this.emit("message", item);
         else this.emit("message", parsed);
       }
     });
     stream.setEncoding?.("utf8");
     await new Promise((resolve, reject) => {
-      stream.on("data", (chunk) => parser.feed(String(chunk)));
-      stream.on("end", () => { parser.end(); resolve(); });
+      finishSubscription = () => { resolve(); stream.destroy(); };
+      stream.on("data", (chunk) => {
+        try { parser.feed(String(chunk)); }
+        catch (error) { reject(error); stream.destroy(); }
+      });
+      stream.on("end", () => {
+        try {
+          parser.end();
+          if (isSubscription && !completed) throw Object.assign(new Error("MCP subscription stream ended without a completion result"), { code: "MCP_SUBSCRIPTION_CLOSED" });
+          resolve();
+        } catch (error) { reject(error); }
+      });
       stream.on("error", (err) => {
         const wrapped = isStreamBreak(err)
           ? Object.assign(new Error(`HTTP SSE stream broke: ${err.message}`), { code: "MCP_STREAM_BREAK" })

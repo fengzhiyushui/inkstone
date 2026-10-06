@@ -60,7 +60,7 @@ export class JsonRpcClient extends EventEmitter {
    * @param {object} [params]
    * @param {{ timeoutMs?: number, meta?: object, cancelOnTimeout?: boolean, signal?: AbortSignal }} [opts]
    */
-  async request(method, params, { timeoutMs, meta, cancelOnTimeout = true, signal } = {}) {
+  async request(method, params, { timeoutMs, meta, cancelOnTimeout = true, signal, onRequestId, subscription = false } = {}) {
     if (!this.transport) {
       throw new Error("No transport configured for JSON-RPC client");
     }
@@ -92,7 +92,7 @@ export class JsonRpcClient extends EventEmitter {
       const cancel = (error, status, notify) => {
         if (!this._settle(id, status, undefined, error)) return;
         try { pending.transport.cancelRequest?.(id, error); } catch { /* best-effort */ }
-        if (notify && pending.sent) {
+        if (notify && pending.sent && pending.transport.cancellationNotifications !== false) {
           try {
             this._send(pending.transport, {
               jsonrpc: "2.0", method: "notifications/cancelled",
@@ -101,6 +101,7 @@ export class JsonRpcClient extends EventEmitter {
           } catch { /* best-effort */ }
         }
       };
+      pending.cancel = cancel;
       pending.onAbort = () => {
         const timedOut = signal.reason?.code === "TOOL_TIMEOUT" || signal.reason?.code === JSONRPC_ERRORS.TIMEOUT;
         const status = timedOut ? "timeout" : "cancelled";
@@ -122,12 +123,21 @@ export class JsonRpcClient extends EventEmitter {
         }
       }
       try {
+        onRequestId?.(id);
+        if (!this.pendingRequests.has(id)) return;
         pending.sent = true;
-        this._send(pending.transport, payload, { timeoutMs: effectiveTimeoutMs });
+        this._send(pending.transport, payload, { timeoutMs: effectiveTimeoutMs, ...(subscription ? { subscription: true, retries: 0 } : {}) });
       } catch (err) {
         this._settle(id, "error", undefined, err);
       }
     });
+  }
+
+  cancelRequest(id, error = Object.assign(new Error("JSON-RPC request cancelled"), { code: JSONRPC_ERRORS.CANCELLED }), { notify = false } = {}) {
+    const pending = this.pendingRequests.get(id);
+    if (!pending) return false;
+    pending.cancel(error, completionStatus(error), notify);
+    return true;
   }
 
   _send(transport, frame, opts) {

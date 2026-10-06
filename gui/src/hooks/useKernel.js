@@ -5,6 +5,7 @@ import { targetFromCheckpoint } from "../state/workbench-state.js";
 import { checkedMcpResult } from "../state/mcp-content.js";
 import { subscribeMcpAuthChanges } from "../state/mcp-oauth.js";
 import { checkedDiagnosticResult, includeMcpActivity } from "../state/mcp-diagnostics.js";
+import { checkedInputRequests, subscribeMcpInputChanges, subscribeMcpSubscriptionChanges } from "../state/mcp-input-requests.js";
 
 // Subscribes to window.deepseek events → dispatch, runs first-paint loads, and exposes
 // action wrappers. Pure mapping lives in kernel-loads.js (node:test-covered).
@@ -311,6 +312,10 @@ export function useKernel(dispatch) {
       startMcpToolTest: (...args) => mcpDiagnostic("startMcpToolTest", ...args),
       approveMcpToolTest: (...args) => mcpDiagnostic("approveMcpToolTest", ...args),
       cancelMcpToolTest: (...args) => mcpDiagnostic("cancelMcpToolTest", ...args),
+      listMcpInputRequests: async () => checkedInputRequests(await mcpDiagnostic("listMcpInputRequests")),
+      respondMcpInputRequest: (id, response) => mcpDiagnostic("respondMcpInputRequest", id, response),
+      subscribeMcpInputChanges: (onChanged) => subscribeMcpInputChanges(api, onChanged),
+      subscribeMcpSubscriptionChanges: (onChanged) => subscribeMcpSubscriptionChanges(api, onChanged),
       // v1.11.2:${input:*} 密钥引用(定义来自 .mcp.json / config.json 的 inputs)
       listMcpInputs: () => (api?.listMcpInputs ? api.listMcpInputs() : Promise.resolve([])),
       setMcpInput: (name, value) => (api?.setMcpInput ? api.setMcpInput(name, value) : Promise.resolve(null))

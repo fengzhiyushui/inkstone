@@ -11,10 +11,11 @@ export function computeBottom(state, t, columns) {
   const sep = color.dim("─".repeat(Math.min(width - 1, 120)));
   const status = color.dim(truncateToWidth(statusLine(state, t), width - 1));
 
-  if (state.overlay) {
-    const lines = [sep, ...state.overlay.lines, status];
-    const cursorRow = state.overlay.cursorRow == null ? lines.length - 1 : state.overlay.cursorRow + 1;
-    const cursorCol = state.overlay.cursorCol == null ? 1 : state.overlay.cursorCol;
+  const overlay = state.mcpInputOverlay || state.overlay;
+  if (overlay) {
+    const lines = [sep, ...overlay.lines, status];
+    const cursorRow = overlay.cursorRow == null ? lines.length - 1 : overlay.cursorRow + 1;
+    const cursorCol = overlay.cursorCol == null ? 1 : overlay.cursorCol;
     return { lines, cursorRow, cursorCol };
   }
 
