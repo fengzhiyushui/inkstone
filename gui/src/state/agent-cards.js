@@ -18,7 +18,12 @@ export function deriveAgentCards(activity) {
 
   for (const e of activity || []) {
     const type = e && e.type;
-    const f = describeEvent(e).fields;
+    const descriptor = describeEvent(e);
+    const f = descriptor.fields;
+    if (descriptor.kind.startsWith("mcp-")) {
+      if (!descriptor.quiet) cards.push({ kind: "mcp", severity: descriptor.severity, sourceType: type, ...f });
+      continue;
+    }
 
     if (type === "orchestration:planned" || type === "orchestration:round_started" || type === "orchestration:replanned") {
       const plan = ensurePlan();

@@ -7,6 +7,7 @@ import {
 import ChangeDiffView from "../ChangeDiffView.jsx";
 import McpContentBrowser from "./McpContentBrowser.jsx";
 import McpOAuthControls from "./McpOAuthControls.jsx";
+import McpDiagnostics from "./McpDiagnostics.jsx";
 import { buildMcpOAuthConfig } from "../../state/mcp-oauth.js";
 import { checkedMcpResult } from "../../state/mcp-content.js";
 
@@ -1005,6 +1006,7 @@ export function McpView({ t, kernel, onRequestConfirm, onUseContent }) {
                     )}
                     {!srv.disabled && <McpContentBrowser key={`${srv.serverId}:${contentEpoch}`}
                       serverId={srv.serverId} kernel={kernel} t={t} onUseContent={onUseContent} />}
+                    <McpDiagnostics serverId={srv.serverId} kernel={kernel} t={t} />
                   </div>
                 );
               })}

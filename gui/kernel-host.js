@@ -4,6 +4,7 @@ const os = require("node:os");
 const path = require("path");
 const { pathToFileURL } = require("url");
 const { callMcpAuth } = require("./mcp-oauth.js");
+const { diagnosticOptions, callDiagnostic } = require("./mcp-diagnostics.js");
 
 let projectModPromise = null;
 function loadProjectMod() {
@@ -846,6 +847,33 @@ function createKernelHost({
   const listMcpPrompts = (id, options) => mcpContent("listPrompts", id, [], options);
   const getMcpPrompt = (id, name, args = {}, options) => mcpContent("getPrompt", id, [name, args], options);
 
+  const diagnosticStarts = new Map();
+  async function mcpDiagnostic(method, args, sensitive, onStarted) {
+    try {
+      return await callDiagnostic({ facade: requireKernel().mcp, config: await configLoader(projectRoot), method, args, sensitive, onStarted });
+    } catch (error) {
+      onStarted?.();
+      throw error;
+    }
+  }
+  const getMcpLogs = (id = null, options) => mcpDiagnostic("getLogs", [id, diagnosticOptions(options)]);
+  const exportMcpLogs = (id = null, options) => mcpDiagnostic("exportLogs", [id, diagnosticOptions(options)]);
+  const listMcpTools = (id) => mcpDiagnostic("listTools", [id]);
+  const startMcpToolTest = (id, name, params, options) => {
+    if (!params || typeof params !== "object" || Array.isArray(params)) throw new Error("MCP tool arguments must be an object");
+    if (typeof options?.requestId !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(options.requestId)) throw new Error("Invalid MCP test request ID");
+    if (diagnosticStarts.has(options.requestId)) throw new Error("MCP test request already active");
+    let entered;
+    diagnosticStarts.set(options.requestId, new Promise((resolve) => { entered = resolve; }));
+    return mcpDiagnostic("startToolTest", [id, name, params, { requestId: options.requestId }], params, entered)
+      .finally(() => diagnosticStarts.delete(options.requestId));
+  };
+  const approveMcpToolTest = (id) => mcpDiagnostic("approveToolTest", [id]);
+  const cancelMcpToolTest = async (id) => {
+    await diagnosticStarts.get(id);
+    return mcpDiagnostic("cancelToolTest", [id]);
+  };
+
   return { init, ready, send, approve, interrupt, getTimeline, getSnapshot, getUsage, getConfig, getState, listPaused,
            listBranches, listCheckpoints, rewindPreview, rewindApply, getActiveBranch,
            getPreferences, setPreferences, listTree, readFile, writeFile, listChanges, describeChange,
@@ -855,6 +883,7 @@ function createKernelHost({
            listMcpServers, restartMcpServer, toggleMcpServer, addMcpServer, removeMcpServer,
            getMcpAuthStatus, startMcpAuth, cancelMcpAuth, logoutMcpAuth,
            listMcpResources, listMcpResourceTemplates, readMcpResource, listMcpPrompts, getMcpPrompt,
+           getMcpLogs, exportMcpLogs, listMcpTools, startMcpToolTest, approveMcpToolTest, cancelMcpToolTest,
     listMcpInputs, setMcpInput,
            resolveSensitiveNotice, abortPendingSensitive, dispose };
 }

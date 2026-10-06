@@ -4,7 +4,7 @@ import { SLASH_COMMANDS, filterCommands, parseSlash } from "../../../src/apps/tu
 
 test("registry holds the command set", () => {
   assert.deepEqual(SLASH_COMMANDS.map((c) => c.name),
-    ["help", "config", "diff", "changes", "mode", "lang", "theme", "shell", "clear", "recovery", "branch", "rewind", "fim", "quit"]);
+    ["help", "config", "diff", "changes", "mode", "lang", "theme", "shell", "clear", "recovery", "branch", "rewind", "fim", "mcp", "quit"]);
   for (const c of SLASH_COMMANDS) assert.match(c.descKey, /^slash\./);
 });
 

@@ -168,7 +168,7 @@ for (const deadline of [false, true]) {
     client.on("error", (error) => errors.push(error));
     client.transport.on("retry", (event) => retries.push(event));
     const controller = new AbortController();
-    const slow = client.callTool("slow", {}, { signal: controller.signal, timeoutMs: deadline ? 100 : 2000 });
+    const slow = client.callTool("slow", {}, { signal: controller.signal, timeoutMs: deadline ? 1000 : 5000 });
     const rejected = assert.rejects(slow, { code: deadline ? JSONRPC_ERRORS.TIMEOUT : JSONRPC_ERRORS.CANCELLED });
     const quick = client.callTool("quick");
     await Promise.all([slowSeen.promise, quickSeen.promise]);
@@ -191,7 +191,7 @@ for (const deadline of [false, true]) {
 }
 
 test("legacy SSE cancellation aborts only the POST, leaving the shared GET stream usable", async (t) => {
-  const slowSeen = deferred(), slowClosed = deferred();
+  const slowSeen = deferred(), slowClosed = deferred(), cancelSeen = deferred();
   let events, cancelledId;
   const url = await serverFixture(t, (req, res) => {
     if (req.method === "GET") {
@@ -206,7 +206,7 @@ test("legacy SSE cancellation aborts only the POST, leaving the shared GET strea
         slowSeen.resolve();
         return;
       }
-      if (frame.method === "notifications/cancelled") cancelledId = frame.params.requestId;
+      if (frame.method === "notifications/cancelled") { cancelledId = frame.params.requestId; cancelSeen.resolve(); }
       else events.write(`data: ${JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: { ok: true } })}\n\n`);
       res.writeHead(202); res.end();
     });
@@ -226,6 +226,7 @@ test("legacy SSE cancellation aborts only the POST, leaving the shared GET strea
   await rejected;
   await slowClosed.promise;
   assert.deepEqual(await rpc.request("quick"), { ok: true });
+  await cancelSeen.promise;
   assert.equal(cancelledId, 1);
   assert.equal(transport.state, "running");
   assert.equal(errors.length, 0);

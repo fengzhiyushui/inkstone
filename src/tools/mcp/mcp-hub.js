@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { McpClient } from "./mcp-client.js";
 import { McpOAuthClient } from "./auth/oauth-client.js";
-import { createMcpDisplayRedactor } from "../../security/mcp-content.js";
+import { createMcpDisplayRedactor, sanitizeMcpSchema } from "../../security/mcp-content.js";
 import {
   loadMcpConfig,
   bindInputs,
@@ -20,6 +20,7 @@ import {
 } from "./schema-converter.js";
 import { resolveToolRisk, annotationsFromTool, riskBadge } from "./annotations.js";
 import { isToolEnabled, resolveConfiguredScope, asPolicy } from "./tool-policy.js";
+import { createMcpDiagnostics, MCP_HUB_EVENTS, summarizeFrame, diagnosticCategory } from "./diagnostics.js";
 
 const DEFAULT_MAX_PARALLEL_INIT = 4;
 const DEFAULT_RECONNECT_BASE_MS = 500;
@@ -45,7 +46,8 @@ export class McpHub extends EventEmitter {
     loadConfigScopes = false,
     /** v1.12.0:SSRF 私网允许清单(仅对列出的目标放行,默认空 = 全部 fail-closed) */
     httpAllowlist = [],
-    oauthCredentialRoot = undefined
+    oauthCredentialRoot = undefined,
+    diagnostics = {}
   } = {}) {
     super();
     this.toolRegistry = toolRegistry;
@@ -71,6 +73,15 @@ export class McpHub extends EventEmitter {
     this.rawConfigs = config.mcpServers || {};
     this.inputs = inputs && typeof inputs === "object" ? { ...inputs } : {};
     this.projectRoot = projectRoot || cwd;
+    this.diagnostics = createMcpDiagnostics({ root: this.projectRoot, hub: this, ...diagnostics });
+    for (const name of MCP_HUB_EVENTS.filter((name) => name !== "log")) {
+      this.on(name, (event = {}) => this._recordDiagnostic({
+        ...event, kind: name,
+        level: event.error ? "error" : name === "config_warn" || name === "auth_required" ? "warn" : "info",
+        category: name.startsWith("auth_") ? "auth" : name === "tool_test" ? "tool" : event.error ? diagnosticCategory(event.error) : "lifecycle",
+        message: event.error?.message || event.message || event.reason
+      }));
+    }
 
     if (loadConfigScopes) {
       const loaded = loadMcpConfig({
@@ -105,6 +116,23 @@ export class McpHub extends EventEmitter {
       ...(this.inputs[name] || { type: "promptString" }),
       value
     };
+  }
+
+  _recordDiagnostic(entry) {
+    const recorded = this.diagnostics.record(entry);
+    this.emit("log", { ...(recorded.serverId ? { serverId: recorded.serverId } : {}), entry: recorded });
+  }
+
+  getLogs(serverId, options) { return this.diagnostics.getLogs(serverId, options); }
+  exportLogs(serverId, options) { return this.diagnostics.exportLogs(serverId, options); }
+
+  async listTools(serverId) {
+    if (this.serverConfigs.get(serverId)?.disabled || this.getServer(serverId)?.getStatus() !== "CONNECTED") return [];
+    const clean = createMcpDisplayRedactor({ hub: this });
+    return (this.serverTools.get(serverId) || []).map((tool) => ({
+      name: tool.name, originalName: tool.originalName, category: tool.category,
+      description: clean(tool.description), inputSchema: sanitizeMcpSchema(tool.rawInputSchema ?? tool.inputSchema, clean)
+    }));
   }
 
   _oauthClient(serverId) {
@@ -259,6 +287,18 @@ export class McpHub extends EventEmitter {
       oauthProvider: resolved.oauth?.enabled === true ? this._oauthClient(serverId) : null
     });
 
+    client.on("trace", ({ direction, frame }) => this._recordDiagnostic({
+      serverId, kind: "frame", direction, level: "debug", category: "protocol", ...summarizeFrame(frame)
+    }));
+    client.on("request_completed", (event) => this._recordDiagnostic({
+      serverId, kind: "request", ...event,
+      level: event.status === "success" ? "info" : event.status === "cancelled" ? "warn" : "error",
+      category: event.status === "cancelled" ? "cancelled" : event.status === "timeout" ? "timeout" : event.error ? diagnosticCategory(event.error, event.method) : "protocol",
+      // Remote error text may echo arbitrary arguments, including credentials
+      // entered only for this call. Persist the status/code, never that body.
+      message: event.error ? `MCP request ${event.status} (${typeof event.error.code === "number" ? event.error.code : diagnosticCategory(event.error)})` : undefined
+    }));
+
     // v1.12.0:legacy SSE 为已废弃通道 —— 透出事件,供 event-contract 与三端提示
     client.on("deprecated", ({ reason }) => {
       this.emit("server_deprecated", { serverId, reason });
@@ -269,6 +309,7 @@ export class McpHub extends EventEmitter {
     });
 
     client.on("disconnected", () => {
+      if (this.clients.get(serverId) !== client) return;
       if (this.toolRegistry) {
         this.toolRegistry.unmountExternalTools(serverId);
       }
@@ -281,6 +322,7 @@ export class McpHub extends EventEmitter {
     });
 
     client.on("list_changed", async ({ method = "" } = {}) => {
+      if (this.clients.get(serverId) !== client) return;
       if (method.includes("resources/") || method.includes("templates/")) {
         this.emit("resources_changed", { serverId, method });
       } else if (method.includes("prompts/")) {
@@ -375,6 +417,7 @@ export class McpHub extends EventEmitter {
         serverId,
         originalName: tool.name,
         rawFunctionSchema,
+        rawInputSchema: tool.inputSchema,
         inputSchema: cleanJsonSchema(tool.inputSchema),
         // v1.13.1:恢复 v1.11.0 的语义 —— autoApprove 不看类别,列入即放行。
         // (v1.13.0 曾错误地收紧为"仅 read",那是无声的行为回退。)
@@ -392,7 +435,7 @@ export class McpHub extends EventEmitter {
         execute: async (params, context = {}) => {
           const redact = createMcpDisplayRedactor({ hub: this });
           try {
-            const res = await client.callTool(tool.name, params, { signal: context.signal });
+            const res = await client.callTool(tool.name, params, { signal: context.signal, timeoutMs: context.toolTimeoutMs });
             return toToolExecutionResult(res, { outputSchema: tool.outputSchema, redact });
           } catch (error) {
             const sanitized = sanitizedMcpError(error, redact);
@@ -498,6 +541,7 @@ export class McpHub extends EventEmitter {
     if (!srvConfig) {
       throw new Error(`MCP server '${serverId}' not found in configuration`);
     }
+    if (srvConfig.disabled) throw new Error(`MCP server '${serverId}' is disabled`);
 
     if (this.toolRegistry) {
       this.toolRegistry.unmountExternalTools(serverId);
@@ -644,6 +688,7 @@ export class McpHub extends EventEmitter {
     await Promise.allSettled(promises);
     this.clients.clear();
     this._stopping.clear();
+    this.diagnostics.flush();
   }
 
   getServer(serverId) {
@@ -770,7 +815,7 @@ export class McpHub extends EventEmitter {
     return (await this._connectedClient(serverId)).getPrompt(name, args, opts);
   }
 
-  async callTool(namespacedName, params = {}) {
+  async callTool(namespacedName, params = {}, options = {}) {
     const parsed = parseExternalToolName(namespacedName);
     if (!parsed) {
       throw new Error(`Invalid MCP tool name: ${namespacedName}`);
@@ -783,14 +828,14 @@ export class McpHub extends EventEmitter {
 
     const redact = createMcpDisplayRedactor({ hub: this });
     try {
-      const res = await client.callTool(originalName, params);
+      const res = await client.callTool(originalName, params, options);
       return redact(formatToolResult(res));
     } catch (error) {
       throw sanitizedMcpError(error, redact);
     }
   }
 
-  async callToolDetailed(namespacedName, params = {}) {
+  async callToolDetailed(namespacedName, params = {}, options = {}) {
     const parsed = parseExternalToolName(namespacedName);
     if (!parsed) {
       throw new Error(`Invalid MCP tool name: ${namespacedName}`);
@@ -803,7 +848,7 @@ export class McpHub extends EventEmitter {
 
     const redact = createMcpDisplayRedactor({ hub: this });
     try {
-      const res = await client.callTool(originalName, params);
+      const res = await client.callTool(originalName, params, options);
       return redact(summarizeToolResult(res));
     } catch (error) {
       throw sanitizedMcpError(error, redact);

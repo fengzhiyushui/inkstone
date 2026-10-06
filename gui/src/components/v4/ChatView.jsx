@@ -235,6 +235,23 @@ function TestCard({ card, t }) {
   );
 }
 
+function McpEventCard({ card, t, onOpen }) {
+  const details = [card.toolName, card.method, card.requestId != null ? `#${card.requestId}` : null,
+    card.durationMs != null ? `${card.durationMs} ms` : null, card.direction ? t(`mcp.diagnostics.direction.${card.direction}`) : null].filter(Boolean);
+  return <Collapsible head={<>
+    {card.severity === "danger" || card.severity === "warn" ? <Warning size={13} /> : <Database size={13} />}
+    <span className="ttl">{t("mcp.diagnostics.event")} · {card.serverId || "MCP"}</span>
+    <span className={`mini ${card.severity === "danger" ? "err" : ""}`}>{card.status || card.category || ""}</span>
+  </>}>
+    <div className="mcp-content-preview">
+      {card.message && <p>{card.message}</p>}
+      {details.length > 0 && <p className="mcp-input-desc">{details.join(" · ")}</p>}
+      {card.toolCount != null && <p>{t("mcp.diagnostics.tool")}: {card.toolCount}</p>}
+      <button type="button" className="btn ghost" onClick={onOpen}>{t("mcp.diagnostics.open")}</button>
+    </div>
+  </Collapsible>;
+}
+
 function ThoughtCard({ card, t }) {
   const [open, setOpen] = useState(false);
   const meta = [card.purpose, card.model, card.reasoningTokens != null ? `${card.reasoningTokens} tokens` : null].filter(Boolean).join(" · ");
@@ -302,6 +319,7 @@ export default function ChatView({ t, state, actions, kernel, statusLine, setVie
       case "orchestration": return <OrchCard key={i} card={card} t={t} />;
       case "test": return <TestCard key={i} card={card} t={t} />;
       case "thought": return <ThoughtCard key={i} card={card} t={t} />;
+      case "mcp": return <McpEventCard key={i} card={card} t={t} onOpen={() => setView("mcp")} />;
       default: return null;
     }
   };

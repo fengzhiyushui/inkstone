@@ -17,6 +17,19 @@ const USAGE_SNAPSHOT = {
   avg_latency_ms: 850
 };
 
+test("MCP event rendering shares safe state, correlation and quiet diagnostics", () => {
+  const output = [];
+  const render = createEventRenderer({ write: (line) => output.push(line) });
+  render({ type: "mcp:log", entry: { serverId: "remote", level: "debug", message: "quiet" } });
+  render({ type: "mcp:server_status", serverId: "remote", status: "CONNECTED" });
+  assert.deepEqual(output, []);
+  render({ type: "mcp:log", entry: { serverId: "remote", level: "error", category: "timeout", method: "tools/call", requestId: 0, durationMs: 12, message: "Timeout\x1b]0;owned\x07" } });
+  assert.match(output.join("\n"), /remote.*tools\/call.*#0.*12ms.*Timeout/);
+  assert.doesNotMatch(output.join("\n"), /[\x1b\x07]/);
+  render({ type: "mcp:tool_test", serverId: "remote", status: "cancelled", runId: "trial_1", toolName: "mcp__remote__ping" });
+  assert.match(output.at(-1), /remote.*cancelled.*mcp__remote__ping/);
+});
+
 // INKSTONE_SHOW_USAGE 进程级开关:用例现场改、finally 复原,不污染其它测试。
 function withUsageEnv(value, fn) {
   const prev = process.env.INKSTONE_SHOW_USAGE;

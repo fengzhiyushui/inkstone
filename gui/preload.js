@@ -69,6 +69,12 @@ contextBridge.exposeInMainWorld("deepseek", {
   readMcpResource: (serverId, uri, options) => ipcRenderer.invoke("mcp:resource-read", serverId, uri, options),
   listMcpPrompts: (serverId, options) => ipcRenderer.invoke("mcp:prompts-list", serverId, options),
   getMcpPrompt: (serverId, name, args, options) => ipcRenderer.invoke("mcp:prompt-get", serverId, name, args, options),
+  getMcpLogs: (serverId, options) => ipcRenderer.invoke("mcp:logs", serverId, options),
+  exportMcpLogs: (serverId, options) => ipcRenderer.invoke("mcp:logs-export", serverId, options),
+  listMcpTools: (serverId) => ipcRenderer.invoke("mcp:tools-list", serverId),
+  startMcpToolTest: (serverId, name, params, options) => ipcRenderer.invoke("mcp:tool-test", serverId, name, params, options),
+  approveMcpToolTest: (runId) => ipcRenderer.invoke("mcp:tool-test-approve", runId),
+  cancelMcpToolTest: (runId) => ipcRenderer.invoke("mcp:tool-test-cancel", runId),
   // v1.11.2:${input:*} 密钥引用(值不落项目树)
   listMcpInputs: () => ipcRenderer.invoke("mcp:inputs"),
   setMcpInput: (name, value) => ipcRenderer.invoke("mcp:set-input", name, value)

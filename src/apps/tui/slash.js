@@ -13,6 +13,7 @@ export const SLASH_COMMANDS = [
   { name: "branch", descKey: "slash.branch.desc" },
   { name: "rewind", descKey: "slash.rewind.desc" },
   { name: "fim", descKey: "slash.fim.desc" },
+  { name: "mcp", descKey: "slash.mcp.desc" },
   { name: "quit", descKey: "slash.quit.desc" }
 ];
 

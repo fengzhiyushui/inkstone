@@ -83,3 +83,30 @@ export function createMcpDisplayRedactor({ config = {}, hub = null, knownSecrets
 export function sanitizeMcpDisplay(value, options = {}) {
   return createMcpDisplayRedactor(options)(value);
 }
+
+// Schema keywords, types and parameter identifiers are an executable contract.
+// Scrub descriptive/default/example data without renaming that contract when a
+// short configured secret happens to match a keyword or parameter name.
+export function sanitizeMcpSchema(schema, clean = createMcpDisplayRedactor()) {
+  const maps = new Set(["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"]);
+  const children = new Set(["items", "additionalProperties", "propertyNames", "contains", "not", "if", "then", "else"]);
+  const lists = new Set(["allOf", "anyOf", "oneOf", "prefixItems"]);
+  let nodes = 0;
+  const visit = (value, depth = 0) => {
+    if (++nodes > 20000 || depth > 32) return false;
+    if (typeof value === "boolean") return value;
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    const output = Object.create(null);
+    for (const [key, item] of Object.entries(value)) {
+      if (++nodes > 20000) return false;
+      if (maps.has(key) && item && typeof item === "object" && !Array.isArray(item)) {
+        output[key] = Object.fromEntries(Object.entries(item).map(([name, child]) => [name, visit(child, depth + 1)]));
+      } else if (children.has(key)) output[key] = visit(item, depth + 1);
+      else if (lists.has(key) && Array.isArray(item)) output[key] = item.map((child) => visit(child, depth + 1));
+      else if (["type", "required", "dependentRequired", "$ref", "$schema"].includes(key)) output[key] = structuredClone(item);
+      else output[key] = clean(item);
+    }
+    return output;
+  };
+  return visit(schema);
+}

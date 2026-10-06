@@ -2,6 +2,7 @@
 // user:message / agent:final / agent:error 静默:用户行与终态行由 app 从 send() 结果路径打印,避免重复。
 import { tc as color } from "./theme.js";
 import { describeEvent } from "../event-contract.js";
+import { mcpText } from "./mcp-actions.js";
 
 export const QUIET = new Set([
   "model:request", "model:response", "agent:step", "agent:turn_started",
@@ -28,9 +29,21 @@ function fileRows(files) {
   });
 }
 
-export function eventToLines(event = {}, t) {
+export function eventToLines(event = {}, t, clean = (value) => value) {
   const type = event.type || "";
   const f = describeEvent(event).fields;
+  if (type.startsWith("mcp:")) {
+    const descriptor = describeEvent(event);
+    if (descriptor.quiet) return [];
+    const parts = ["mcp", f.serverId, f.status || type.slice(4), f.toolName, f.method,
+      f.requestId != null ? `#${f.requestId}` : "",
+      f.durationMs != null ? `${f.durationMs}ms` : "", f.protocolMode,
+      f.toolCount != null ? `${f.toolCount} ${t("msg.mcpTools")}` : "",
+      f.progress != null ? `${f.progress}${f.total != null ? `/${f.total}` : ""}` : "",
+      f.message].filter((value) => value !== null && value !== undefined && value !== "").map((value) => mcpText(clean(value)));
+    const paint = descriptor.severity === "danger" ? color.red : descriptor.severity === "warn" ? color.yellow : color.dim;
+    return [` ${paint(`· ${parts.join(" · ")}`)}`];
+  }
   if (type === "tool:call") {
     const name = f.name || "?";
     const hint = f.argHint ? clip(f.argHint) : "";

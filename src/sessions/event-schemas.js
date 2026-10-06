@@ -36,6 +36,23 @@ function deepFreeze(value) {
 export const SESSION_EVENT_SCHEMAS = deepFreeze({
   "mcp:auth_required": entry([["serverId", "string"], ["status", "string"]], [["session_id", "string"], ["message", "string"]]),
   "mcp:auth_status": entry([["serverId", "string"], ["status", "string"]], [["session_id", "string"]]),
+  // Hub lifecycle/capability diagnostics; config warnings can precede server creation.
+  "mcp:config_warn": entry([["message", "string"]], [["serverId", "string"]]),
+  "mcp:server_deprecated": entry([["serverId", "string"], ["reason", "string"]]),
+  "mcp:server_error": entry([["serverId", "string"], ["error", "any"]]),
+  "mcp:server_disconnected": entry([["serverId", "string"]]),
+  "mcp:resources_changed": entry([["serverId", "string"], ["method", "string"]]),
+  "mcp:prompts_changed": entry([["serverId", "string"], ["method", "string"]]),
+  "mcp:server_status": entry([["serverId", "string"], ["status", "string"]], [["protocolMode", "string"], ["protocolVersion", "any"], ["attempts", "number"], ["waitMs", "number"]]),
+  "mcp:tools_mounted": entry([["serverId", "string"], ["count", "number"]]),
+  "mcp:tools_changed": entry([["serverId", "string"], ["count", "number"]]),
+  "mcp:server_added": entry([["serverId", "string"], ["status", "string"]], [["toolCount", "number"], ["error", "any"]]),
+  "mcp:server_removed": entry([["serverId", "string"]]),
+  // Reserved compatibility events have no current producer with required keys.
+  "mcp:protocol_mode": entry([], [["serverId", "string"], ["protocolMode", "string"], ["protocolVersion", "string"]]),
+  "mcp:input_required": entry([], [["serverId", "string"], ["message", "string"]]),
+  "mcp:log": entry([["entry", "object"]], [["serverId", "string"]]),
+  "mcp:tool_test": entry([["serverId", "string"], ["runId", "string"], ["status", "string"], ["toolName", "string"]], [["durationMs", "number"]]),
   // 生产者:src/sessions/event-log.js:35 append("session:start", meta)。meta 由调用方注入
   //(index.js:99 传 { root, runtime: "v2" }),不同接入路径形状不一 → 无必填,仅登记已知键。
   "session:start": entry([], [["root", "string"], ["runtime", "string"]]),
