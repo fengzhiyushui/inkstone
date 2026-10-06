@@ -2,7 +2,7 @@
 
 - 类型：实施计划 (Plan)
 - 日期：2026-09-29
-- 状态：进行中（已推进至 v1.14.0，2026-10-06；v1.15.0+ 未开工）
+- 状态：进行中（已推进至 v1.15.0，2026-10-06；v1.16.0+ 未开工）
 - 关联：[MCP Client v2 设计规格](../../specs/architecture/2026-09-29-mcp-client-v2-design.md) · [v1.11.0 MCP 首版](../../specs/architecture/2026-09-28-v1.11.0-mcp-integration-design.md) · [post-V3 路线图](../../specs/architecture/2026-09-17-post-v3-roadmap-design.md) · [权限引擎](../../specs/backend/2026-05-30-v2-7-approval-resume-design.md)
 
 > 协议事实以 modelcontextprotocol.io **2026-07-28** 为准（2026-09-29 联网核对）：Modern 无握手、per-request `_meta`；Legacy `initialize`；标准 transport = stdio + Streamable HTTP。
@@ -174,23 +174,21 @@
 
 **验证**：真实 stdio mock + createKernel + 本地模拟模型，覆盖资源列表→读取→提示词→后续 role:tool 消息、脱敏、权限参数校验及禁用/重启/删除；Client 单测覆盖 capability gate、Modern/Legacy、分页/截断/缓存失效；GUI host/IPC/草稿和 CLI mock 回归。全量测试与 GUI 构建通过，精确计数见本次 CHANGELOG。语法检查改为逐一检查 JS 文件，避免旧脚本多路径参数只检查首文件的遗漏。
 
-**下一步**：按 v1.15 F1–F7 推进 OAuth；优先用本地 mock AS 锁定发现、issuer 隔离和 PKCE，再接 GUI/CLI 登录。v1.16 同时登记在途 AbortSignal 接入 JSON-RPC 的既有缺口，不能以当前请求前检查代替完整取消验收。
+**后续**：v1.15 F1–F7 已完成，见下节。v1.16 同时登记在途 AbortSignal 接入 JSON-RPC 的既有缺口，不能以当前请求前检查或传输错误及时拒绝代替完整取消验收。
 
 ---
 
 ### v1.15.0 — OAuth 2.1（minor）
 
-| ID | 任务 | 产出 |
-|----|------|------|
-| F1 | 发现 | Resource/AS metadata |
-| F2 | 注册 | **CIDM 优先**；DCR 仅兼容 |
-| F3 | 授权 | 授权码 + PKCE；**校验 `iss`** |
-| F4 | 凭据 | 按 **issuer** 键控存储；刷新；禁止跨 AS 复用 |
-| F5 | auth_required | 事件 + GUI 登录 + `mcp auth` |
-| F6 | 脱敏 | redactor |
-| F7 | 测试 | mock AS、refresh 失败、不落明文 |
+**目标**：远程 MCP 走通授权 → 调用 → 刷新，并提供 CLI/GUI 登录入口。
 
-**验收**：mock OAuth 走通授权→调用→刷新。
+**结果（2026-10-06）**：F1–F7 完成。PR/AS metadata 与首次 401 challenge 发现、显式 CIDM/预注册 ID、DCR 兼容、S256 PKCE、state/iss 回调校验、加密凭据和并发刷新接入真实 HTTP 传输。`kernel.mcp` 登录/状态/取消/注销与 CLI、GUI 贯通；登录完成自动挂载工具，注销卸载；会话事件 schema 与回放契约补齐。
+
+**关键决策**：公共客户端，不接受配置内 client secret；token 按 issuer/resource/client/scopes 隔离，注销限定 serverId+resource；OAuth 请求禁止重定向。待授权固定上下文，旧 refresh/连接/列表响应不能在注销或禁用后复活。普通输出动态脱敏，CLI 专用浏览器授权 URL 保留 state；GUI URL 只留主进程。详细配置与安全边界见规格 §3.4.1。
+
+**验证**：26 项 OAuth 核心测试；真实 kernel + HTTP AS + MCP 覆盖登录、401 刷新、token 脱敏、重启恢复、注销、停止/移除竞态；fresh CLI 直接登录非默认 metadata 服务器；GUI host/IPC/浏览器与状态控制回归。全量 **1604 通过、0 失败、0 跳过**；`npm run check` 检查 **608 个 JS 文件**；GUI 构建与 `git diff --check` 通过。未调用真实外部 IdP。
+
+**下一步**：v1.16 G1–G6：诊断环形日志、工具试跑、TUI `/mcp`、事件一致性及在途请求取消。
 
 ---
 
@@ -277,7 +275,7 @@ git diff --check
 | v1.12.0 | **已完成**（2026-10-04，Streamable HTTP + 逐跳 SSRF + legacy SSE 兼容） |
 | v1.13.0 | **已完成**（2026-10-04，annotations 治理 + 三级批准 + destructive 硬约束） |
 | v1.14.0 | **已完成**（2026-10-06，resources/prompts 上下文闭环 + outputSchema 子集校验 + CLI/GUI） |
-| v1.15.0 | 未开工 |
+| v1.15.0 | **已完成**（2026-10-06，OAuth 发现/PKCE/issuer 隔离/刷新 + CLI/GUI 登录） |
 | v1.16.0 | 未开工 |
 | v1.17.0 | 未开工 |
 

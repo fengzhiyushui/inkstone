@@ -191,9 +191,15 @@ export async function createKernel(root, options = {}) {
     toolRegistry,
     cwd: root,
     projectRoot: root,
-    loadConfigScopes: options.loadMcpConfigScopes === true
+    loadConfigScopes: options.loadMcpConfigScopes === true,
+    oauthCredentialRoot: options.mcpOAuthCredentialRoot
   });
   const unmountMcpCapabilities = mountMcpCapabilityTools(mcpHub, toolRegistry, options.deepseek || {});
+  const authSubscriptions = ["auth_required", "auth_status"].map((name) => {
+    const forward = (event) => eventBus.publish(`mcp:${name}`, { session_id: sessionId, ...event });
+    mcpHub.on?.(name, forward);
+    return () => mcpHub.removeListener?.(name, forward);
+  });
   if (options.autoInitMcp !== false && mcpHub.serverConfigs.size > 0) {
     await mcpHub.initAll().catch(() => {});
   }
@@ -518,6 +524,7 @@ export async function createKernel(root, options = {}) {
       flush: () => orchestrator.flushExperience()
     },
     async dispose() {
+      for (const unsubscribe of authSubscriptions) unsubscribe();
       if (kernelDisposed) return;
       kernelDisposed = true;
       try { await orchestrator.flushExperience?.(); } catch { /* best-effort */ }
@@ -532,6 +539,10 @@ export async function createKernel(root, options = {}) {
       listServers: () => mcpHub.listServers(),
       listInputs: () => mcpHub.listInputs(),
       setInputValue: (name, value) => mcpHub.setInputValue(name, value),
+      getAuthStatus: (serverId) => mcpHub.getAuthStatus(serverId),
+      startAuth: (serverId) => mcpHub.startAuth(serverId),
+      cancelAuth: (serverId) => mcpHub.cancelAuth(serverId),
+      logoutAuth: (serverId) => mcpHub.logoutAuth(serverId),
       restartServer: (serverId) => mcpHub.restartServer(serverId),
       toggleServer: (serverId, enabled) => mcpHub.toggleServer(serverId, enabled),
       addServer: (serverId, config, opts) => mcpHub.addServer(serverId, config, opts),

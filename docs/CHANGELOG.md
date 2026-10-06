@@ -14,6 +14,16 @@
 
 ---
 
+## v1.15.0 — 2026-10-06 · MCP OAuth 登录与凭据隔离（preview）
+
+- **OAuth F1–F4**：PR/AS metadata 及首次 401 challenge 发现、CIDM/预注册客户端与 DCR 兼容、S256 PKCE、state/iss 强校验、用户目录加密凭据及刷新；按 issuer/resource/client/scopes 隔离。OAuth 请求禁止重定向并复用 DNS 固定/SSRF；HTTP 仅允许显式放行的回环地址。
+- **入口 F5–F6**：CLI `mcp auth <server> [login|status|cancel|logout]`，添加服务支持 `--oauth/--client-id/--scopes`；GUI 登录/取消/退出与完成后自动刷新，浏览器 URL 仅在主进程。状态事件进入 schema/回放契约，动态脱敏覆盖新旧 token 和错误。`mcp check` 改走实际 Hub 鉴权路径。
+- **生命周期与接线**：登录自动挂载，注销卸载；取消/退出/切换 issuer 后，旧授权、刷新、连接与列表结果不能复活或覆盖新状态；注销不影响其他资源的同名服务器。传输错误及时结束对应 RPC，401 不再被超时掩盖。四处版本同步为 1.15.0。
+- **验证 F7**：全量 `npm test` **1604 通过、零失败、零跳过**；`npm run check` 检查 **608 个 JS 文件**；GUI 构建与 `git diff --check` 通过。包含 26 项 OAuth 核心测试、真实内核/CLI/mock AS 集成和 GUI host/IPC/状态回归。
+- **边界**：真实外部 IdP 未验证；用户目录 AES-GCM 密钥不等同系统密钥链；在途 AbortSignal、诊断/TUI `/mcp` 留待 v1.16，MRTR 留待 v1.17。
+
+---
+
 ## v1.14.0 — 2026-10-06 · MCP 资源、提示词与输出校验（preview）
 
 - **能力面 E1–E3**：resources list/read/templates、prompts list/get 贯通 Client → Hub → kernel；按已连接服务的 capability 动态挂载 `mcp_resources` / `mcp_prompts`，资源和提示词以普通 tool 内容进入模型上下文，外部 system 角色不会提升权限。能力缺失不发业务请求，内容服务可不提供 tools。

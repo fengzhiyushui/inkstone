@@ -28,6 +28,9 @@ export function createMcpDisplayRedactor({ config = {}, hub = null, knownSecrets
   const values = [...secrets].sort((a, b) => b.length - a.length);
   const text = (value) => {
     let out = String(value);
+    // Refresh can rotate tokens during the operation being displayed. Read this
+    // set at render time, including when the redactor predates the request.
+    for (const secret of hub?.oauthSecrets || []) if (secret) out = out.split(secret).join("[REDACTED]");
     for (const secret of values) out = out.split(secret).join("[REDACTED]");
     return redactSecrets(out);
   };

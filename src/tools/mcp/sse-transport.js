@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
-import { pinnedHttpRequest } from "./http-client.js";
 import { SseParser, isEventStream } from "./sse.js";
+import { oauthHttpRequest } from "./oauth-http.js";
 
 /**
  * v1.12.0:legacy HTTP+SSE 传输(protocol 2024-11-05 时代的 `type: "sse"`)。
@@ -24,7 +24,8 @@ export class SseTransport extends EventEmitter {
     protocolVersion = null,
     allowlist = [],
     lookup,
-    maxRedirects
+    maxRedirects,
+    oauth = null
   } = {}) {
     super();
     if (!url || typeof url !== "string") throw new Error("SseTransport: 'url' is required");
@@ -37,6 +38,7 @@ export class SseTransport extends EventEmitter {
     this.allowlist = Array.isArray(allowlist) ? [...allowlist] : [];
     this.lookup = lookup;
     this.maxRedirects = maxRedirects;
+    this.oauth = oauth;
 
     this.endpoint = null;
     this.state = "idle";
@@ -101,10 +103,11 @@ export class SseTransport extends EventEmitter {
     };
     if (this.protocolVersion) headers["MCP-Protocol-Version"] = this.protocolVersion;
 
-    const response = await pinnedHttpRequest(
+    const response = await oauthHttpRequest(
       this.url,
       { allowlist: this.allowlist, lookup: this.lookup, maxRedirects: this.maxRedirects },
-      { method: "GET", headers, timeoutMs: 0, signal: controller.signal, stream: true }
+      { method: "GET", headers, timeoutMs: 0, signal: controller.signal, stream: true },
+      this.oauth
     );
 
     if (response.status >= 400) {
@@ -177,10 +180,12 @@ export class SseTransport extends EventEmitter {
     if (typeof message?.method === "string") headers["Mcp-Method"] = message.method;
     if (typeof message?.params?.name === "string") headers["Mcp-Name"] = message.params.name;
 
-    const response = await pinnedHttpRequest(
+    const response = await oauthHttpRequest(
       this.endpoint,
       { allowlist: this.allowlist, lookup: this.lookup, maxRedirects: this.maxRedirects },
-      { method: "POST", headers, body, timeoutMs: this.timeoutMs }
+      { method: "POST", headers, body, timeoutMs: this.timeoutMs },
+      this.oauth,
+      this.url
     );
     if (response.status >= 400) {
       throw Object.assign(new Error(`HTTP ${response.status} posting to SSE endpoint`), {

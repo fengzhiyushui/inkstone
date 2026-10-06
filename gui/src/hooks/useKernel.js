@@ -3,6 +3,7 @@ import { getApi } from "../lib/api.js";
 import { buildInitialLoads, branchesAction, eventToAction, errorToAction, refreshLoadsFor } from "./kernel-loads.js";
 import { targetFromCheckpoint } from "../state/workbench-state.js";
 import { checkedMcpResult } from "../state/mcp-content.js";
+import { subscribeMcpAuthChanges } from "../state/mcp-oauth.js";
 
 // Subscribes to window.deepseek events → dispatch, runs first-paint loads, and exposes
 // action wrappers. Pure mapping lives in kernel-loads.js (node:test-covered).
@@ -285,6 +286,11 @@ export function useKernel(dispatch) {
 
       // MCP 外部服务管理
       listMcpServers: () => (api?.listMcpServers ? api.listMcpServers() : Promise.resolve([])),
+      getMcpAuthStatus: (...args) => mcpContent("getMcpAuthStatus", ...args),
+      subscribeMcpAuthChanges: (onChanged) => subscribeMcpAuthChanges(api, onChanged),
+      startMcpAuth: (...args) => mcpContent("startMcpAuth", ...args),
+      cancelMcpAuth: (...args) => mcpContent("cancelMcpAuth", ...args),
+      logoutMcpAuth: (...args) => mcpContent("logoutMcpAuth", ...args),
       restartMcpServer: (serverId) => (api?.restartMcpServer ? api.restartMcpServer(serverId) : Promise.resolve(null)),
       toggleMcpServer: (serverId, enabled) => (api?.toggleMcpServer ? api.toggleMcpServer(serverId, enabled) : Promise.resolve(null)),
       addMcpServer: (serverId, config) => (api?.addMcpServer ? api.addMcpServer(serverId, config) : Promise.resolve(null)),

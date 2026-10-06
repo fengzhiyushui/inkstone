@@ -6,6 +6,10 @@
 
 @import "./tokens.css";
 
+.mcp-oauth-controls { margin-top:10px; padding:10px; border:1px solid var(--border-l2); border-radius:8px; overflow-wrap:anywhere; }
+.mcp-oauth-row { display:flex; align-items:center; flex-wrap:wrap; gap:8px; font-size:12px; }
+.mcp-oauth-setup { display:grid; gap:8px; margin:8px 0 14px; }
+.mcp-oauth-setup .mcp-form-label { display:grid; gap:6px; }
 .mcp-content-browser { margin-top:12px; border-top:1px solid var(--border-l2); padding-top:10px; min-width:0; }
 .mcp-content-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
 .mcp-resource-tree, .mcp-resource-tree ul { list-style:none; margin:8px 0; padding-left:14px; }

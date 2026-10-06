@@ -2,7 +2,7 @@
 
 - 类型：架构设计规格 (Spec)
 - 日期：2026-09-29
-- 状态：设计定稿；v1.14 能力面已实现（2026-10-06），OAuth / 可观测 / MRTR 仍按后续版本推进
+- 状态：设计定稿；v1.15 OAuth 已实现（2026-10-06），可观测 / MRTR 仍按后续版本推进
 - 关联：[v1.11.0 MCP 首版](2026-09-28-v1.11.0-mcp-integration-design.md) · [post-V3 路线图](2026-09-17-post-v3-roadmap-design.md) (B1) · [权限引擎](../backend/2026-05-30-v2-7-approval-resume-design.md) · [GUI 壳层](../frontend/2026-09-20-v1.8.1-dsh-shell-design.md) · [实施计划](../../plans/architecture/2026-09-29-mcp-client-v2-multi-version-plan.md)
 
 > **取证说明**：MCP 协议事实以 [modelcontextprotocol.io](https://modelcontextprotocol.io/specification) **2026-07-28** 现行规范为准（2026-09-29 联网核对）。产品配置/交互形态综合官方文档与公开资料；调研副本见 `tmp/mcp-market-research.md`。
@@ -93,7 +93,7 @@ MCP 现行版本为 **`2026-07-28`（Modern）**，与 **`2025-11-25` 及更早�
                                     │  mcp:* IPC / 内核 facade
 ┌───────────────────────────────────▼───────────────────────────────────┐
 │                         McpHost (宿主编排层)                           │
-│  · 配置合并（project > user > session）+ 密钥 resolve                 │
+│  · 配置合并（session > project > user）+ 密钥 resolve                 │
 │  · 生命周期：parallel init · health · backoff reconnect · hot reload  │
 │  · 能力缓存：tools / resources / prompts · list_changed / ttlMs       │
 │  · 治理：tool policy（enable / auto-approve / annotations 推导）      │
@@ -229,6 +229,19 @@ connect(server)
 - 注册：优先 **Client ID Metadata Documents**；RFC7591 DCR 仅兼容。
 - 流程：授权码 + PKCE；token 存 `~/.deepseek-code/credentials/`（0600）；按 issuer 键控，禁止跨 AS 复用。
 - 刷新与 `mcp:auth_required` 三端引导。
+
+#### 3.4.1 v1.15 实际契约（2026-10-06）
+
+- `auth/discovery.js`、`auth/oauth-client.js`、`auth/credential-store.js` 实现零依赖的原生公共客户端授权。配置 `oauth:{enabled:true,clientId?,scopes?,issuer?,resourceMetadataUrl?,timeoutMs?}`；不接受配置内的 token、client secret 或 PKCE verifier，stdio 不接受 OAuth。
+- 发现先按 Protected Resource well-known 路径与 origin 回退，再按 RFC 8414 / OIDC 获取 AS metadata。默认 PR metadata 均为 404/405 时，匿名 POST 原 MCP endpoint 的 `server/discover`，仅从 401 的 `WWW-Authenticate` 读取 `resource_metadata`；不发送静态凭据头。资源标识、AS issuer 必须严格匹配，必须声明 S256 支持。
+- 显式 HTTPS `clientId` 在 AS 声明支持时作为 Client ID Metadata Document URL；普通 ID 支持预注册公共客户端。不提供 ID 时，兼容 AS 的动态注册接口，注册 native / public client。Inkstone 不托管客户端 metadata 文档，真实服务所需 ID/文档由服务方配置。
+- 浏览器授权使用随机 state、S256 PKCE、资源指示参数及 `127.0.0.1` 随机端口回调。严格检查回调 Host、路径、state、`iss` 和重复参数，code/verifier 仅提交给该待授权流程固定的 AS。metadata 身份变化、取消、禁用、移除、退出均使旧流程失效。
+- 凭据按 serverId、issuer、resource、clientId、scopes 绑定。默认保存在 `~/.deepseek-code/credentials/mcp-oauth/`；`DEEPSEEK_CODE_HOME` 与现有 policy 一致，替代用户 home 后仍追加 `.deepseek-code`。文件使用 AES-256-GCM 与原子写入，文件权限 0600、目录 0700；Windows 使用账户 ACL。本地密钥同目录存放，作用是避免明文落盘，不等同操作系统密钥链。
+- token 过期前刷新；同一客户端合并并发刷新。每次 MCP HTTP 请求最多一次 401 刷新重试，第二次拒绝清凭据并要求重新登录；刷新失败、旧刷新迟到、issuer 切换不能复活或覆盖新授权。注销按 serverId + resource 清理，保留其他资源的同名服务。OAuth metadata、注册、token 和带 OAuth 的资源请求均禁止重定向，仍经 DNS 固定与 SSRF 校验；HTTP 仅允许显式放行的本机回环。
+- `kernel.mcp` 提供 `getAuthStatus/startAuth/cancelAuth/logoutAuth`。安全状态为 disabled/unauthenticated/pending/authenticated/error。Hub 登录完成自动重连；`mcp:auth_required`、`mcp:auth_status` 已登记会话 schema 与回放样本，authenticated 事件在重连结束后发出。
+- GUI 只由主进程打开授权 URL，IPC 仅返回安全状态；CLI `mcp auth <server> [login|status|cancel|logout]` 显示授权 URL 并等待回调。该专用授权 URL 保留 state，普通内容/错误/日志动态脱敏新旧 token、code 和 verifier；它们不进入 IPC 或会话事件。
+- 传输错误现在及时拒绝对应 JSON-RPC pending，401 不再被掩盖成超时。此改动不代表在途 AbortSignal 取消已完成，后者仍在 v1.16。
+- 验收使用真实本地 HTTP mock AS 与 MCP、完整内核、CLI、GUI host/IPC/状态测试；未验证真实外部 IdP。legacy SSE 复用同一 HTTP 鉴权层，建议新服务使用 Streamable HTTP。
 
 ---
 

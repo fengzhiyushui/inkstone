@@ -6,16 +6,17 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 
-test("four version spots are synchronized to 1.14.0", () => {
+test("four version spots are synchronized to the product version", () => {
   const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
   const lock = JSON.parse(readFileSync(join(ROOT, "package-lock.json"), "utf8"));
   const theme = readFileSync(join(ROOT, "src/theme.js"), "utf8");
   const app = readFileSync(join(ROOT, "gui/src/App.jsx"), "utf8");
 
-  assert.equal(pkg.version, "1.14.0", "package.json version should be 1.14.0");
-  assert.equal(lock.version, "1.14.0", "package-lock.json root version should be 1.14.0");
-  assert.match(theme, /export const VERSION = "1\.14\.0";/, "src/theme.js VERSION should be 1.14.0");
-  assert.match(app, /const VERSION = "1\.14\.0";/, "gui/src/App.jsx VERSION should be 1.14.0");
+  assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
+  assert.equal(lock.version, pkg.version);
+  assert.equal(lock.packages[""].version, pkg.version);
+  assert.equal(theme.match(/export const VERSION = "([^"]+)";/)?.[1], pkg.version);
+  assert.equal(app.match(/const VERSION = "([^"]+)";/)?.[1], pkg.version);
 });
 
 test("v1.10.0: IPC_CHANNELS whitelist includes gui:modal-active and preload exposes setModalActive", () => {

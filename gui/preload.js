@@ -56,6 +56,10 @@ contextBridge.exposeInMainWorld("deepseek", {
   recoveryClear: (id) => ipcRenderer.invoke("recovery:clear", id),
   // MCP 外部服务管理
   listMcpServers: () => ipcRenderer.invoke("mcp:list"),
+  getMcpAuthStatus: (serverId) => ipcRenderer.invoke("mcp:auth-status", serverId),
+  startMcpAuth: (serverId) => ipcRenderer.invoke("mcp:auth-start", serverId),
+  cancelMcpAuth: (serverId) => ipcRenderer.invoke("mcp:auth-cancel", serverId),
+  logoutMcpAuth: (serverId) => ipcRenderer.invoke("mcp:auth-logout", serverId),
   restartMcpServer: (serverId) => ipcRenderer.invoke("mcp:restart", serverId),
   toggleMcpServer: (serverId, enabled) => ipcRenderer.invoke("mcp:toggle", serverId, enabled),
   addMcpServer: (serverId, config) => ipcRenderer.invoke("mcp:add", serverId, config),

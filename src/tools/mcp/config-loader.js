@@ -12,6 +12,34 @@ import { normalizeToolPolicy } from "./tool-policy.js";
 
 const SERVER_ID_RE = /^[a-zA-Z0-9_.-]{1,128}$/;
 
+export function normalizeOAuthConfig(raw, type) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("MCP OAuth configuration must be an object");
+  if (Object.keys(raw).some((key) => /secret|token|password|credential|verifier/i.test(key))) {
+    throw new Error("MCP OAuth configuration cannot contain credentials; use the sign-in flow");
+  }
+  const enabled = raw.enabled === true;
+  if (enabled && type === "stdio") throw new Error("MCP OAuth requires a remote HTTP server");
+  const result = { enabled };
+  for (const key of ["clientId", "issuer", "resourceMetadataUrl"]) {
+    if (raw[key] === undefined) continue;
+    if (typeof raw[key] !== "string" || !raw[key].trim() || raw[key].length > 8192 || /[\r\n]/.test(raw[key])) {
+      throw new Error(`Invalid MCP OAuth ${key}`);
+    }
+    result[key] = raw[key].trim();
+  }
+  if (raw.scopes !== undefined) {
+    if (!Array.isArray(raw.scopes) || raw.scopes.length > 100 || raw.scopes.some((scope) => typeof scope !== "string" || !/^[\x21\x23-\x5b\x5d-\x7e]{1,256}$/.test(scope))) {
+      throw new Error("MCP OAuth scopes must be an array of valid scope strings");
+    }
+    result.scopes = [...new Set(raw.scopes)];
+  }
+  if (raw.timeoutMs !== undefined) {
+    if (!Number.isFinite(raw.timeoutMs) || raw.timeoutMs < 1000 || raw.timeoutMs > 600000) throw new Error("Invalid MCP OAuth timeoutMs");
+    result.timeoutMs = raw.timeoutMs;
+  }
+  return result;
+}
+
 export function normalizeServerConfig(serverId, raw = {}) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new Error(`Invalid MCP server config for '${serverId}'`);
@@ -58,8 +86,8 @@ export function normalizeServerConfig(serverId, raw = {}) {
   if (typeof raw.maxRedirects === "number" && raw.maxRedirects >= 0) {
     normalized.maxRedirects = raw.maxRedirects;
   }
-  if (raw.oauth && typeof raw.oauth === "object") {
-    normalized.oauth = { ...raw.oauth };
+  if (raw.oauth !== undefined) {
+    normalized.oauth = normalizeOAuthConfig(raw.oauth, type);
   }
   // v1.13.0:trust 决定该 server 自报的 annotations 是否参与风险判定
   // (design §4.2:annotations 不可信,除非 server 受信)。默认 false。

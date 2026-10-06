@@ -112,7 +112,7 @@ docs/
 - [v3-roadmap-design](specs/architecture/2026-06-24-v3-roadmap-design.md) — V3 路线图：四阶段、三支柱、三层多 agent
 - [post-v3-roadmap-design](specs/architecture/2026-09-17-post-v3-roadmap-design.md) — V3 之后路线图（草案）
 - [v1.11.0-mcp-integration-design](specs/architecture/2026-09-28-v1.11.0-mcp-integration-design.md) — MCP 外部工具接入体系设计规格
-- [mcp-client-v2-design](specs/architecture/2026-09-29-mcp-client-v2-design.md) — MCP Client v2：dual-era / Streamable HTTP / 治理；v1.14 资源、提示词、输出校验已实现，OAuth 待后续
+- [mcp-client-v2-design](specs/architecture/2026-09-29-mcp-client-v2-design.md) — MCP Client v2：dual-era / Streamable HTTP / 治理 / 资源与提示词；v1.15 OAuth 已实现，可观测与 MRTR 待后续
 
 ### specs/backend
 - [v2-7 approval-resume](specs/backend/2026-05-30-v2-7-approval-resume-design.md)
@@ -193,6 +193,6 @@ docs/
 
 ## 版本与里程碑
 
-当前产品版本以 [`package.json`](../package.json) 与 [`CHANGELOG.md`](CHANGELOG.md) 为准（**v1.14.0 preview**，2026-10-06）。`package.json`、`package-lock.json`、`src/theme.js`、`gui/src/App.jsx` 四处版本应一致。
+当前产品版本以 [`package.json`](../package.json) 与 [`CHANGELOG.md`](CHANGELOG.md) 为准（**v1.15.0 preview**，2026-10-06）。`package.json`、`package-lock.json`、`src/theme.js`、`gui/src/App.jsx` 四处版本应一致。
 
 开发历程简记：V1 原型 → V2 干净运行时（内核统一、工具平面、编辑回滚、验证修复、上下文、分支 rewind、持久化恢复、护栏）→ V3 三支柱（语义上下文、多智能体调度、三端前端）→ v1.x 产品化（v1.4 会话优先 UI，v1.8 工学换肤与壳层重构）。

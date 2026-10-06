@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
-import { pinnedHttpRequest, HttpRedirectError } from "./http-client.js";
+import { HttpRedirectError } from "./http-client.js";
 import { SseParser, isEventStream } from "./sse.js";
+import { oauthHttpRequest } from "./oauth-http.js";
 
 /**
  * v1.12.0:Streamable HTTP 传输(protocol 2026-07-28 / 2025-11-25)。
@@ -47,7 +48,8 @@ export class HttpTransport extends EventEmitter {
     lookup,
     maxRedirects,
     maxBodyBytes,
-    retryOnStreamBreak = 1
+    retryOnStreamBreak = 1,
+    oauth = null
   } = {}) {
     super();
     if (!url || typeof url !== "string") {
@@ -65,6 +67,7 @@ export class HttpTransport extends EventEmitter {
     this.maxRedirects = maxRedirects;
     this.maxBodyBytes = maxBodyBytes;
     this.retryOnStreamBreak = retryOnStreamBreak;
+    this.oauth = oauth;
     /** 传输是否支持"断流重发" —— JsonRpcClient 据此决定是否重试。 */
     this.supportsRetry = retryOnStreamBreak > 0;
 
@@ -99,6 +102,7 @@ export class HttpTransport extends EventEmitter {
     }
     // 不阻塞调用方:JsonRpcClient.send 是同步契约,响应经 'message' 事件回流。
     this._dispatch(message, { retries, timeoutMs }).catch((err) => {
+      if (message?.id !== undefined) err.requestId = message.id;
       this.lastError = err;
       this.emit("error", err);
     });
@@ -149,7 +153,7 @@ export class HttpTransport extends EventEmitter {
     if (toolName) headers["Mcp-Name"] = toolName;
 
     try {
-      const response = await pinnedHttpRequest(
+      const response = await oauthHttpRequest(
         this.url,
         { allowlist: this.allowlist, lookup: this.lookup, maxRedirects: this.maxRedirects },
         {
@@ -160,7 +164,8 @@ export class HttpTransport extends EventEmitter {
           signal: controller.signal,
           stream: true,
           maxBodyBytes: this.maxBodyBytes
-        }
+        },
+        this.oauth
       );
 
       const sessionId = response.getHeader("mcp-session-id");
@@ -171,6 +176,10 @@ export class HttpTransport extends EventEmitter {
         return;
       }
       if (response.status >= 400) {
+        if (this.oauth) {
+          response.stream.destroy?.();
+          throw httpError(response.status, "MCP request failed");
+        }
         const detail = await readErrorBody(response);
         throw httpError(response.status, detail);
       }

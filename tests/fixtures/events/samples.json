@@ -1,4 +1,15 @@
 {
+  "mcp:auth_required": {
+    "session_id": "sess_7f3a1c",
+    "serverId": "remote",
+    "status": "AUTH_REQUIRED",
+    "message": "Sign in to this MCP server"
+  },
+  "mcp:auth_status": {
+    "session_id": "sess_7f3a1c",
+    "serverId": "remote",
+    "status": "authenticated"
+  },
   "session:start": {
     "root": "/workspace/inkstone",
     "runtime": "v2"
