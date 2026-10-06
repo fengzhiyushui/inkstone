@@ -5,6 +5,7 @@ const path = require("path");
 const { pathToFileURL } = require("url");
 const { callMcpAuth } = require("./mcp-oauth.js");
 const { diagnosticOptions, callDiagnostic } = require("./mcp-diagnostics.js");
+const { inputResponse, callInputRequest } = require("./mcp-input-requests.js");
 
 let projectModPromise = null;
 function loadProjectMod() {
@@ -874,6 +875,14 @@ function createKernelHost({
     return mcpDiagnostic("cancelToolTest", [id]);
   };
 
+  const listMcpInputRequests = async () => callInputRequest({ facade: requireKernel().mcp,
+    config: await configLoader(projectRoot), method: "listInputRequests" });
+  const respondMcpInputRequest = async (id, response) => {
+    const accepted = inputResponse(id, response);
+    return callInputRequest({ facade: requireKernel().mcp, config: await configLoader(projectRoot),
+      method: "respondInputRequest", args: [id, accepted] });
+  };
+
   return { init, ready, send, approve, interrupt, getTimeline, getSnapshot, getUsage, getConfig, getState, listPaused,
            listBranches, listCheckpoints, rewindPreview, rewindApply, getActiveBranch,
            getPreferences, setPreferences, listTree, readFile, writeFile, listChanges, describeChange,
@@ -884,6 +893,7 @@ function createKernelHost({
            getMcpAuthStatus, startMcpAuth, cancelMcpAuth, logoutMcpAuth,
            listMcpResources, listMcpResourceTemplates, readMcpResource, listMcpPrompts, getMcpPrompt,
            getMcpLogs, exportMcpLogs, listMcpTools, startMcpToolTest, approveMcpToolTest, cancelMcpToolTest,
+           listMcpInputRequests, respondMcpInputRequest,
     listMcpInputs, setMcpInput,
            resolveSensitiveNotice, abortPendingSensitive, dispose };
 }

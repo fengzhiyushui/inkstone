@@ -15,6 +15,7 @@ import {
   bindInputs
 } from "../../src/tools/mcp/config-loader.js";
 import { mkdtempSync } from "../helpers/tmp.js";
+import { normalizeMcpServers } from "../../src/config.js";
 
 function tmpProject() {
   const root = mkdtempSync(join(tmpdir(), "inkstone-mcp-cfg-"));
@@ -174,4 +175,34 @@ test("bindInputs prefers value then credentials-less default", () => {
   });
   assert.equal(bound.a.value, "v1");
   assert.equal(bound.b.value, "d1");
+});
+
+test("MCP interactive capabilities require explicit boolean opt-in and bounded form timeout", () => {
+  const normalize = (settings) => normalizeServerConfig("forms", { command: "node", ...settings });
+  const defaults = normalize({});
+  assert.equal(Object.hasOwn(defaults, "elicitation"), false);
+  assert.equal(Object.hasOwn(defaults, "subscriptions"), false);
+  for (const name of ["elicitation", "subscriptions"]) {
+    assert.deepEqual(normalize({ [name]: {} })[name], { enabled: false });
+    assert.deepEqual(normalize({ [name]: { enabled: true, unexpected: "ignored" } })[name], { enabled: true });
+    assert.deepEqual(normalize({ [name]: { enabled: false } })[name], { enabled: false });
+    for (const settings of [null, true, [], "true", { enabled: "true" }, { enabled: 1 }]) {
+      assert.throws(() => normalize({ [name]: settings }), /Invalid MCP/);
+    }
+  }
+  for (const timeoutMs of [1000, 120000, 300000]) {
+    assert.deepEqual(normalize({ elicitation: { enabled: true, timeoutMs } }).elicitation, { enabled: true, timeoutMs });
+  }
+  for (const timeoutMs of [999, 300001, 1000.5, "120000", Infinity, NaN]) {
+    assert.throws(() => normalize({ elicitation: { enabled: true, timeoutMs } }), /Invalid MCP elicitation timeoutMs/);
+  }
+  const servers = normalizeMcpServers({
+    forms: { command: "node", elicitation: { enabled: true, timeoutMs: 1000 }, subscriptions: { enabled: true } },
+    malformed: { command: "node", elicitation: { enabled: "true" } },
+    plain: { command: "node" }
+  });
+  assert.deepEqual(servers.forms.elicitation, { enabled: true, timeoutMs: 1000 });
+  assert.deepEqual(servers.forms.subscriptions, { enabled: true });
+  assert.equal(Object.hasOwn(servers, "malformed"), false);
+  assert.equal(Object.hasOwn(servers.plain, "elicitation"), false);
 });

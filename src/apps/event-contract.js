@@ -122,7 +122,7 @@ export function describeEvent(event) {
       protocolMode: str(payload.protocolMode) || str(payload.protocol_mode),
       protocolVersion: str(payload.protocolVersion) || str(payload.protocol_version),
       toolCount: num(payload.toolCount) ?? num(payload.count),
-      message: str(payload.message) || str(payload.error?.message) || (payload.error ? str(String(payload.error)) : null) || str(payload.reason),
+      message: ["mcp:input_required", "mcp:input_resolved"].includes(type) ? null : str(payload.message) || str(payload.error?.message) || (payload.error ? str(String(payload.error)) : null) || str(payload.reason),
       method: str(payload.method),
       requestId: typeof payload.requestId === "number" ? payload.requestId : str(payload.requestId),
       durationMs: num(payload.durationMs),
@@ -132,7 +132,8 @@ export function describeEvent(event) {
       progress: num(payload.progress),
       total: num(payload.total),
       runId: str(payload.runId),
-      toolName: str(payload.toolName)
+      toolName: str(payload.toolName),
+      notificationCount: num(payload.notificationCount)
     });
   }
 

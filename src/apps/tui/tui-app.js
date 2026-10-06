@@ -28,6 +28,8 @@ import { CONFIG_ACTIONS, CONFIG_FIELDS, initialConfigState, reduceConfig, render
 import { createMcpDisplayRedactor } from "../../security/mcp-content.js";
 import { parseMcpArgs, formatMcpServerLines, formatMcpLogLines, mcpText } from "./mcp-actions.js";
 import { cleanMcpLogResult } from "../cli/mcp-logs.js";
+import { createMcpInputResponder, inputFields, inputFieldHint, parseInputField, MCP_INPUT_MAX_LENGTH } from "../mcp-input-form.js";
+import { truncateToWidth } from "./ansi.js";
 
 const CTRLC_WINDOW_MS = 3000;
 const HISTORY_CAP = 20; // 与 kernel-runner appendHistory 同语义:10 轮
@@ -64,6 +66,8 @@ export function createTuiApp({
   let finishResolve = null;
   let modalHandler = null; // T13:config 等全接管视图的按键处理器
   let mcpOperation = null;
+  let mcpInput = null;
+  let mcpInputKeys = null;
   const painter = createPainter({ write: (s) => output.write(s) });
   const columns = () => output.columns || 80;
 
@@ -161,11 +165,80 @@ export function createTuiApp({
 
   function subscribeKernel() {
     if (!kernel?.session?.subscribe) return;
+    mcpInput = createMcpInputResponder({ kernel, prompt: waitMcpInput, write: (line) => pushLines([` ${line}`]) });
     subscription = kernel.session.subscribe((event) => {
+      mcpInput.handle(event);
       refreshStatus();
       if (!event?.type || QUIET.has(event.type)) return;
       const clean = event.type.startsWith("mcp:") ? createMcpDisplayRedactor({ config: kernel.config, hub: kernel.mcp?.hub }) : undefined;
       pushLines(eventToLines(event, T, clean));
+    });
+    void mcpInput.refresh();
+  }
+
+  function waitMcpInput(request, { signal }) {
+    const fields = inputFields(request);
+    const clean = createMcpDisplayRedactor({ config: kernel?.config, hub: kernel?.mcp?.hub });
+    const safe = (value) => truncateToWidth(mcpText(clean(String(value ?? ""))), columns() - 4);
+    const content = Object.create(null);
+    let index = 0;
+    let raw = "";
+    let error = "";
+    return new Promise((resolve) => {
+      let finished = false;
+      function finish(response) {
+        if (finished) return;
+        finished = true;
+        raw = "";
+        mcpInputKeys = null;
+        signal.removeEventListener("abort", abort);
+        dispatch({ type: "mcp_input_overlay", overlay: null });
+        resolve(response);
+      }
+      const abort = () => finish({ action: "cancel" });
+      function render() {
+        const field = fields[index];
+        const lines = [
+          ` ${color.yellow(T("mcpInput.title", { server: safe(request.serverId) }))}`,
+          ` ${safe(request.message)}`,
+          ` ${color.dim(T("mcpInput.hidden"))}`
+        ];
+        if (field) {
+          lines.push(` ${index + 1}/${fields.length} · ${safe(field.rule.title || field.name)}${field.required ? " *" : ` (${T("mcpInput.optional")})`}`);
+          if (field.rule.description) lines.push(` ${safe(field.rule.description)}`);
+          lines.push(` ${safe(inputFieldHint(field))}`, ` ❯ ${raw ? "●●●●" : ""}`, ` ${T("mcpInput.next")}`);
+        } else {
+          lines.push(` ${T("mcpInput.confirm", { count: Object.keys(content).length, server: safe(request.serverId) })}`);
+        }
+        if (error) lines.push(` ${color.red(error)}`);
+        dispatch({ type: "mcp_input_overlay", overlay: { lines, cursorRow: lines.length - 1, cursorCol: 1 } });
+      }
+      mcpInputKeys = (event) => {
+        if (event.type === "esc") { finish({ action: "cancel" }); return; }
+        const field = fields[index];
+        if (!field) {
+          if (event.type === "char" && /^y$/i.test(event.text)) finish({ action: "accept", content });
+          else if (event.type === "char" && /^n$/i.test(event.text)) finish({ action: "decline" });
+          return;
+        }
+        if (event.type === "char" || event.type === "paste") {
+          raw = (raw + String(event.text || "")).slice(0, MCP_INPUT_MAX_LENGTH + 1);
+          error = "";
+        } else if (event.type === "backspace") raw = Array.from(raw).slice(0, -1).join("");
+        else if (event.type === "enter") {
+          try {
+            const result = parseInputField(field, raw);
+            if (!result.omitted) content[field.name] = result.value;
+            raw = "";
+            error = "";
+            index++;
+          } catch (failure) { error = failure.message; }
+        }
+        render();
+      };
+      signal.addEventListener("abort", abort, { once: true });
+      if (signal.aborted) abort();
+      else render();
     });
   }
 
@@ -271,6 +344,7 @@ export function createTuiApp({
     try {
       const prof = await profilesStore.activate(profile.id);
       await configureProjectImpl(root, { apiKey: prof.apiKey, baseUrl: prof.baseUrl, ...(prof.model ? { model: prof.model } : {}) });
+      await mcpInput?.close();
       subscription?.unsubscribe?.();
       if (ownKernel && kernel?.dispose) await kernel.dispose().catch(() => {});
       try {
@@ -309,6 +383,7 @@ export function createTuiApp({
       const remaining = await profilesStore.list();
       if (wasActive || remaining.length === 0) {
         await configureProjectImpl(root, { apiKey: "" });
+        await mcpInput?.close();
         subscription?.unsubscribe?.();
         if (ownKernel && kernel?.dispose) await kernel.dispose().catch(() => {});
         try {
@@ -597,6 +672,7 @@ export function createTuiApp({
       dispatch({ type: "hint", text: T("hint.ctrlc") });
       return;
     }
+    if (mcpInputKeys) { mcpInputKeys(ev); return; }
     if (modalHandler) { modalHandler(ev); return; }
     // 敏感文件提醒优先于审批处理:两者不会同时出现,但顺序固定避免歧义
     if (state.sensitiveNotice) {
@@ -714,6 +790,7 @@ export function createTuiApp({
       if (paintQueued) { clearImmediate(paintQueued); paintQueued = null; }
       if (escTimer) { clearTimeout(escTimer); escTimer = null; }
       clearInterval(spinTimer);
+      await mcpInput?.close();
       subscription?.unsubscribe?.();
       input.removeListener("data", onData);
       output.removeListener?.("resize", onResize);

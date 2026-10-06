@@ -89,6 +89,18 @@ export function normalizeServerConfig(serverId, raw = {}) {
   if (raw.oauth !== undefined) {
     normalized.oauth = normalizeOAuthConfig(raw.oauth, type);
   }
+  for (const name of ["elicitation", "subscriptions"]) {
+    if (raw[name] !== undefined) {
+      const settings = raw[name];
+      if (!settings || typeof settings !== "object" || Array.isArray(settings)
+        || settings.enabled !== undefined && typeof settings.enabled !== "boolean") throw new Error(`Invalid MCP ${name} configuration`);
+      normalized[name] = { enabled: settings.enabled === true };
+      if (name === "elicitation" && settings.timeoutMs !== undefined) {
+        if (!Number.isInteger(settings.timeoutMs) || settings.timeoutMs < 1000 || settings.timeoutMs > 300000) throw new Error("Invalid MCP elicitation timeoutMs");
+        normalized[name].timeoutMs = settings.timeoutMs;
+      }
+    }
+  }
   // v1.13.0:trust 决定该 server 自报的 annotations 是否参与风险判定
   // (design §4.2:annotations 不可信,除非 server 受信)。默认 false。
   if (raw.trust === true) normalized.trust = true;

@@ -20,6 +20,7 @@ export function initialTuiState({ lang = "zh", mode = "gated", theme = "sumi", s
     sensitiveNotice: null,
     menu: null,
     overlay: null,
+    mcpInputOverlay: null,
     pending: [],
     hint: "",
     // v1.9 M4 #11:reasoningTokens/tps 由 refreshStatus 从 usage 快照透传,0 = 无数据
@@ -88,6 +89,7 @@ export function reduce(state, action = {}) {
       return { ...state, menu: { ...state.menu, index } };
     }
     case "overlay": return { ...state, overlay: action.overlay || null };
+    case "mcp_input_overlay": return { ...state, mcpInputOverlay: action.overlay || null };
     case "mode": return { ...state, mode: action.mode };
     case "lang": return { ...state, lang: action.lang };
     case "theme_set": return { ...state, theme: action.theme };

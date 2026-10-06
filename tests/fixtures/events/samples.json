@@ -11,7 +11,9 @@
   "mcp:server_added": { "serverId": "remote", "status": "CONFIGURED" },
   "mcp:server_removed": { "serverId": "remote" },
   "mcp:protocol_mode": { "serverId": "remote", "protocolMode": "modern", "protocolVersion": "2025-06-18" },
-  "mcp:input_required": { "serverId": "remote", "message": "Configure the required server input" },
+  "mcp:input_required": { "serverId": "remote", "requestId": "input_1", "status": "pending", "method": "elicitation/create" },
+  "mcp:input_resolved": { "serverId": "remote", "requestId": "input_1", "status": "accepted", "method": "elicitation/create" },
+  "mcp:subscription_status": { "serverId": "remote", "status": "active", "notificationCount": 2 },
   "mcp:log": { "serverId": "remote", "entry": { "id": "log_1", "timestamp": "2026-10-06T00:00:00Z", "serverId": "remote", "kind": "request", "direction": "outbound", "method": "tools/call", "requestId": 7, "durationMs": 42, "status": "ok", "level": "info", "category": "protocol", "message": "Request completed" } },
   "mcp:tool_test": { "serverId": "remote", "runId": "test_1", "status": "complete", "toolName": "mcp__remote__ping", "durationMs": 42 },
   "mcp:auth_required": {

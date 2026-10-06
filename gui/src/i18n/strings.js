@@ -1,6 +1,16 @@
 // Bilingual UI strings (zh default, en switchable). Pure — node:test-able.
 const STRINGS = {
   zh: {
+    "mcp.input.title": "MCP 服务等待你的输入", "mcp.input.server": "接收服务", "mcp.input.pending": "等待输入的请求数",
+    "mcp.input.confirmHint": "以下内容由该服务请求。填写的值仅在你勾选确认并提交后发送给此服务；请只填写本次操作所需的信息。",
+    "mcp.input.confirm": "我已核对填写内容，同意将这些值发送给上方服务。", "mcp.input.values": "待发送的值（JSON）",
+    "mcp.input.submit": "确认并发送", "mcp.input.sending": "正在提交…", "mcp.input.decline": "拒绝提供", "mcp.input.cancel": "取消请求",
+    "mcp.input.invalid": "请检查必填字段、数据类型和 JSON 格式。", "mcp.input.failed": "无法处理输入请求，请刷新后重试。",
+    "mcp.input.enable": "允许此服务请求人工输入", "mcp.input.enableHint": "默认关闭。启用后，每次请求都会展示表单并等待你明确确认，不会自动填入或提交信息。",
+    "mcp.input.enabled": "已允许人工输入请求，每次提交仍需确认。",
+    "mcp.subscriptions.enable": "订阅此服务的目录变更", "mcp.subscriptions.enableHint": "默认关闭。接收工具、提示词和资源列表的变更通知；此服务须支持订阅。",
+    "mcp.subscriptions.label": "目录订阅", "mcp.subscriptions.status.connecting": "正在连接", "mcp.subscriptions.status.active": "已连接",
+    "mcp.subscriptions.status.closed": "已结束", "mcp.subscriptions.status.cancelled": "已取消", "mcp.subscriptions.status.error": "连接异常，请重启服务", "mcp.subscriptions.status.inactive": "未连接或服务不支持",
     "mcp.diagnostics.title": "诊断与工具试跑", "mcp.diagnostics.logs": "诊断日志", "mcp.diagnostics.test": "工具试跑",
     "mcp.diagnostics.direction.in": "接收", "mcp.diagnostics.direction.out": "发送", "mcp.diagnostics.event": "MCP 服务事件", "mcp.diagnostics.open": "打开 MCP 管理",
     "mcp.diagnostics.level": "级别", "mcp.diagnostics.category": "分类", "mcp.diagnostics.method": "方法", "mcp.diagnostics.search": "搜索",
@@ -220,6 +230,16 @@ const STRINGS = {
     "settings.sd.dotsCountDesc": "「点阵」形态下每个指标的方格总数", "settings.sd.cells": "{n} 格",
   },
   en: {
+    "mcp.input.title": "MCP server is waiting for your input", "mcp.input.server": "Receiving server", "mcp.input.pending": "Requests awaiting input",
+    "mcp.input.confirmHint": "This server requested the information below. Values are sent only after you check the confirmation and submit. Enter only the information needed for this operation.",
+    "mcp.input.confirm": "I reviewed these values and agree to send them to the server shown above.", "mcp.input.values": "Values to send (JSON)",
+    "mcp.input.submit": "Confirm and send", "mcp.input.sending": "Submitting…", "mcp.input.decline": "Decline", "mcp.input.cancel": "Cancel request",
+    "mcp.input.invalid": "Check required fields, value types and JSON format.", "mcp.input.failed": "Unable to handle the input request. Refresh and try again.",
+    "mcp.input.enable": "Allow this server to request human input", "mcp.input.enableHint": "Off by default. Each request opens a form and waits for your explicit confirmation. Values are never filled in or submitted automatically.",
+    "mcp.input.enabled": "Human input requests are enabled; every submission still requires confirmation.",
+    "mcp.subscriptions.enable": "Subscribe to this server's catalog changes", "mcp.subscriptions.enableHint": "Off by default. Receive changes to tool, prompt and resource lists when the server supports subscriptions.",
+    "mcp.subscriptions.label": "Catalog subscription", "mcp.subscriptions.status.connecting": "Connecting", "mcp.subscriptions.status.active": "Connected",
+    "mcp.subscriptions.status.closed": "Ended", "mcp.subscriptions.status.cancelled": "Cancelled", "mcp.subscriptions.status.error": "Connection failed; restart the server", "mcp.subscriptions.status.inactive": "Inactive or unsupported",
     "mcp.diagnostics.title": "Diagnostics and tool testing", "mcp.diagnostics.logs": "Diagnostic logs", "mcp.diagnostics.test": "Test a tool",
     "mcp.diagnostics.direction.in": "Received", "mcp.diagnostics.direction.out": "Sent", "mcp.diagnostics.event": "MCP server event", "mcp.diagnostics.open": "Open MCP manager",
     "mcp.diagnostics.level": "Level", "mcp.diagnostics.category": "Category", "mcp.diagnostics.method": "Method", "mcp.diagnostics.search": "Search",

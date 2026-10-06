@@ -3,6 +3,8 @@ import { createToolCall } from "../../core/protocol/index.js";
 import { buildKernelOptions } from "../kernel-options.js";
 import { createSensitiveNoticeHandler } from "../sensitive-notice-contract.js";
 import { createEventRenderer, formatSensitiveNotice, renderKernelResult } from "./render-events.js";
+import { createMcpInputResponder } from "../mcp-input-form.js";
+import { createCliMcpInputPrompt } from "./mcp-input.js";
 
 export { buildKernelOptions } from "../kernel-options.js";
 
@@ -18,6 +20,7 @@ export async function runKernelAgentCommand({
   promptApproval = defaultPromptApproval,
   promptApprovalScope = null,
   askSensitive = defaultAskSensitive,
+  promptMcpInput = null,
   onSigint = defaultOnSigint
 } = {}) {
   const message = String(prompt || "").trim();
@@ -25,7 +28,9 @@ export async function runKernelAgentCommand({
 
   const kernel = await createKernelForRunner({ root, createKernelImpl, createKernelOptions, loadConfigImpl, write, askSensitive });
   const renderEvent = createEventRenderer({ write });
-  const subscription = kernel.session.subscribe(renderEvent);
+  const mcpInput = createMcpInputResponder({ kernel, write, prompt: promptMcpInput || createCliMcpInputPrompt({ kernel, write }) });
+  const subscription = kernel.session.subscribe((event) => { mcpInput.handle(event); renderEvent(event); });
+  void mcpInput.refresh();
   try {
     const result = await withTurnInterrupt({
       kernel,
@@ -43,6 +48,7 @@ export async function runKernelAgentCommand({
     });
   } finally {
     subscription.unsubscribe();
+    await mcpInput.close();
   }
 }
 
@@ -58,11 +64,14 @@ export async function runKernelChatCommand({
   promptApproval = defaultPromptApproval,
   promptApprovalScope = null,
   askSensitive = defaultAskSensitive,
+  promptMcpInput = null,
   onSigint = defaultOnSigint
 } = {}) {
   const kernel = await createKernelForRunner({ root, createKernelImpl, createKernelOptions, loadConfigImpl, write, askSensitive });
   const renderEvent = createEventRenderer({ write });
-  const subscription = kernel.session.subscribe(renderEvent);
+  const mcpInput = createMcpInputResponder({ kernel, write, prompt: promptMcpInput || createCliMcpInputPrompt({ kernel, write }) });
+  const subscription = kernel.session.subscribe((event) => { mcpInput.handle(event); renderEvent(event); });
+  void mcpInput.refresh();
   try {
     const initialPrompt = String(prompt || "").trim();
     if (initialPrompt) {
@@ -97,6 +106,7 @@ export async function runKernelChatCommand({
     });
   } finally {
     subscription.unsubscribe();
+    await mcpInput.close();
   }
 }
 

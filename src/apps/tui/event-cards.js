@@ -39,6 +39,7 @@ export function eventToLines(event = {}, t, clean = (value) => value) {
       f.requestId != null ? `#${f.requestId}` : "",
       f.durationMs != null ? `${f.durationMs}ms` : "", f.protocolMode,
       f.toolCount != null ? `${f.toolCount} ${t("msg.mcpTools")}` : "",
+      f.notificationCount != null ? `${f.notificationCount} notifications` : "",
       f.progress != null ? `${f.progress}${f.total != null ? `/${f.total}` : ""}` : "",
       f.message].filter((value) => value !== null && value !== undefined && value !== "").map((value) => mcpText(clean(value)));
     const paint = descriptor.severity === "danger" ? color.red : descriptor.severity === "warn" ? color.yellow : color.dim;

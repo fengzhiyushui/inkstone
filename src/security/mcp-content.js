@@ -31,10 +31,17 @@ export function createMcpDisplayRedactor({ config = {}, hub = null, knownSecrets
     // Refresh can rotate tokens during the operation being displayed. Read this
     // set at render time, including when the redactor predates the request.
     for (const secret of hub?.oauthSecrets || []) if (secret) out = out.split(secret).join("[REDACTED]");
+    // Tools may echo input inside serialized JSON text instead of as a scalar.
+    // Match the escaped spelling too, before replacing its raw representation.
+    for (const secret of hub?.inputSecrets || []) if (secret) {
+      const escaped = JSON.stringify(secret).slice(1, -1);
+      if (escaped !== secret) out = out.split(escaped).join("[REDACTED]");
+      out = out.split(secret).join("[REDACTED]");
+    }
     for (const secret of values) out = out.split(secret).join("[REDACTED]");
     return redactSecrets(out);
   };
-  const clean = (input) => {
+  const clean = (input, { inputContent = false } = {}) => {
     const ancestors = new WeakSet();
     const reasons = new Set();
     let nodes = 0;
@@ -43,6 +50,10 @@ export function createMcpDisplayRedactor({ config = {}, hub = null, knownSecrets
       if (depth > 32) return omit("depth limit");
       if (++nodes > 20000) return omit("item limit");
       if (typeof value === "string") return text(value);
+      if (typeof value === "number" && hub?.inputSecrets?.has(String(value))) return "[REDACTED]";
+      // Typed booleans in external content can be form answers too. Framework
+      // flags (isError, outputValidation.valid, etc.) retain their boolean type.
+      if (inputContent && typeof value === "boolean" && hub?.inputSecrets?.has(String(value))) return "[REDACTED]";
       if (!value || typeof value !== "object") return value;
       if (ancestors.has(value)) return omit("circular reference");
       ancestors.add(value);
@@ -87,10 +98,16 @@ export function sanitizeMcpDisplay(value, options = {}) {
 // Schema keywords, types and parameter identifiers are an executable contract.
 // Scrub descriptive/default/example data without renaming that contract when a
 // short configured secret happens to match a keyword or parameter name.
-export function sanitizeMcpSchema(schema, clean = createMcpDisplayRedactor()) {
+export function sanitizeMcpSchema(schema, clean = createMcpDisplayRedactor(), { preserveConstraints = false } = {}) {
   const maps = new Set(["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"]);
   const children = new Set(["items", "additionalProperties", "propertyNames", "contains", "not", "if", "then", "else"]);
   const lists = new Set(["allOf", "anyOf", "oneOf", "prefixItems"]);
+  // Private elicitation delivery needs the actual selectable values and bounds.
+  // Redacting a prior short answer must not change the form's valid responses.
+  // General tool-schema presentation retains its existing redaction behavior.
+  const constraints = new Set(["enum", "const", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf",
+    "minLength", "maxLength", "pattern", "format", "minItems", "maxItems", "uniqueItems", "minContains", "maxContains",
+    "minProperties", "maxProperties"]);
   let nodes = 0;
   const visit = (value, depth = 0) => {
     if (++nodes > 20000 || depth > 32) return false;
@@ -103,7 +120,8 @@ export function sanitizeMcpSchema(schema, clean = createMcpDisplayRedactor()) {
         output[key] = Object.fromEntries(Object.entries(item).map(([name, child]) => [name, visit(child, depth + 1)]));
       } else if (children.has(key)) output[key] = visit(item, depth + 1);
       else if (lists.has(key) && Array.isArray(item)) output[key] = item.map((child) => visit(child, depth + 1));
-      else if (["type", "required", "dependentRequired", "$ref", "$schema"].includes(key)) output[key] = structuredClone(item);
+      else if (["type", "required", "dependentRequired", "$ref", "$schema"].includes(key)
+        || preserveConstraints && constraints.has(key)) output[key] = structuredClone(item);
       else output[key] = clean(item);
     }
     return output;

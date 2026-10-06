@@ -536,6 +536,7 @@ export async function createKernel(root, options = {}) {
       if (kernelDisposed) return;
       kernelDisposed = true;
       mcpTrials.dispose();
+      mcpHub.inputBroker.dispose();
       try { await orchestrator.flushExperience?.(); } catch { /* best-effort */ }
       try { await experienceStore?.flush?.(); } catch { /* best-effort */ }
       unmountMcpCapabilities();
@@ -546,6 +547,8 @@ export async function createKernel(root, options = {}) {
     },
     mcp: {
       hub: mcpHub,
+      listInputRequests: () => mcpHub.listInputRequests(),
+      respondInputRequest: (requestId, response) => mcpHub.respondInputRequest(requestId, response),
       getLogs: (serverId, options) => mcpHub.getLogs(serverId, options),
       exportLogs: (serverId, options) => mcpHub.exportLogs(serverId, options),
       listTools: (serverId) => mcpHub.listTools(serverId),

@@ -50,7 +50,9 @@ export const SESSION_EVENT_SCHEMAS = deepFreeze({
   "mcp:server_removed": entry([["serverId", "string"]]),
   // Reserved compatibility events have no current producer with required keys.
   "mcp:protocol_mode": entry([], [["serverId", "string"], ["protocolMode", "string"], ["protocolVersion", "string"]]),
-  "mcp:input_required": entry([], [["serverId", "string"], ["message", "string"]]),
+  "mcp:input_required": entry([["serverId", "string"], ["requestId", "string"], ["status", "string"], ["method", "string"]]),
+  "mcp:input_resolved": entry([["serverId", "string"], ["requestId", "string"], ["status", "string"], ["method", "string"]]),
+  "mcp:subscription_status": entry([["serverId", "string"], ["status", "string"]], [["notificationCount", "number"], ["message", "string"]]),
   "mcp:log": entry([["entry", "object"]], [["serverId", "string"]]),
   "mcp:tool_test": entry([["serverId", "string"], ["runId", "string"], ["status", "string"], ["toolName", "string"]], [["durationMs", "number"]]),
   // 生产者:src/sessions/event-log.js:35 append("session:start", meta)。meta 由调用方注入
