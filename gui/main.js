@@ -35,6 +35,7 @@ const IPC_CHANNELS = [
   "sensitive:respond",
   "recovery:list", "recovery:report", "recovery:resume", "recovery:cancel", "recovery:clear",
   "mcp:list", "mcp:restart", "mcp:toggle", "mcp:add", "mcp:remove", "mcp:inputs", "mcp:set-input",
+  "mcp:auth-status", "mcp:auth-start", "mcp:auth-cancel", "mcp:auth-logout",
   "mcp:resources-list", "mcp:resource-templates-list", "mcp:resource-read", "mcp:prompts-list", "mcp:prompt-get"
 ];
 
@@ -115,6 +116,7 @@ async function createWindow() {
   let win = null;
   host = createKernelHost({
     projectRoot,
+    openMcpAuthorization: (url) => shell.openExternal(url),
     // 冒烟:登记表落到临时目录,避免污染开发者真实项目列表
     ...(smokeRegistryDir ? { projectRegistryDir: smokeRegistryDir } : {}),
     pushEvent: (event) => {
@@ -627,6 +629,10 @@ function registerIpcHandlers() {
 
   // MCP 外部服务管理通道
   handle("mcp:list", wrap(() => host.listMcpServers()));
+  handle("mcp:auth-status", wrap((_e, id) => host.getMcpAuthStatus(id)));
+  handle("mcp:auth-start", wrap((_e, id) => host.startMcpAuth(id)));
+  handle("mcp:auth-cancel", wrap((_e, id) => host.cancelMcpAuth(id)));
+  handle("mcp:auth-logout", wrap((_e, id) => host.logoutMcpAuth(id)));
   handle("mcp:restart", wrap((_e, serverId) => host.restartMcpServer(serverId)));
   handle("mcp:toggle", wrap((_e, serverId, enabled) => host.toggleMcpServer(serverId, enabled)));
   handle("mcp:add", wrap((_e, serverId, config) => host.addMcpServer(serverId, config)));

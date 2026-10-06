@@ -11,6 +11,7 @@ import { searchProject } from "./search.js";
 import { runTui } from "./tui.js";
 import { banner, color, commandLine, section, statusLine } from "./theme.js";
 import { buildEditPrompt, buildKernelOptions, runKernelAgentCommand, runKernelChatCommand, runKernelTestCommand } from "./apps/cli/kernel-runner.js";
+import { runMcpAuth } from "./apps/cli/mcp-auth.js";
 
 export async function runCli(argv, deps = {}) {
   const root = deps.root || process.cwd();
@@ -442,7 +443,10 @@ function collectHttpAllowlist(srvConfig = {}, config = {}, flags = null) {
 export async function runMcp(root, args, flags = new Map(), deps = {}) {
   const action = args[0] || "list";
   if (action === "resources" || action === "prompts") return runMcpContent(root, args, flags, deps);
-  const config = await loadConfig(root, { allowMissingKey: true });
+  if (action === "auth") return runMcpAuth(root, args, flags, {
+    createKernelImpl: createKernel, buildKernelOptionsImpl: buildKernelOptions, loadConfigImpl: loadConfig, ...deps
+  });
+  const config = await (deps.loadConfigImpl || loadConfig)(root, { allowMissingKey: true });
   const mcpServers = config.mcpServers || {};
 
   if (action === "list") {
@@ -518,48 +522,45 @@ export async function runMcp(root, args, flags = new Map(), deps = {}) {
     }
 
     const type = srvConfig.type || (srvConfig.url ? "streamable-http" : "stdio");
-    console.log(`正在连接 MCP 服务 "${serverId}" (${type})...`);
-    const { McpClient } = await import("./tools/mcp/mcp-client.js");
-    const client = new McpClient({
-      serverId,
-      command: srvConfig.command,
-      args: srvConfig.args,
-      env: srvConfig.env,
-      cwd: srvConfig.cwd || root,
-      timeoutMs: srvConfig.timeoutMs || 15000,
-      // v1.12.0:远程传输 —— url/type/headers 透传;私网放行沿用配置,
-      // 也允许 --allow-private 临时放行(便于本机自建 Server 自检)。
-      url: srvConfig.url,
-      type: srvConfig.type,
-      headers: srvConfig.headers,
-      allowlist: collectHttpAllowlist(srvConfig, config, flags)
+    const write = deps.write || console.log;
+    write(`正在连接 MCP 服务 "${serverId}" (${type})...`);
+    // Use the same Hub auth and refresh path as other clients. A standalone
+    // McpClient cannot access issuer-scoped OAuth credentials.
+    const kernel = await (deps.createKernelImpl || createKernel)(root, {
+      ...(await (deps.buildKernelOptionsImpl || buildKernelOptions)(root)),
+      autoInitMcp: false,
+      mcpServers: { [serverId]: {
+        ...srvConfig,
+        timeoutMs: srvConfig.timeoutMs || 15000,
+        allowlist: collectHttpAllowlist(srvConfig, config, flags)
+      } }
     });
-
+    const clean = createMcpDisplayRedactor({ config, hub: kernel.mcp?.hub });
     try {
-      await client.connect();
-      console.log(color.green(`✓ 连接成功！服务端信息: ${client.serverInfo?.name || "未知"} (v${client.serverInfo?.version || "未知"})`));
+      await kernel.mcp.restartServer(serverId);
+      const client = kernel.mcp.hub.getServer(serverId);
+      write(color.green(clean(`✓ 连接成功！服务端信息: ${client.serverInfo?.name || "未知"} (v${client.serverInfo?.version || "未知"})`)));
       if (client.getProtocolMode) {
-        console.log(color.dim(`  协议: ${client.getProtocolMode()} / ${client.protocolVersion || "未协商"}`));
+        write(color.dim(clean(`  协议: ${client.getProtocolMode()} / ${client.protocolVersion || "未协商"}`)));
       }
       if (client.deprecatedTransport) {
-        console.log(color.yellow(`  注意: ${client.deprecatedTransport}`));
+        write(color.yellow(clean(`  注意: ${client.deprecatedTransport}`)));
       }
-
-      const tools = await client.listTools();
-      console.log(`\n探测到 ${tools.length} 个可用工具:`);
+      const tools = kernel.mcp.hub.serverTools.get(serverId) || [];
+      write(`\n探测到 ${tools.length} 个可用工具:`);
       for (const tool of tools) {
         const desc = tool.description ? ` - ${tool.description}` : "";
-        console.log(`  • ${color.bold(tool.name)}${desc}`);
+        write(clean(`  • ${color.bold(tool.name)}${desc}`));
       }
     } catch (err) {
-      console.error(color.red(`✗ 连接失败: ${err.message}`));
-      const stderr = client.getRecentStderr();
+      (deps.writeError || console.error)(color.red(clean(`✗ 连接失败: ${err.message}`)));
+      const stderr = kernel.mcp?.hub?.getServer(serverId)?.getRecentStderr?.();
       if (stderr) {
-        console.error(`\n最近进程日志:\n${stderr}`);
+        (deps.writeError || console.error)(clean(`\n最近进程日志:\n${stderr}`));
       }
-      throw err;
+      throw new Error(clean(err?.message || String(err)));
     } finally {
-      await client.disconnect().catch(() => {});
+      await kernel.dispose?.();
     }
     return;
   }
@@ -599,6 +600,28 @@ export async function runMcp(root, args, flags = new Map(), deps = {}) {
       }
     }
     const allowPrivate = collectFlagAllowlist(flags);
+    const oauthEnabled = boolFlag(flags, "oauth");
+    if (["client-secret", "access-token", "refresh-token"].some((key) => flags.has(key))) {
+      throw new Error("OAuth 凭据不能写入服务配置，请通过 inkstone mcp auth <server> 登录。");
+    }
+    if ((flags.has("client-id") || flags.has("scopes")) && !oauthEnabled) {
+      throw new Error("--client-id 和 --scopes 需要同时指定 --oauth。");
+    }
+    if (oauthEnabled && (!url || command || type === "stdio")) {
+      throw new Error("--oauth 仅用于通过 --url 配置的远程 MCP 服务。");
+    }
+    const clientId = flags.get("client-id");
+    if (flags.has("client-id") && (typeof clientId !== "string" || !clientId.trim())) {
+      throw new Error("--client-id 需要非空客户端标识。");
+    }
+    const rawScopes = flags.get("scopes");
+    if (flags.has("scopes") && (typeof rawScopes !== "string" || !rawScopes.trim())) {
+      throw new Error("--scopes 需要以空格或逗号分隔的授权范围。");
+    }
+    const scopes = typeof rawScopes === "string" ? [...new Set(rawScopes.split(/[\s,]+/).filter(Boolean))] : [];
+    if (scopes.some((scope) => !/^[\x21\x23-\x5B\x5D-\x7E]+$/.test(scope))) {
+      throw new Error("--scopes 包含无效的 OAuth 授权范围。");
+    }
 
     const srvConfig = {
       ...(command ? { command: command.trim() } : {}),
@@ -611,6 +634,7 @@ export async function runMcp(root, args, flags = new Map(), deps = {}) {
       ...(type ? { type } : {}),
       ...(headers ? { headers } : {}),
       ...(allowPrivate.length ? { allowlist: allowPrivate } : {}),
+      ...(oauthEnabled ? { oauth: { enabled: true, ...(clientId ? { clientId: clientId.trim() } : {}), ...(scopes.length ? { scopes } : {}) } } : {}),
       // v1.13.0:trust 决定是否采纳该 server 自报的 annotations
       ...(flags.has("trust") ? { trust: true } : {})
     };
@@ -638,6 +662,7 @@ export async function runMcp(root, args, flags = new Map(), deps = {}) {
     if (allowPrivate.length) {
       console.log(`  私网放行: ${allowPrivate.join(", ")}`);
     }
+    if (oauthEnabled) console.log(`  OAuth: 已启用。运行 "inkstone mcp auth ${serverId}" 完成登录。`);
     console.log(`\n提示: 可运行 "inkstone mcp check ${serverId}" 测试连通性。`);
     return;
   }
@@ -680,7 +705,7 @@ export async function runMcp(root, args, flags = new Map(), deps = {}) {
     return;
   }
 
-  throw new Error(`未知 MCP 操作 "${action}"。可使用 list、check、add、remove、toggle、policy、resources 或 prompts。运行 inkstone help 查看用法。`);
+  throw new Error(`未知 MCP 操作 "${action}"。可使用 list、check、add、remove、toggle、policy、resources、prompts 或 auth。运行 inkstone help 查看用法。`);
 }
 
 async function runMcpContent(root, args, flags, deps) {
@@ -827,6 +852,8 @@ ${commandLine("inkstone changes show latest", "查看修改详情")}
 ${commandLine("inkstone rollback latest", "回退最近修改")}
 ${commandLine("inkstone resume", "查看最近会话记录")}
 ${commandLine("inkstone mcp [list|check]", "管理与检查 MCP 外部扩展服务与工具")}
+${commandLine("inkstone mcp auth <server> [login|status|cancel|logout]", "OAuth 登录、查看状态、取消或清除本地凭据")}
+${commandLine("inkstone mcp add <server> --url <url> --oauth", "添加 OAuth 服务；可指定 --client-id 和 --scopes")}
 ${commandLine("inkstone mcp resources <server> [list|templates]", "按需列出资源或 URI 模板")}
 ${commandLine("inkstone mcp resources <server> read <uri>", "通过 MCP 服务读取资源（不会直接访问 URI）")}
 ${commandLine("inkstone mcp prompts <server> [list|get <name>]", "列出或获取提示词；参数用 --arguments '{\"key\":\"value\"}'")}

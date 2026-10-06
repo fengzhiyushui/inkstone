@@ -3,6 +3,7 @@ const fs = require("fs/promises");
 const os = require("node:os");
 const path = require("path");
 const { pathToFileURL } = require("url");
+const { callMcpAuth } = require("./mcp-oauth.js");
 
 let projectModPromise = null;
 function loadProjectMod() {
@@ -210,6 +211,7 @@ function createKernelHost({
   kernelFactory = null,
   kernelOptions = {},
   configLoader = loadLegacyConfig,
+  openMcpAuthorization = null,
   editService = null,
   pushEvent = () => {}
 } = {}) {
@@ -741,6 +743,11 @@ function createKernelHost({
     return ready() && kernel?.mcp ? kernel.mcp.listServers() : [];
   }
 
+  const getMcpAuthStatus = (id) => callMcpAuth(requireKernel().mcp, "getAuthStatus", id);
+  const startMcpAuth = (id) => callMcpAuth(requireKernel().mcp, "startAuth", id, openMcpAuthorization);
+  const cancelMcpAuth = (id) => callMcpAuth(requireKernel().mcp, "cancelAuth", id);
+  const logoutMcpAuth = (id) => callMcpAuth(requireKernel().mcp, "logoutAuth", id);
+
   // v1.11.2:${input:*} 密钥引用。定义来自 .mcp.json / config.json 的 inputs,
   // 值优先显式 value → 凭据库(~/.deepseek-code/credentials,0600)→ default。
   function listMcpInputs() {
@@ -846,6 +853,7 @@ function createKernelHost({
            listModels, testConnection, activateBranch, listProjects, addProject, removeProject, switchProject, listSessions, deleteSession,
            getRecoveryList, getRecoveryReport, recoveryResume, recoveryCancel, recoveryClear,
            listMcpServers, restartMcpServer, toggleMcpServer, addMcpServer, removeMcpServer,
+           getMcpAuthStatus, startMcpAuth, cancelMcpAuth, logoutMcpAuth,
            listMcpResources, listMcpResourceTemplates, readMcpResource, listMcpPrompts, getMcpPrompt,
     listMcpInputs, setMcpInput,
            resolveSensitiveNotice, abortPendingSensitive, dispose };

@@ -6,6 +6,8 @@ import {
 } from "@phosphor-icons/react";
 import ChangeDiffView from "../ChangeDiffView.jsx";
 import McpContentBrowser from "./McpContentBrowser.jsx";
+import McpOAuthControls from "./McpOAuthControls.jsx";
+import { buildMcpOAuthConfig } from "../../state/mcp-oauth.js";
 import { checkedMcpResult } from "../../state/mcp-content.js";
 
 function formatChangeTime(time) {
@@ -203,6 +205,9 @@ export function AddMcpModal({ open, onClose, onAdd, onAdded, t }) {
   const [url, setUrl] = React.useState("");
   const [remoteType, setRemoteType] = React.useState("streamable-http");
   const [headersJson, setHeadersJson] = React.useState("");
+  const [oauthEnabled, setOauthEnabled] = React.useState(false);
+  const [oauthClientId, setOauthClientId] = React.useState("");
+  const [oauthScopes, setOauthScopes] = React.useState("");
   const [allowPrivate, setAllowPrivate] = React.useState("");
   // v1.13.0:是否信任该 server 自报的 annotations
   const [trustServer, setTrustServer] = React.useState(false);
@@ -319,6 +324,10 @@ export function AddMcpModal({ open, onClose, onAdd, onAdded, t }) {
         .map((s) => s.trim())
         .filter(Boolean);
 
+      let oauthConfig;
+      try { oauthConfig = buildMcpOAuthConfig(oauthEnabled, oauthClientId, oauthScopes, parsedHeaders); }
+      catch { setError(t("mcp.oauth.headerConflict")); return; }
+
       setSubmitting(true);
       try {
         if (!onAdd) throw new Error("MCP 内核服务未就绪");
@@ -327,11 +336,12 @@ export function AddMcpModal({ open, onClose, onAdd, onAdded, t }) {
           type: remoteType,
           autoApprove: parsedAutoApprove,
           headers: parsedHeaders,
+          ...oauthConfig,
           ...(allowlist.length ? { allowlist } : {}),
           ...(trustServer ? { trust: true } : {})
         });
         if (res?.status !== "ERROR") checkedMcpResult(res);
-        if (res && res.status === "ERROR") {
+        if (res && res.status === "ERROR" && !oauthEnabled) {
           setError(`服务添加成功但连接异常: ${res.error || "未知原因"}`);
           setSubmitting(false);
         } else {
@@ -492,6 +502,22 @@ export function AddMcpModal({ open, onClose, onAdd, onAdded, t }) {
                     onChange={(e) => setHeadersJson(e.target.value)}
                   />
                 </div>
+                <label className="mcp-trust-row">
+                  <input type="checkbox" checked={oauthEnabled} onChange={(event) => setOauthEnabled(event.target.checked)} />
+                  {t("mcp.oauth.enable")}
+                </label>
+                {oauthEnabled && <div className="mcp-oauth-setup">
+                  <p className="mcp-input-desc">{t("mcp.oauth.setupHint")}</p>
+                  <label className="mcp-form-label">{t("mcp.oauth.clientId")}
+                    <input className="mcp-form-input mono" value={oauthClientId} autoComplete="off"
+                      onChange={(event) => setOauthClientId(event.target.value)} />
+                  </label>
+                  <p className="mcp-input-desc">{t("mcp.oauth.clientHint")}</p>
+                  <label className="mcp-form-label">{t("mcp.oauth.scopes")}
+                    <input className="mcp-form-input mono" value={oauthScopes}
+                      onChange={(event) => setOauthScopes(event.target.value)} />
+                  </label>
+                </div>}
                 <div className="mcp-form-group">
                   <label className="mcp-form-label">私网放行 (可选，逗号分隔 IP/CIDR)</label>
                   <input
@@ -618,6 +644,8 @@ export function McpView({ t, kernel, onRequestConfirm, onUseContent }) {
   React.useEffect(() => {
     refresh();
   }, [refresh]);
+
+  React.useEffect(() => kernel?.subscribeMcpAuthChanges?.(() => { void refresh(); }), [kernel, refresh]);
 
   const refreshInputs = React.useCallback(async () => {
     if (!kernel?.listMcpInputs) {
@@ -808,7 +836,7 @@ export function McpView({ t, kernel, onRequestConfirm, onUseContent }) {
                 const isExpanded = expanded.has(srv.serverId);
                 const isBusy = busyId === srv.serverId;
                 const statusColor = srv.status === "CONNECTED" ? "#22c55e" : srv.status === "ERROR" ? "#ef4444" : srv.status === "DISABLED" ? "#6b7280" : "#eab308";
-                const statusLabel = srv.status === "CONNECTED" ? "已连接" : srv.status === "ERROR" ? "异常" : srv.status === "DISABLED" ? "已禁用" : "连接中";
+                const statusLabel = srv.status === "CONNECTED" ? "已连接" : srv.status === "ERROR" ? "异常" : srv.status === "DISABLED" ? "已禁用" : srv.status === "AUTH_REQUIRED" ? t("mcp.oauth.unauthenticated") : "连接中";
 
                 return (
                   <div key={srv.serverId} className="api-item" style={{ flexDirection: "column", alignItems: "stretch", padding: "12px" }}>
@@ -885,6 +913,9 @@ export function McpView({ t, kernel, onRequestConfirm, onUseContent }) {
                         )}
                       </div>
                     </div>
+
+                    {srv.oauth?.enabled && <McpOAuthControls serverId={srv.serverId} initialStatus={srv.authStatus}
+                      disabled={srv.disabled} kernel={kernel} t={t} onChanged={refresh} />}
 
                     {/* Error details */}
                     {srv.error && (
