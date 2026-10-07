@@ -1,7 +1,10 @@
 export function createSynthesizer({ callModel }) {
-  async function synthesize({ message, collected }) {
+  async function synthesize({ message, collected, signal = null, scope = null }) {
+    if (signal?.aborted || scope?.budget?.exceeded()) {
+      return deterministicSummary(collected);
+    }
     try {
-      const out = await callModel(synthPrompt(message, collected));
+      const out = await callModel(synthPrompt(message, collected), { signal, scope, role: "synthesizer" });
       if (out && String(out).trim()) return String(out);
     } catch { /* fall through to deterministic summary */ }
     return deterministicSummary(collected);

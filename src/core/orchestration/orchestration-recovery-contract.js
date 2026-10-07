@@ -71,6 +71,7 @@ export function serializeOrchestrationState(state, { approvalId, pausedSubtask, 
     approvalId,
     taskId: state.taskId,
     sessionId: state.sessionId,
+    executionId: state.executionId || bs.execution_id || state.taskId,
     message: state.message,
     done_when: state.done_when,
     autonomy: state.options?.autonomy || "gated",
@@ -84,7 +85,13 @@ export function serializeOrchestrationState(state, { approvalId, pausedSubtask, 
       quotaTokens: bs.max_tokens ?? null,
       quotaCalls: bs.max_model_calls ?? null,
       spentTokens: bs.tokens || 0,
-      spentCalls: bs.model_calls || 0
+      spentCalls: bs.model_calls || 0,
+      ...(bs.unknown_usage_attempts != null || bs.unknownUsageAttempts != null ? {
+        unknownUsageAttempts: bs.unknown_usage_attempts || bs.unknownUsageAttempts || 0
+      } : {}),
+      ...(bs.settled_attempts != null || bs.settledAttempts != null ? {
+        settledAttempts: bs.settled_attempts || bs.settledAttempts || []
+      } : {})
     },
     adoptedExperienceIds: [...(state.adoptedExperienceIds || [])],
     riskCues: [...(state.riskCues || [])],
@@ -118,6 +125,7 @@ export function deserializeOrchestrationState(json) {
     adoptedExperienceIds: [...(json.adoptedExperienceIds || [])],
     taskId: json.taskId,
     sessionId: json.sessionId,
+    executionId: json.executionId || json.taskId,
     env: json.env || { root: null, orchestrationConfig: null },
     budgetSnapshot: budgetContinuation(json.budget),
     pausedSubtask: { ...json.pausedSubtask },
@@ -127,11 +135,18 @@ export function deserializeOrchestrationState(json) {
 
 export function budgetContinuation(budgetJson) {
   const b = budgetJson || {};
-  return {
+  const continuation = {
     maxTokens: b.quotaTokens ?? null,
     maxModelCalls: b.quotaCalls ?? null,
     initialTokens: b.spentTokens || 0,
     initialModelCalls: b.spentCalls || 0
   };
+  if (b.unknownUsageAttempts != null) {
+    continuation.initialUnknownUsageAttempts = b.unknownUsageAttempts;
+  }
+  if (b.settledAttempts != null) {
+    continuation.initialSettledAttempts = Array.isArray(b.settledAttempts) ? b.settledAttempts : [];
+  }
+  return continuation;
 }
 

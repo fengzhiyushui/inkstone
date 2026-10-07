@@ -39,6 +39,7 @@ import { createExperienceStore } from "./core/memory/experience-store.js";
 import { createConsolidator } from "./core/memory/experience-consolidator.js";
 import { query as experienceQuery } from "./core/memory/experience-retrieval.js";
 import { createCostBudget } from "./core/runtime/cost-budget.js";
+import { createRequestBudget, createRequestScope } from "./core/runtime/request-budget.js";
 import { normalizeOrchestration } from "./config.js";
 import { toBatches } from "./core/orchestration/batch-planner.js";
 import { createIsoWorkerRunner } from "./core/orchestration/iso-worker-runner.js";
@@ -284,9 +285,15 @@ export async function createKernel(root, options = {}) {
 
   const orch = normalizeOrchestration(options.orchestration);
   // C-Router: model-assisted tier for the ambiguous band (purpose = configured channel, short timeout).
-  const routerCallModel = async (prompt, { timeoutMs } = {}) => {
+  const routerCallModel = async (prompt, { timeoutMs, signal, scope } = {}) => {
     if (!modelGateway?.invoke) return "";
-    const res = await modelGateway.invoke([{ role: "user", content: prompt }], { purpose: orch.router.model.channel, timeoutMs });
+    const res = await modelGateway.invoke([{ role: "user", content: prompt }], {
+      purpose: orch.router.model.channel,
+      timeoutMs,
+      signal,
+      scope,
+      role: "router"
+    });
     return res?.content || "";
   };
   const taskRouter = createTaskRouter({ ...orch.router, model: { ...orch.router.model, callModel: routerCallModel } });
@@ -300,9 +307,15 @@ export async function createKernel(root, options = {}) {
     webFetch: options.webFetch || {},
     defaultToolTimeoutMs: options.limits?.toolTimeoutMs ?? null
   };
-  const callModel = async (prompt) => {
+  const callModel = async (prompt, callOptions = {}) => {
     if (!modelGateway?.invoke) return "";
-    const res = await modelGateway.invoke([{ role: "user", content: prompt }], { purpose: "plan" });
+    const res = await modelGateway.invoke([{ role: "user", content: prompt }], {
+      purpose: callOptions.purpose || "plan",
+      ...callOptions,
+      scope: callOptions.scope,
+      role: callOptions.role || "planner",
+      signal: callOptions.signal
+    });
     return res?.content || "";
   };
   // C4 cross-task experience memory (opt-in; "off" => fully inert: no dir, no retrieval,
@@ -322,14 +335,16 @@ export async function createKernel(root, options = {}) {
   }
   const orchestrator = createOrchestrator({
     planner: createPlanner({ callModel }),
-    makeWorkerFactory: () => createWorkerFactory({
+    makeWorkerFactory: (scope) => createWorkerFactory({
       createRuntime,
       baseToolSchemas: () => toolRegistry.toDeepSeekTools(),
-      makeContextSnapshot: (input) => contextEngine.snapshot(input)
+      makeContextSnapshot: (input) => contextEngine.snapshot(input),
+      modelGateway,
+      scope
     }),
-    makeReviewerFor: (workerFactory) => createReviewer({ runtime: workerFactory.reviewerRuntime() }),
+    makeReviewerFor: (workerFactory, scope) => createReviewer({ runtime: workerFactory.reviewerRuntime() }),
     synthesizer: createSynthesizer({ callModel }),
-    makeBudget: () => createCostBudget({ maxTokens: orch.budget.maxTokens, maxModelCalls: orch.budget.maxModelCalls }),
+    makeBudget: () => createRequestBudget({ maxTokens: orch.budget.maxTokens, maxModelCalls: orch.budget.maxModelCalls }),
     maxSubtasks: orch.maxSubtasks,
     maxWorkerAttempts: orch.maxWorkerAttempts,
     eventBus,
@@ -342,16 +357,19 @@ export async function createKernel(root, options = {}) {
       buildToolPlane,
       createRuntime,
       makeContextSnapshot: (input) => contextEngine.snapshot(input),
-      makeReviewer: (isoRoot) => {
+      makeReviewer: (isoRoot, scope) => {
         const plane = buildToolPlane(isoRoot, isoPlaneDeps);
+        const scopedGateway = (scope && modelGateway) ? scope.bindGateway(modelGateway, { role: "reviewer" }) : modelGateway;
         return createReviewer({ runtime: createRuntime({
           projectRoot: isoRoot,
           executeTool: plane.execute,
-          toolSchemas: () => filterToolSchemas(plane.toolRegistry.toDeepSeekTools(), "readonly")
+          toolSchemas: () => filterToolSchemas(plane.toolRegistry.toDeepSeekTools(), "readonly"),
+          modelGateway: scopedGateway
         }) });
       },
       maxCopyFiles: orch.parallel.maxCopyFiles,
-      planeDeps: isoPlaneDeps
+      planeDeps: isoPlaneDeps,
+      modelGateway
     }),
     mergeSubtask: (r) => mergeSubtask({ editService, mainRoot: root, isoRoot: r.isoRoot, baseManifest: r.baseManifest, actual: r.actual }),
     removeIso: (dir) => removeIso(dir),
@@ -361,23 +379,44 @@ export async function createKernel(root, options = {}) {
     experienceConsolidator,
     now: experienceNow,
     orchPersistence,
-    makeResumedBudget: (s) => createCostBudget({ maxTokens: s.maxTokens, maxModelCalls: s.maxModelCalls, initialTokens: s.initialTokens, initialModelCalls: s.initialModelCalls }),
+    makeResumedBudget: (s) => createRequestBudget({
+      maxTokens: s.maxTokens,
+      maxModelCalls: s.maxModelCalls,
+      initialTokens: s.initialTokens,
+      initialModelCalls: s.initialModelCalls,
+      initialUnknownUsageAttempts: s.initialUnknownUsageAttempts,
+      initialSettledAttempts: s.initialSettledAttempts
+    }),
     env: { root, orchestrationConfig: orch },
     pausedTurnStore: sharedPausedTurnStore || undefined,
     pausedTurnPersistence
   });
   // Unified entry: the router decides single (today's path, zero new events) vs orchestrate.
+  let currentOrchScope = null;
   async function routedSend(message, sendOptions = {}) {
-    const decision = await taskRouter.route(message, sendOptions);
-    if (decision.tier === "model" || decision.tier === "fallback") {
-      eventBus.publish("orchestration:route_resolved", {
-        band: decision.band, score: decision.score, features: decision.features,
-        finalLane: decision.lane, tier: decision.tier, reason: decision.reason
-      });
+    const scope = sendOptions.scope || createRequestScope({
+      signal: sendOptions.signal,
+      budget: orch.budget ? createRequestBudget({ maxTokens: orch.budget.maxTokens, maxModelCalls: orch.budget.maxModelCalls }) : null,
+      executionId: sendOptions.executionId
+    });
+    currentOrchScope = scope;
+    const scopedOptions = { ...sendOptions, scope, signal: scope.signal };
+    try {
+      const decision = await taskRouter.route(message, scopedOptions);
+      if (decision.tier === "model" || decision.tier === "fallback") {
+        eventBus.publish("orchestration:route_resolved", {
+          band: decision.band, score: decision.score, features: decision.features,
+          finalLane: decision.lane, tier: decision.tier, reason: decision.reason
+        });
+      }
+      if (decision.lane === "single") return runtime.send(message, scopedOptions);
+      eventBus.publish("orchestration:routed", { lane: decision.lane, reason: decision.reason, signals: decision.signals });
+      return orchestrator.run({ message, options: scopedOptions, routing: decision, scope });
+    } finally {
+      if (currentOrchScope === scope) {
+        currentOrchScope = null;
+      }
     }
-    if (decision.lane === "single") return runtime.send(message, sendOptions);
-    eventBus.publish("orchestration:routed", { lane: decision.lane, reason: decision.reason, signals: decision.signals });
-    return orchestrator.run({ message, options: sendOptions, routing: decision });
   }
 
   const branches = branchStore ? {
@@ -509,7 +548,11 @@ export async function createKernel(root, options = {}) {
         if (recoveryEnabled && await orchestrator.hasDurablePaused(id)) return orchestrator.resumeDurable(id, decision);
         return runtime.approve(id, decision, opts);
       },
-      interrupt: runtime.interrupt,
+      interrupt: (...args) => {
+        try { currentOrchScope?.abort("turn was interrupted"); } catch {}
+        try { orchestrator.interrupt?.(); } catch {}
+        return runtime.interrupt(...args);
+      },
       listPaused: runtime.listPaused,
       cancelPaused: runtime.cancelPaused
     },

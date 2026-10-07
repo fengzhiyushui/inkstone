@@ -3,6 +3,7 @@ import { fingerprint } from "./subtask-schema.js";
 import { classifyOutcome } from "./synthesizer.js";
 import { riskRules } from "../memory/risk-rules.js";
 import { serializeOrchestrationState, deserializeOrchestrationState, orchestrationResumeGate } from "./orchestration-recovery-contract.js";
+import { createRequestScope } from "../runtime/request-budget.js";
 
 export function createOrchestrator({
   planner, makeWorkerFactory, makeReviewerFor, synthesizer, makeBudget, maxSubtasks, maxWorkerAttempts,
@@ -14,8 +15,25 @@ export function createOrchestrator({
   const orchPaused = new Map();   // approvalId -> { state, dispatchResume }  (C5 same-process resume)
   const pendingConsolidations = new Set();   // C4: background experience consolidation promises
   const learningOn = crossTaskLearning !== "off" && !!experienceRetrieval && !!experienceConsolidator;
+  let activeRunningScope = null;
 
-  async function run({ message, options = {}, routing = {} }) {
+  async function run({ message, options = {}, routing = {}, scope = null }) {
+    const activeScope = scope || createRequestScope({
+      budget: makeBudget(),
+      signal: options.signal,
+      executionId: "task_" + Math.trunc(now()).toString(36)
+    });
+    const budget = activeScope.budget;
+    activeRunningScope = activeScope;
+    try {
+      return await executeRun({ message, options, routing, activeScope, budget });
+    } finally {
+      if (activeRunningScope === activeScope) activeRunningScope = null;
+    }
+  }
+
+  async function executeRun({ message, options, routing, activeScope, budget }) {
+
     const context = await makeContext?.({ message, options });
     let experiences = [];
     let presentedIds = [];
@@ -27,7 +45,23 @@ export function createOrchestrator({
       riskCues = r.riskCues || new Set();
       publish(eventBus, "experience:retrieved", { count: experiences.length, tiers: experiences.map((e) => e.tier), riskCueCount: riskCues.size });
     }
-    const plan = await planner.plan({ message, context, experiences });
+
+    let plan;
+    try {
+      plan = await planner.plan({ message, context, experiences, signal: activeScope.signal, scope: activeScope });
+    } catch (e) {
+      if (e.code === "BUDGET_EXCEEDED" || budget.exceeded()) {
+        const state = {
+          message, options, plan: { subtasks: [] }, round: 1, allCollected: [],
+          seenSubtaskIds: new Set(), seenFp: new Set(), budget, scope: activeScope,
+          stoppedByCap: true, done_when: "the request is fulfilled", adoptedExperienceIds: [], riskCues: new Set(),
+          taskId: "task_" + Math.trunc(now()).toString(36), sessionId: options.sessionId || "session", env
+        };
+        return finalize(state);
+      }
+      throw e;
+    }
+
     if (plan.subtasks.length > maxSubtasks) plan.subtasks = plan.subtasks.slice(0, maxSubtasks);
     publish(eventBus, "orchestration:planned", { subtasks: plan.subtasks.length, done_when: plan.done_when });
     const adoptedExperienceIds = learningOn ? intersect(plan.used_experience_ids, presentedIds) : [];
@@ -35,7 +69,7 @@ export function createOrchestrator({
       message, options, plan, round: 1, allCollected: [],
       seenSubtaskIds: new Set(plan.subtasks.map((s) => s.id)),
       seenFp: new Set(plan.subtasks.map(fingerprint)),
-      budget: makeBudget(), stoppedByCap: false, done_when: plan.done_when,
+      budget, scope: activeScope, stoppedByCap: false, done_when: plan.done_when,
       adoptedExperienceIds, riskCues,
       taskId: "task_" + Math.trunc(now()).toString(36), sessionId: options.sessionId || "session",
       env
@@ -44,16 +78,19 @@ export function createOrchestrator({
   }
 
   function dispatchDeps(state) {
-    const workerFactory = makeWorkerFactory();
+    const workerFactory = makeWorkerFactory(state.scope);
     return {
       workerFactory,
-      makeReviewer: () => makeReviewerFor(workerFactory),
+      makeReviewer: () => makeReviewerFor(workerFactory, state.scope),
       synthesizer, budget: state.budget, maxWorkerAttempts,
       autonomy: state.options.autonomy || "gated",
       onEvent: (type, data) => publish(eventBus, `orchestration:${type}`, data),
-      toBatches, maxParallelWorkers, runIsolatedWorker, mergeSubtask, removeIso,
+      toBatches, maxParallelWorkers,
+      runIsolatedWorker: (args) => runIsolatedWorker({ ...args, scope: state.scope }),
+      mergeSubtask, removeIso,
       projectRules: learningOn ? riskRules(state.riskCues) : [],
-      orchestrationMarker: orchPersistence ? { taskId: state.taskId, sessionId: state.sessionId } : null
+      orchestrationMarker: orchPersistence ? { taskId: state.taskId, sessionId: state.sessionId } : null,
+      scope: state.scope
     };
   }
 
@@ -92,8 +129,11 @@ export function createOrchestrator({
     const failedIds = new Set(failed.map((c) => c.id));
     let next;
     try {
-      next = await planner.replan?.({ message: state.message, done_when: state.done_when, completed, failed, seenSubtaskIds: state.seenSubtaskIds, completedIds, failedIds });
-    } catch { next = { done: true, subtasks: [] }; }
+      next = await planner.replan?.({ message: state.message, done_when: state.done_when, completed, failed, seenSubtaskIds: state.seenSubtaskIds, completedIds, failedIds, signal: state.scope?.signal, scope: state.scope });
+    } catch (e) {
+      if (e.code === "BUDGET_EXCEEDED" || state.budget.exceeded()) return { continue: false, cap: true };
+      next = { done: true, subtasks: [] };
+    }
     if (!next || next.done || !next.subtasks?.length) return { continue: false, cap: false };
     // no-progress guard: round completed nothing AND every proposed subtask is a stale fingerprint
     const completedThisRound = (roundCollected || []).filter((c) => c.status === "complete").length;
@@ -105,7 +145,7 @@ export function createOrchestrator({
   }
 
   async function finalize(state) {
-    const content = await synthesizer.synthesize({ message: state.message, collected: state.allCollected });
+    const content = await synthesizer.synthesize({ message: state.message, collected: state.allCollected, signal: state.scope?.signal, scope: state.scope });
     const status = classifyOutcome(state.allCollected, { stoppedByCap: state.stoppedByCap });
     publish(eventBus, "orchestration:completed", { rounds: state.round, completed: count(state.allCollected, "complete"), failed: count(state.allCollected, "failed"), status });
     if (learningOn) kickConsolidation(state, status);
@@ -189,7 +229,7 @@ export function createOrchestrator({
     if (!gate.ok) throw blocked(gate.reason);
 
     const state = deserializeState(sidecar);
-    const pausedWorker = makeWorkerFactory().worker(state.pausedSubtask);   // deterministic rebuild (CST-3)
+    const pausedWorker = makeWorkerFactory(state.scope).worker(state.pausedSubtask);   // deterministic rebuild (CST-3)
     const dispatchResume = {
       pausedWorker, pausedApprovalId: approvalId,
       pausedSubtask: state.pausedSubtask, remaining: state.remaining, deps: dispatchDeps(state)
@@ -220,10 +260,18 @@ export function createOrchestrator({
   function deserializeState(json) {
     const s = deserializeOrchestrationState(json);
     const budget = makeResumedBudget ? makeResumedBudget(s.budgetSnapshot) : makeBudget();
-    return { ...s, budget, stoppedByCap: false };
+    const scope = createRequestScope({ budget, executionId: s.executionId || s.taskId });
+    return { ...s, budget, scope, stoppedByCap: false };
+  }
+  function interrupt() {
+    if (activeRunningScope) {
+      activeRunningScope.abort("turn was interrupted");
+      return true;
+    }
+    return false;
   }
 
-  return { run, resume, hasPaused: (id) => orchPaused.has(id), flushExperience, serializeState, deserializeState, resumeDurable, hasDurablePaused };
+  return { run, resume, hasPaused: (id) => orchPaused.has(id), flushExperience, serializeState, deserializeState, resumeDurable, hasDurablePaused, interrupt };
 }
 
 function intersect(a, b) {

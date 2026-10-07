@@ -3,8 +3,8 @@ import { validateVerdict } from "./subtask-schema.js";
 const FALLBACK = { pass: false, severity: "warn", reasons: ["verdict unparseable"], checked: [] };
 
 export function createReviewer({ runtime }) {
-  async function review(subtask, workerResult) {
-    const res = await runtime.send(reviewPrompt(subtask, workerResult), { autonomy: "auto" });
+  async function review(subtask, workerResult, options = {}) {
+    const res = await runtime.send(reviewPrompt(subtask, workerResult), { autonomy: "auto", ...options });
     const obj = extractJson(res?.content || "");
     if (!obj) return { ...FALLBACK };
     const v = validateVerdict(obj);

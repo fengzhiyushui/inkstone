@@ -40,20 +40,42 @@ export function createTaskRouter({ minComplexFiles = 2, markers = DEFAULT_MARKER
     if (band === "complex") return decide("orchestrate", "heuristic", { ...ctx, reason: "band:complex" });
 
     // ambiguous → model tier (async; the only branch that returns a Promise)
-    return modelTier(text, feat).then((v) => (v.ok
+    return modelTier(text, feat, options).then((v) => (v.ok
       ? decide(v.lane, "model", { ...ctx, reason: v.reason || "model" })
       : decide(heuristicLane, "fallback", { ...ctx, reason: v.reason })));
   }
 
-  async function modelTier(message, feat) {
+  async function modelTier(message, feat, options = {}) {
     const start = now();
     let feedback = null;
     for (let attempt = 0; attempt <= maxRepairs; attempt += 1) {
+      if (options.signal?.aborted) {
+        const err = new Error("turn was interrupted");
+        err.name = "AbortError";
+        err.code = "ABORT";
+        throw err;
+      }
+      if (options.scope?.budget?.exceeded()) {
+        const over = options.scope.budget.exceeded();
+        const err = new Error(`cost budget exceeded: ${over.reason}`);
+        err.code = "BUDGET_EXCEEDED";
+        err.details = over;
+        throw err;
+      }
       const remaining = timeoutMs - (now() - start);
       if (remaining <= 0) return { ok: false, reason: "router_model_timeout" };
       let raw;
-      try { raw = await callModel(routerPrompt(message, feat, feedback), { timeoutMs: remaining }); }
-      catch (e) { return { ok: false, reason: isTimeout(e) ? "router_model_timeout" : "router_model_error" }; }
+      try {
+        raw = await callModel(routerPrompt(message, feat, feedback), {
+          timeoutMs: remaining,
+          signal: options.signal,
+          scope: options.scope,
+          role: "router"
+        });
+      } catch (e) {
+        if (isBudgetOrAbort(e)) throw e;
+        return { ok: false, reason: isTimeout(e) ? "router_model_timeout" : "router_model_error" };
+      }
       if (!raw) return { ok: false, reason: "router_model_empty" };
       const v = validateRouteVerdict(extractJson(raw));
       if (v.ok) return v;
@@ -83,6 +105,11 @@ function routerPrompt(message, feat, feedback) {
 }
 
 function isTimeout(e) { return Boolean(e) && (e.code === "MODEL_TIMEOUT" || /timeout/i.test(e.message || "")); }
+
+function isBudgetOrAbort(e) {
+  if (!e) return false;
+  return e.code === "BUDGET_EXCEEDED" || e.code === "INTERRUPTED" || e.name === "AbortError" || e.name === "InterruptedError";
+}
 
 function extractJson(text) {
   const s = String(text || "");

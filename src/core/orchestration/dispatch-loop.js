@@ -4,16 +4,17 @@ import path from "node:path";
 
 export async function runDispatchLoop({
   plan, workerFactory, makeReviewer, synthesizer, budget, maxWorkerAttempts, autonomy, onEvent,
-  toBatches, maxParallelWorkers = 1, runIsolatedWorker, mergeSubtask, removeIso, projectRules = [], orchestrationMarker = null
+  toBatches, maxParallelWorkers = 1, runIsolatedWorker, mergeSubtask, removeIso, projectRules = [], orchestrationMarker = null,
+  scope = null
 }) {
   // C3 batched parallel path: only when explicitly wired + allowed. Otherwise the
   // C1+C2 sequential path runs verbatim (zero regression).
   if (maxParallelWorkers > 1 && typeof toBatches === "function" && typeof runIsolatedWorker === "function") {
-    return runBatched({ plan, workerFactory, makeReviewer, synthesizer, budget, maxWorkerAttempts, autonomy, toBatches, maxParallelWorkers, runIsolatedWorker, mergeSubtask, removeIso, onEvent, projectRules, orchestrationMarker });
+    return runBatched({ plan, workerFactory, makeReviewer, synthesizer, budget, maxWorkerAttempts, autonomy, toBatches, maxParallelWorkers, runIsolatedWorker, mergeSubtask, removeIso, onEvent, projectRules, orchestrationMarker, scope });
   }
 
   const order = orderOf(plan);
-  const deps = { workerFactory, makeReviewer, synthesizer, budget, maxWorkerAttempts, autonomy, onEvent, toBatches, maxParallelWorkers, runIsolatedWorker, mergeSubtask, removeIso, projectRules, orchestrationMarker };
+  const deps = { workerFactory, makeReviewer, synthesizer, budget, maxWorkerAttempts, autonomy, onEvent, toBatches, maxParallelWorkers, runIsolatedWorker, mergeSubtask, removeIso, projectRules, orchestrationMarker, scope };
   const collected = [];
   const failedIds = new Set();
   for (let i = 0; i < order.length; i += 1) {
@@ -33,9 +34,9 @@ export async function runDispatchLoop({
       failedIds.add(st.id);
     }
     collected.push(r.entry);
-    if (budget.exceeded()) return finishPartial(collected, synthesizer, "budget");
+    if (budget.exceeded()) return finishPartial(collected, synthesizer, "budget", scope);
   }
-  return finishPartial(collected, synthesizer, null);
+  return finishPartial(collected, synthesizer, null, scope);
 }
 
 function orderOf(plan) {
@@ -68,8 +69,8 @@ export async function resumeDispatchLoop(roundResume, decision) {
   return { status: "complete", collected };
 }
 
-async function finishPartial(collected, synthesizer, stopped_reason) {
-  const content = await synthesizer.synthesize({ collected });
+async function finishPartial(collected, synthesizer, stopped_reason, scope = null) {
+  const content = await synthesizer.synthesize({ collected, scope });
   return stopped_reason ? { status: "complete", content, collected, stopped_reason } : { status: "complete", content, collected };
 }
 
@@ -95,7 +96,7 @@ async function processSubtask(st, { workerFactory, makeReviewer, maxWorkerAttemp
 }
 
 // C3: batches (size 1 → main path, no copy; size >1 → isolated parallel + merge).
-async function runBatched({ plan, workerFactory, makeReviewer, synthesizer, budget, maxWorkerAttempts, autonomy, toBatches, maxParallelWorkers, runIsolatedWorker, mergeSubtask, removeIso, onEvent, projectRules = [], orchestrationMarker = null }) {
+async function runBatched({ plan, workerFactory, makeReviewer, synthesizer, budget, maxWorkerAttempts, autonomy, toBatches, maxParallelWorkers, runIsolatedWorker, mergeSubtask, removeIso, onEvent, projectRules = [], orchestrationMarker = null, scope = null }) {
   const order = orderOf(plan);
   const runId = `run_${order.map((s) => s.id).join("-")}`.slice(0, 80);
   const completedIds = new Set();
@@ -122,7 +123,7 @@ async function runBatched({ plan, workerFactory, makeReviewer, synthesizer, budg
       if (r.control === "awaiting_approval") {
         await cleanupRun(runDir, removeIso);
         const remaining = batches.slice(batches.indexOf(batch) + 1).flat();
-        const deps = { workerFactory, makeReviewer, synthesizer, budget, maxWorkerAttempts, autonomy, onEvent, toBatches, maxParallelWorkers, runIsolatedWorker, mergeSubtask, removeIso, projectRules, orchestrationMarker };
+        const deps = { workerFactory, makeReviewer, synthesizer, budget, maxWorkerAttempts, autonomy, onEvent, toBatches, maxParallelWorkers, runIsolatedWorker, mergeSubtask, removeIso, projectRules, orchestrationMarker, scope };
         return { status: "awaiting_approval", approval: r.approval, collected,
           resume: { pausedWorker: r.worker, pausedApprovalId: r.approval.id, pausedSubtask: runnable[0], remaining, deps } };
       }
@@ -131,7 +132,7 @@ async function runBatched({ plan, workerFactory, makeReviewer, synthesizer, budg
       collected.push(r.entry);
     } else {
       const results = await Promise.all(runnable.map((st) =>
-        Promise.resolve(runIsolatedWorker({ subtask: st, runId })).catch((error) => ({ st, error }))));
+        Promise.resolve(runIsolatedWorker({ subtask: st, runId, scope })).catch((error) => ({ st, error }))));
       results.sort((a, b) => (a.st.id < b.st.id ? -1 : a.st.id > b.st.id ? 1 : 0)); // deterministic merge order
       const actuals = results.map((r) => ({ id: r.st.id, paths: actualPaths(r.actual) }));
       for (const r of results) {
@@ -145,10 +146,10 @@ async function runBatched({ plan, workerFactory, makeReviewer, synthesizer, budg
         finally { if (r.isoRoot && removeIso) await removeIso(r.isoRoot).catch(() => {}); } // zero residue (per copy)
       }
     }
-    if (budget.exceeded()) { await cleanupRun(runDir, removeIso); return finishPartial(collected, synthesizer, "budget"); }
+    if (budget.exceeded()) { await cleanupRun(runDir, removeIso); return finishPartial(collected, synthesizer, "budget", scope); }
   }
   await cleanupRun(runDir, removeIso);
-  return finishPartial(collected, synthesizer, null);
+  return finishPartial(collected, synthesizer, null, scope);
 }
 
 async function cleanupRun(runDir, removeIso) {

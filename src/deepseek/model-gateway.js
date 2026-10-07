@@ -32,10 +32,18 @@ export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY ||
     let attempts = 0;
     while (true) {
       attempts += 1;
+      const attemptId = `att_${Date.now()}_${attempts}_${Math.random().toString(36).slice(2, 7)}`;
+      let ticket = null;
+      if (options.scope?.budget) {
+        if (options.signal?.aborted) throw abortError();
+        ticket = options.scope.budget.reserveCall({ role: options.role || "unknown", attemptId });
+      }
+
       const timeout = withTimeout(options.signal, options.timeoutMs);
       let response;
       try {
         try {
+          ticket?.markStarted();
           response = await fetchImpl(request.url, { method: "POST", headers: authHeaders(apiKey), body: JSON.stringify(request.body), signal: timeout.signal });
         } catch (error) {
           if (timeout.didTimeout()) throw modelTimeoutError(options.timeoutMs);
@@ -44,6 +52,7 @@ export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY ||
         if (!response.ok) throw createDeepSeekApiError(response.status, await response.text().catch(() => ""));
       } catch (error) {
         timeout.cleanup();
+        ticket?.settle({ error });
         const retryable = isRetryableDeepSeekError(error) || error?.retryable === true;
         if (attempts < RETRY_MAX_ATTEMPTS && retryable) {
           if (options.signal?.aborted) throw abortError();
@@ -52,7 +61,7 @@ export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY ||
         }
         throw error;
       }
-      return { response, timeout };
+      return { response, timeout, ticket };
     }
   }
 
@@ -64,13 +73,14 @@ export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY ||
     while (true) {
       attempts += 1;
       // fetch 阶段走有限退避重试;MODEL_TIMEOUT/调用方 abort 等不可重试错误直接穿传。
-      const { response, timeout } = await fetchChatWithRetry(request, options);
+      const { response, timeout, ticket } = await fetchChatWithRetry(request, options);
       try {
         const latencyMs = Date.now() - started;
         let payload;
         try {
           payload = await response.json();
         } catch (error) {
+          ticket?.settle({ error });
           if (timeout.didTimeout()) throw modelTimeoutError(options.timeoutMs);
           throw error;
         }
@@ -81,11 +91,13 @@ export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY ||
         if (options.jsonMode && processed.content === "" && !processed.retryable) {
           jsonAttempts += 1;
           if (jsonAttempts < JSON_EMPTY_MAX_ATTEMPTS && attempts < RETRY_MAX_ATTEMPTS) {
+            ticket?.settle({ usage: processed.usage });
             await sleepFn(JSON_EMPTY_RETRY_DELAY_MS, options.signal);
             continue;
           }
           processed.emptyContent = true;
         }
+        ticket?.settle({ usage: processed.usage });
         // 重试逻辑不重复计费用:仅最终返回的 attempt 记录一次 usage。
         usageTracker.recordUsage({ usage: processed.usage, channel: request.route.channel, model: request.body.model, latency_ms: latencyMs });
         return processed;
@@ -100,7 +112,7 @@ export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY ||
     const started = Date.now();
     // 只对首字节前(fetch 抛错/非 2xx)应用退避重试;body 开始读取后失败不重试——
     // 已通过 onDelta 吐出的增量无法收回,重发等于重复输出。
-    const { response, timeout } = await fetchChatWithRetry(request, options);
+    const { response, timeout, ticket } = await fetchChatWithRetry(request, options);
     try {
       const latencyMs = Date.now() - started;
       // Keep the timeout armed across the SSE body read: the fetch resolves on headers,
@@ -110,10 +122,12 @@ export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY ||
       try {
         streamed = await readDeepSeekStream(response.body, { onDelta: options.onDelta, signal: timeout.signal });
       } catch (error) {
+        ticket?.settle({ error });
         if (timeout.didTimeout()) throw modelTimeoutError(options.timeoutMs);
         throw error;
       }
       const result = markTruncated({ ...streamed, model: request.body.model, channel: request.route.channel, latency_ms: latencyMs, tool_calls: normalizeToolCalls(streamed.tool_calls) });
+      ticket?.settle({ usage: result.usage });
       usageTracker.recordUsage({ usage: result.usage, channel: request.route.channel, model: request.body.model, latency_ms: latencyMs });
       return result;
     } finally {
@@ -123,17 +137,25 @@ export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY ||
 
   async function fimComplete(prefix, suffix = "", options = {}) {
     const resolvedModels = options.models ?? models;
+    let ticket = null;
+    if (options.scope?.budget) {
+      if (options.signal?.aborted) throw abortError();
+      ticket = options.scope.budget.reserveCall({ role: options.role || "fim", attemptId: `att_fim_${Date.now()}` });
+    }
     const timeout = withTimeout(options.signal, options.timeoutMs);
     try {
       // fim-client 的 fetch 拿到 timeout.signal,故超时同时约束请求与 body 解析,
       // 与 invoke / stream 语义一致(不传 timeoutMs 则不设超时)。
       let result;
       try {
+        ticket?.markStarted();
         result = await fimClient.complete({ prefix, suffix, model: options.model ?? resolvedModels?.fim, maxTokens: options.maxTokens, signal: timeout.signal });
       } catch (error) {
+        ticket?.settle({ error });
         if (timeout.didTimeout()) throw modelTimeoutError(options.timeoutMs);
         throw error;
       }
+      ticket?.settle({ usage: result.usage });
       usageTracker.recordUsage({ usage: result.usage, channel: "fim", model: result.model, latency_ms: result.latency_ms || 0 });
       return result.content;
     } finally {
@@ -145,12 +167,19 @@ export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY ||
     const messages = assembleReplyMessages({ message, classification, context, turn, history: options.history });
     const taskType = classification?.task_type || "general";
     const purpose = taskType === "query" ? "reply" : "plan";
-    const result = await invoke(messages, { purpose, signal, timeoutMs: options.timeoutMs });
+    const result = await invoke(messages, {
+      ...options,
+      purpose,
+      signal,
+      timeoutMs: options.timeoutMs,
+      scope: options.scope,
+      role: options.role
+    });
     if (onDelta && result.content) onDelta(result.content);
     return result;
   }
 
-  return { buildChatRequest, invoke, stream, fimComplete, reply, getUsageStats: usageTracker.getUsageStats };
+  return { _isDeepSeekGateway: true, buildChatRequest, invoke, stream, fimComplete, reply, getUsageStats: usageTracker.getUsageStats };
 }
 
 function processChatPayload(payload, route, latencyMs) {
