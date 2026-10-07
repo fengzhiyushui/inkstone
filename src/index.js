@@ -385,37 +385,57 @@ export async function createKernel(root, options = {}) {
       initialTokens: s.initialTokens,
       initialModelCalls: s.initialModelCalls,
       initialUnknownUsageAttempts: s.initialUnknownUsageAttempts,
-      initialSettledAttempts: s.initialSettledAttempts
+      initialSettledAttempts: s.initialSettledAttempts,
+      initialByRole: s.initialByRole || {},
+      executionId: s.executionId || null
     }),
     env: { root, orchestrationConfig: orch },
     pausedTurnStore: sharedPausedTurnStore || undefined,
     pausedTurnPersistence
   });
   // Unified entry: the router decides single (today's path, zero new events) vs orchestrate.
-  let currentOrchScope = null;
+  const activeScopes = new Set();
   async function routedSend(message, sendOptions = {}) {
-    const scope = sendOptions.scope || createRequestScope({
-      signal: sendOptions.signal,
-      budget: orch.budget ? createRequestBudget({ maxTokens: orch.budget.maxTokens, maxModelCalls: orch.budget.maxModelCalls }) : null,
+    const parentSignal = sendOptions.signal;
+    const baseScope = sendOptions.scope || createRequestScope({
+      signal: parentSignal,
       executionId: sendOptions.executionId
     });
-    currentOrchScope = scope;
-    const scopedOptions = { ...sendOptions, scope, signal: scope.signal };
+    activeScopes.add(baseScope);
     try {
-      const decision = await taskRouter.route(message, scopedOptions);
+      const routingOptions = { ...sendOptions, scope: baseScope, signal: baseScope.signal };
+      const decision = await taskRouter.route(message, routingOptions);
       if (decision.tier === "model" || decision.tier === "fallback") {
         eventBus.publish("orchestration:route_resolved", {
           band: decision.band, score: decision.score, features: decision.features,
           finalLane: decision.lane, tier: decision.tier, reason: decision.reason
         });
       }
-      if (decision.lane === "single") return runtime.send(message, scopedOptions);
-      eventBus.publish("orchestration:routed", { lane: decision.lane, reason: decision.reason, signals: decision.signals });
-      return orchestrator.run({ message, options: scopedOptions, routing: decision, scope });
-    } finally {
-      if (currentOrchScope === scope) {
-        currentOrchScope = null;
+      if (decision.lane === "single") {
+        const singleOptions = { ...sendOptions, scope: baseScope, signal: baseScope.signal };
+        return await runtime.send(message, singleOptions);
       }
+      eventBus.publish("orchestration:routed", { lane: decision.lane, reason: decision.reason, signals: decision.signals });
+
+      let orchScope = baseScope;
+      if (!orchScope.budget && orch.budget) {
+        orchScope = createRequestScope({
+          signal: baseScope.signal,
+          budget: createRequestBudget({ maxTokens: orch.budget.maxTokens, maxModelCalls: orch.budget.maxModelCalls }),
+          executionId: sendOptions.executionId
+        });
+        activeScopes.add(orchScope);
+      }
+      try {
+        const scopedOptions = { ...sendOptions, scope: orchScope, signal: orchScope.signal };
+        return await orchestrator.run({ message, options: scopedOptions, routing: decision, scope: orchScope });
+      } finally {
+        if (orchScope !== baseScope) {
+          activeScopes.delete(orchScope);
+        }
+      }
+    } finally {
+      activeScopes.delete(baseScope);
     }
   }
 
@@ -549,7 +569,9 @@ export async function createKernel(root, options = {}) {
         return runtime.approve(id, decision, opts);
       },
       interrupt: (...args) => {
-        try { currentOrchScope?.abort("turn was interrupted"); } catch {}
+        for (const scope of activeScopes) {
+          try { scope.abort("turn was interrupted"); } catch {}
+        }
         try { orchestrator.interrupt?.(); } catch {}
         return runtime.interrupt(...args);
       },
@@ -578,6 +600,10 @@ export async function createKernel(root, options = {}) {
     async dispose() {
       if (kernelDisposed) return;
       kernelDisposed = true;
+      for (const scope of activeScopes) {
+        try { scope.abort("kernel disposed"); } catch {}
+      }
+      try { orchestrator.interrupt?.(); } catch {}
       mcpTrials.dispose();
       mcpHub.inputBroker.dispose();
       try { await orchestrator.flushExperience?.(); } catch { /* best-effort */ }

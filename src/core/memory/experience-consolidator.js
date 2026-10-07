@@ -14,10 +14,13 @@ export function createConsolidator({ callModel, store, now = () => Date.now(), u
   } = cfg;
   const upsertCfg = { now, cap, thresholds, decayPerDay, dedupThreshold };
 
-  async function consolidate({ message, done_when, allCollected = [], outcome, adoptedExperienceIds = [], taskId = "task", sessionId = "session", round = 1 } = {}) {
+  async function consolidate({ message, done_when, allCollected = [], outcome, adoptedExperienceIds = [], taskId = "task", sessionId = "session", round = 1 } = {}, options = {}) {
+    if (options?.signal?.aborted || options?.scope?.budget?.exceeded?.()) {
+      return { written: 0, pending: 0, skipped: true };
+    }
     await applyAdopted(adoptedExperienceIds, outcome);
 
-    const lessons = await distill({ message, done_when, allCollected, outcome });
+    const lessons = await distill({ message, done_when, allCollected, outcome }, options);
     const subtaskIds = subtaskIdsOf(allCollected);
     let written = 0;
     let pending = 0;
@@ -61,11 +64,22 @@ export function createConsolidator({ callModel, store, now = () => Date.now(), u
     }
   }
 
-  async function distill({ message, done_when, allCollected, outcome }) {
+  async function distill({ message, done_when, allCollected, outcome }, options = {}) {
+    if (options?.signal?.aborted || options?.scope?.budget?.exceeded?.()) {
+      return [];
+    }
     let feedback = null;
     for (let attempt = 0; attempt <= maxRepairs; attempt += 1) {
       let raw;
-      try { raw = await callModel(distillPrompt(message, done_when, allCollected, outcome, feedback)); }
+      try {
+        raw = await callModel(distillPrompt(message, done_when, allCollected, outcome, feedback), {
+          ...options,
+          role: "experience",
+          purpose: "plan",
+          signal: options.signal,
+          scope: options.scope
+        });
+      }
       catch { return []; }   // model error → no consolidation
       const arr = extractJsonArray(raw);
       if (Array.isArray(arr) && arr.every(isLesson)) return arr;

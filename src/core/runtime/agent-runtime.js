@@ -96,6 +96,15 @@ export function createAgentRuntime({
     if (currentTurnId) { const err = new Error("another turn is in progress"); err.code = "BUSY"; throw err; }
     const generation = ++turnGeneration;
     currentAbortController = new AbortController();
+    if (options.signal) {
+      if (options.signal.aborted) {
+        currentAbortController.abort(options.signal.reason);
+      } else {
+        options.signal.addEventListener("abort", () => {
+          currentAbortController?.abort(options.signal.reason);
+        }, { once: true });
+      }
+    }
     const signal = currentAbortController.signal;
     let turn = createAgentTurn({ sessionId, userMessage: message, autonomy: options.autonomy || "gated" });
     const permissionContext = buildPermissionContext(options, turn);
@@ -321,6 +330,15 @@ export function createAgentRuntime({
     const recordPermissionContext = permissionContextForRecord(record);
     currentTurnId = record.turn_id;
     currentAbortController = new AbortController();
+    if (opts?.signal) {
+      if (opts.signal.aborted) {
+        currentAbortController.abort(opts.signal.reason);
+      } else {
+        opts.signal.addEventListener("abort", () => {
+          currentAbortController?.abort(opts.signal.reason);
+        }, { once: true });
+      }
+    }
     const signal = currentAbortController.signal;
     const generation = ++turnGeneration;
     try {

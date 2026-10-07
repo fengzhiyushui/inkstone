@@ -18,6 +18,9 @@ export async function runDispatchLoop({
   const collected = [];
   const failedIds = new Set();
   for (let i = 0; i < order.length; i += 1) {
+    if (scope?.signal?.aborted) {
+      return { status: "cancelled", collected, stopped_reason: "aborted" };
+    }
     const st = order[i];
     const failedDep = (st.depends_on || []).find((dep) => failedIds.has(dep));
     if (failedDep) {
@@ -70,7 +73,10 @@ export async function resumeDispatchLoop(roundResume, decision) {
 }
 
 async function finishPartial(collected, synthesizer, stopped_reason, scope = null) {
-  const content = await synthesizer.synthesize({ collected, scope });
+  if (scope?.signal?.aborted) {
+    return { status: "cancelled", content: "Orchestration was cancelled.", collected, stopped_reason: "aborted" };
+  }
+  const content = await synthesizer.synthesize({ collected, scope, signal: scope?.signal });
   return stopped_reason ? { status: "complete", content, collected, stopped_reason } : { status: "complete", content, collected };
 }
 
@@ -106,6 +112,10 @@ async function runBatched({ plan, workerFactory, makeReviewer, synthesizer, budg
   let runDir = null; // parent of iso subtask dirs; cleaned at the end for zero residue
 
   for (const batch of batches) {
+    if (scope?.signal?.aborted) {
+      await cleanupRun(runDir, removeIso);
+      return { status: "cancelled", collected, stopped_reason: "aborted" };
+    }
     const runnable = [];
     for (const st of batch) {
       const failedDep = (st.depends_on || []).find((dep) => failedIds.has(dep));
@@ -119,6 +129,10 @@ async function runBatched({ plan, workerFactory, makeReviewer, synthesizer, budg
     if (runnable.length === 0) continue;
 
     if (runnable.length === 1) {
+      if (scope?.signal?.aborted) {
+        await cleanupRun(runDir, removeIso);
+        return { status: "cancelled", collected, stopped_reason: "aborted" };
+      }
       const r = await processSubtask(runnable[0], { workerFactory, makeReviewer, maxWorkerAttempts, autonomy, onEvent, projectRules, orchestrationMarker });
       if (r.control === "awaiting_approval") {
         await cleanupRun(runDir, removeIso);
@@ -131,11 +145,29 @@ async function runBatched({ plan, workerFactory, makeReviewer, synthesizer, budg
       else failedIds.add(runnable[0].id);
       collected.push(r.entry);
     } else {
+      if (scope?.signal?.aborted) {
+        await cleanupRun(runDir, removeIso);
+        return { status: "cancelled", collected, stopped_reason: "aborted" };
+      }
       const results = await Promise.all(runnable.map((st) =>
         Promise.resolve(runIsolatedWorker({ subtask: st, runId, scope })).catch((error) => ({ st, error }))));
+
+      // R4: 检查在并发 worker 执行期间是否被取消！
+      if (scope?.signal?.aborted) {
+        for (const r of results) {
+          if (r.isoRoot && removeIso) await removeIso(r.isoRoot).catch(() => {});
+        }
+        await cleanupRun(runDir, removeIso);
+        return { status: "cancelled", collected, stopped_reason: "aborted" };
+      }
+
       results.sort((a, b) => (a.st.id < b.st.id ? -1 : a.st.id > b.st.id ? 1 : 0)); // deterministic merge order
       const actuals = results.map((r) => ({ id: r.st.id, paths: actualPaths(r.actual) }));
       for (const r of results) {
+        if (scope?.signal?.aborted) {
+          if (r.isoRoot && removeIso) await removeIso(r.isoRoot).catch(() => {});
+          continue;
+        }
         if (r.isoRoot && !runDir) runDir = path.dirname(r.isoRoot);
         try {
           const entry = await settleWorker(r, { mergeSubtask, actuals });
@@ -144,6 +176,10 @@ async function runBatched({ plan, workerFactory, makeReviewer, synthesizer, budg
           collected.push(entry);
         }
         finally { if (r.isoRoot && removeIso) await removeIso(r.isoRoot).catch(() => {}); } // zero residue (per copy)
+      }
+      if (scope?.signal?.aborted) {
+        await cleanupRun(runDir, removeIso);
+        return { status: "cancelled", collected, stopped_reason: "aborted" };
       }
     }
     if (budget.exceeded()) { await cleanupRun(runDir, removeIso); return finishPartial(collected, synthesizer, "budget", scope); }

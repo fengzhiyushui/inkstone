@@ -1,6 +1,6 @@
 // Request execution scope and aggregate budget for orchestration.
 // Coordinates physical call attempts, atomic quota reservation, role attribution,
-// cancellation propagation, and durable recovery continuations.
+// token estimation, cancellation propagation, and durable recovery continuations.
 
 function createBudgetExceededError(over) {
   const err = new Error(`cost budget exceeded: ${over.reason}`);
@@ -16,7 +16,7 @@ function abortError(reason = "This operation was aborted") {
   return err;
 }
 
-function combineSignals(sig1, sig2) {
+export function combineSignals(sig1, sig2) {
   if (!sig1 && !sig2) return null;
   if (!sig1) return sig2;
   if (!sig2) return sig1;
@@ -30,6 +30,32 @@ function combineSignals(sig1, sig2) {
   return c.signal;
 }
 
+export function normalizeUsageTokens(usage) {
+  if (!usage || typeof usage !== "object") return null;
+  const pt = usage.prompt_tokens;
+  const ct = usage.completion_tokens;
+  const tt = usage.total_tokens;
+
+  // 严格检查负数与非有限数
+  if (pt !== undefined && (!Number.isFinite(pt) || pt < 0)) return null;
+  if (ct !== undefined && (!Number.isFinite(ct) || ct < 0)) return null;
+  if (tt !== undefined && (!Number.isFinite(tt) || tt < 0)) return null;
+
+  const validPt = Number.isFinite(pt) && pt >= 0;
+  const validCt = Number.isFinite(ct) && ct >= 0;
+  const validTt = Number.isFinite(tt) && tt >= 0;
+
+  if (validPt && validCt) {
+    const sum = pt + ct;
+    if (validTt) {
+      return Math.max(sum, tt);
+    }
+    return sum;
+  }
+  if (validTt) return tt;
+  return null;
+}
+
 export function createRequestBudget({
   maxTokens = null,
   maxModelCalls = null,
@@ -37,16 +63,34 @@ export function createRequestBudget({
   initialModelCalls = 0,
   initialUnknownUsageAttempts = 0,
   initialSettledAttempts = [],
+  initialByRole = {},
+  fallbackTokensPerUnknown = null,
   executionId = null
 } = {}) {
-  let tokens = initialTokens;
-  let modelCalls = initialModelCalls;
+  let tokens = Number.isFinite(initialTokens) && initialTokens >= 0 ? initialTokens : 0;
+  let modelCalls = Number.isFinite(initialModelCalls) && initialModelCalls >= 0 ? initialModelCalls : 0;
   let reservedCalls = 0;
   let reservedTokens = 0;
-  let unknownUsageAttempts = initialUnknownUsageAttempts;
-  const settledAttempts = new Set(initialSettledAttempts);
+  let unknownUsageAttempts = Number.isFinite(initialUnknownUsageAttempts) && initialUnknownUsageAttempts >= 0 ? initialUnknownUsageAttempts : 0;
+  const settledAttempts = new Set(Array.isArray(initialSettledAttempts) ? initialSettledAttempts : []);
   const byRole = {};
   const execId = executionId || `exec_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
+  // 未知费用保底估算（fallbackTokensPerUnknown）：若无显式设置且有 maxTokens，按 min(maxTokens, 500) 保守计算
+  const fallbackTokens = Number.isFinite(fallbackTokensPerUnknown) && fallbackTokensPerUnknown > 0
+    ? fallbackTokensPerUnknown
+    : (maxTokens != null ? Math.min(maxTokens, 500) : 500);
+
+  if (initialByRole && typeof initialByRole === "object") {
+    for (const [r, stats] of Object.entries(initialByRole)) {
+      if (stats && typeof stats === "object") {
+        byRole[r] = {
+          calls: Number.isFinite(stats.calls) && stats.calls >= 0 ? stats.calls : 0,
+          tokens: Number.isFinite(stats.tokens) && stats.tokens >= 0 ? stats.tokens : 0
+        };
+      }
+    }
+  }
 
   function ensureRole(r) {
     const roleKey = r || "unknown";
@@ -55,16 +99,37 @@ export function createRequestBudget({
   }
 
   function exceeded(estimatedTokens = 0) {
+    const est = Number.isFinite(estimatedTokens) && estimatedTokens > 0 ? estimatedTokens : 0;
+    const effectiveTokens = tokens + reservedTokens + (unknownUsageAttempts * fallbackTokens);
     if (maxTokens != null) {
-      if (estimatedTokens > 0 && (tokens + reservedTokens + estimatedTokens) > maxTokens) {
-        return { reason: "max_tokens", tokens, max_tokens: maxTokens, reserved_tokens: reservedTokens + estimatedTokens };
+      if (est > 0 && (effectiveTokens + est) > maxTokens) {
+        return {
+          reason: "max_tokens",
+          tokens,
+          effective_tokens: effectiveTokens + est,
+          unknown_usage_attempts: unknownUsageAttempts,
+          max_tokens: maxTokens,
+          reserved_tokens: reservedTokens + est
+        };
       }
-      if ((tokens + reservedTokens) >= maxTokens) {
-        return { reason: "max_tokens", tokens, max_tokens: maxTokens, reserved_tokens: reservedTokens };
+      if (effectiveTokens >= maxTokens) {
+        return {
+          reason: "max_tokens",
+          tokens,
+          effective_tokens: effectiveTokens,
+          unknown_usage_attempts: unknownUsageAttempts,
+          max_tokens: maxTokens,
+          reserved_tokens: reservedTokens
+        };
       }
     }
     if (maxModelCalls != null && (modelCalls + reservedCalls) >= maxModelCalls) {
-      return { reason: "max_model_calls", model_calls: modelCalls, max_model_calls: maxModelCalls, reserved_calls: reservedCalls };
+      return {
+        reason: "max_model_calls",
+        model_calls: modelCalls,
+        max_model_calls: maxModelCalls,
+        reserved_calls: reservedCalls
+      };
     }
     return null;
   }
@@ -124,6 +189,11 @@ export function createRequestBudget({
       settled = true;
       if (settledAttempts.has(effectiveAttemptId)) return;
       settledAttempts.add(effectiveAttemptId);
+      // 有界保护：限制最近 1000 个 settledAttempts，防止长生命周期内存持续膨胀
+      if (settledAttempts.size > 1000) {
+        const first = settledAttempts.values().next().value;
+        settledAttempts.delete(first);
+      }
 
       if (!started) {
         reservedCalls = Math.max(0, reservedCalls - 1);
@@ -132,14 +202,10 @@ export function createRequestBudget({
       }
       reservedTokens = Math.max(0, reservedTokens - (estimatedTokens || 0));
 
-      if (usage && typeof usage === "object") {
-        const total = usage.total_tokens || ((usage.prompt_tokens || 0) + (usage.completion_tokens || 0));
-        if (typeof total === "number" && total > 0) {
-          tokens += total;
-          ensureRole(role).tokens += total;
-        } else {
-          unknownUsageAttempts += 1;
-        }
+      const validTotal = normalizeUsageTokens(usage);
+      if (validTotal != null && validTotal > 0) {
+        tokens += validTotal;
+        ensureRole(role).tokens += validTotal;
       } else {
         unknownUsageAttempts += 1;
       }
@@ -156,14 +222,9 @@ export function createRequestBudget({
   }
 
   function recordModelResult(modelResult) {
-    const usage = modelResult?.usage;
-    if (usage && typeof usage === "object") {
-      const total = usage.total_tokens || ((usage.prompt_tokens || 0) + (usage.completion_tokens || 0));
-      if (typeof total === "number" && total > 0) {
-        tokens += total;
-      } else {
-        unknownUsageAttempts += 1;
-      }
+    const validTotal = normalizeUsageTokens(modelResult?.usage);
+    if (validTotal != null && validTotal > 0) {
+      tokens += validTotal;
     } else {
       unknownUsageAttempts += 1;
     }
@@ -179,6 +240,8 @@ export function createRequestBudget({
       reserved_calls: reservedCalls,
       reserved_tokens: reservedTokens,
       unknown_usage_attempts: unknownUsageAttempts,
+      effective_tokens: tokens + (unknownUsageAttempts * fallbackTokens),
+      fallback_tokens_per_unknown: fallbackTokens,
       execution_id: execId,
       settled_attempts: [...settledAttempts],
       by_role: JSON.parse(JSON.stringify(byRole))
@@ -219,6 +282,32 @@ export function createRequestScope({
     if (!gateway) return null;
     const bound = Object.create(gateway);
 
+    // 辅助函数：统一为非 DeepSeek 自定义网关执行 fallback ticket 的包装
+    async function withFallbackTicket(roleToUse, fn) {
+      if (gateway._isDeepSeekGateway || !budget) {
+        return fn();
+      }
+      budget.check();
+      const ticket = budget.reserveCall({
+        role: roleToUse,
+        attemptId: `mock_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        signal: controller.signal
+      });
+      if (controller.signal.aborted) {
+        ticket.cancel();
+        throw abortError();
+      }
+      ticket.markStarted();
+      try {
+        const res = await fn();
+        ticket.settle({ usage: res?.usage });
+        return res;
+      } catch (err) {
+        ticket.settle({ error: err });
+        throw err;
+      }
+    }
+
     bound.invoke = async function (messages, options = {}) {
       const combinedSignal = combineSignals(options.signal, controller.signal);
       if (combinedSignal?.aborted) throw abortError();
@@ -226,25 +315,11 @@ export function createRequestScope({
       const roleToUse = options.role || role;
       const mergedOptions = { ...options, signal: combinedSignal, scope: requestScope, role: roleToUse };
 
-      let fallbackTicket = null;
-      if (!gateway._isDeepSeekGateway) {
-        budget.check();
-        fallbackTicket = budget.reserveCall({ role: roleToUse, attemptId: `mock_${Date.now()}_${Math.random().toString(36).slice(2, 6)}` });
-        if (combinedSignal?.aborted) {
-          fallbackTicket.cancel();
-          throw abortError();
-        }
-        fallbackTicket.markStarted();
+      if (options._fallbackScoped || gateway._isDeepSeekGateway) {
+        return gateway.invoke(messages, mergedOptions);
       }
-
-      try {
-        const res = await gateway.invoke(messages, mergedOptions);
-        if (fallbackTicket) fallbackTicket.settle({ usage: res?.usage });
-        return res;
-      } catch (err) {
-        if (fallbackTicket) fallbackTicket.settle({ error: err });
-        throw err;
-      }
+      mergedOptions._fallbackScoped = true;
+      return withFallbackTicket(roleToUse, () => gateway.invoke(messages, mergedOptions));
     };
 
     bound.reply = async function (args = {}) {
@@ -256,7 +331,12 @@ export function createRequestScope({
         signal: combinedSignal,
         options: { ...args.options, scope: requestScope, role: roleToUse }
       };
-      return gateway.reply(mergedArgs);
+
+      if (args._fallbackScoped || args.options?._fallbackScoped || gateway._isDeepSeekGateway) {
+        return gateway.reply(mergedArgs);
+      }
+      mergedArgs._fallbackScoped = true;
+      return withFallbackTicket(roleToUse, () => gateway.reply(mergedArgs));
     };
 
     bound.stream = async function (messages, options = {}) {
@@ -264,14 +344,19 @@ export function createRequestScope({
       if (combinedSignal?.aborted) throw abortError();
       const roleToUse = options.role || role;
       const mergedOptions = { ...options, signal: combinedSignal, scope: requestScope, role: roleToUse };
-      return gateway.stream(messages, mergedOptions);
+
+      if (options._fallbackScoped || gateway._isDeepSeekGateway) {
+        return gateway.stream(messages, mergedOptions);
+      }
+      mergedOptions._fallbackScoped = true;
+      return withFallbackTicket(roleToUse, () => gateway.stream(messages, mergedOptions));
     };
 
     return bound;
   }
 
   const requestScope = {
-    executionId: budget?.executionId || executionId,
+    executionId: budget?.executionId || executionId || `exec_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
     budget,
     signal: controller.signal,
     abort,

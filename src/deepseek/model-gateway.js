@@ -20,6 +20,33 @@ export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY ||
     return { url: `${baseUrl.replace(/\/+$/, "")}/chat/completions`, body, route };
   }
 
+  function estimateRequestTokens(request, options = {}) {
+    let chars = 0;
+    if (Array.isArray(request.body?.messages)) {
+      for (const m of request.body.messages) {
+        if (typeof m.content === "string") chars += m.content.length;
+      }
+    }
+    const estimatedInput = Math.max(20, Math.ceil(chars / 2.5));
+    let estimatedOutput = 500;
+    if (Number.isFinite(options.maxTokens) && options.maxTokens > 0) {
+      estimatedOutput = options.maxTokens;
+    } else if (Number.isFinite(options.max_tokens) && options.max_tokens > 0) {
+      estimatedOutput = options.max_tokens;
+    } else {
+      const role = options.role || options.purpose || request.route?.purpose;
+      switch (role) {
+        case "router": estimatedOutput = 200; break;
+        case "planner": estimatedOutput = 1000; break;
+        case "worker": estimatedOutput = 1500; break;
+        case "reviewer": estimatedOutput = 500; break;
+        case "synthesizer": estimatedOutput = 800; break;
+        default: estimatedOutput = 500;
+      }
+    }
+    return estimatedInput + estimatedOutput;
+  }
+
   // M4 #12:首字节前(HTTP 头阶段)的有限指数退避重试——.retryable 标志自 v1.x 起
   // 首次有执行端。最多 RETRY_MAX_ATTEMPTS 次尝试(首次+2 重试),退避序列
   // 500ms→1000ms(指数,上限 8s);402/400/401/403 等不可重试错误直接抛。
@@ -36,7 +63,13 @@ export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY ||
       let ticket = null;
       if (options.scope?.budget) {
         if (options.signal?.aborted) throw abortError();
-        ticket = options.scope.budget.reserveCall({ role: options.role || "unknown", attemptId });
+        const estimatedTokens = estimateRequestTokens(request, options);
+        ticket = options.scope.budget.reserveCall({
+          role: options.role || "unknown",
+          attemptId,
+          estimatedTokens,
+          signal: options.signal
+        });
       }
 
       const timeout = withTimeout(options.signal, options.timeoutMs);
@@ -84,11 +117,19 @@ export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY ||
           if (timeout.didTimeout()) throw modelTimeoutError(options.timeoutMs);
           throw error;
         }
-        const processed = markTruncated(processChatPayload(payload, request.route, latencyMs));
+        let processed;
+        try {
+          processed = markTruncated(processChatPayload(payload, request.route, latencyMs));
+        } catch (error) {
+          // R8: 响应后处理异常（如 tool_calls 格式畸形抛错）时，优先保留已收到的合法 usage！
+          ticket?.settle({ usage: payload?.usage, error });
+          throw error;
+        }
         if (isRetryableDeepSeekError({ finish_reason: processed.finish_reason })) processed.retryable = true;
         // JSON 模式空 content:同一 request 原样重发(共最多 JSON_EMPTY_MAX_ATTEMPTS 次);
         // 退避固定 300ms 并遵守 signal;仍空则挂 emptyContent 返回,不抛错。
-        if (options.jsonMode && processed.content === "" && !processed.retryable) {
+        const isJson = options.jsonMode || request.body?.response_format?.type === "json_object";
+        if (isJson && processed.content === "" && !processed.retryable) {
           jsonAttempts += 1;
           if (jsonAttempts < JSON_EMPTY_MAX_ATTEMPTS && attempts < RETRY_MAX_ATTEMPTS) {
             ticket?.settle({ usage: processed.usage });
@@ -126,7 +167,13 @@ export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY ||
         if (timeout.didTimeout()) throw modelTimeoutError(options.timeoutMs);
         throw error;
       }
-      const result = markTruncated({ ...streamed, model: request.body.model, channel: request.route.channel, latency_ms: latencyMs, tool_calls: normalizeToolCalls(streamed.tool_calls) });
+      let result;
+      try {
+        result = markTruncated({ ...streamed, model: request.body.model, channel: request.route.channel, latency_ms: latencyMs, tool_calls: normalizeToolCalls(streamed.tool_calls) });
+      } catch (error) {
+        ticket?.settle({ usage: streamed?.usage, error });
+        throw error;
+      }
       ticket?.settle({ usage: result.usage });
       usageTracker.recordUsage({ usage: result.usage, channel: request.route.channel, model: request.body.model, latency_ms: latencyMs });
       return result;
@@ -140,7 +187,14 @@ export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY ||
     let ticket = null;
     if (options.scope?.budget) {
       if (options.signal?.aborted) throw abortError();
-      ticket = options.scope.budget.reserveCall({ role: options.role || "fim", attemptId: `att_fim_${Date.now()}` });
+      const promptLen = (prefix?.length || 0) + (suffix?.length || 0);
+      const estimatedTokens = Math.max(20, Math.ceil(promptLen / 2.5)) + (Number.isFinite(options.maxTokens) ? options.maxTokens : 500);
+      ticket = options.scope.budget.reserveCall({
+        role: options.role || "fim",
+        attemptId: `att_fim_${Date.now()}`,
+        estimatedTokens,
+        signal: options.signal
+      });
     }
     const timeout = withTimeout(options.signal, options.timeoutMs);
     try {

@@ -81,6 +81,7 @@ export function serializeOrchestrationState(state, { approvalId, pausedSubtask, 
     allCollected: (state.allCollected || []).map(serializeCollected),
     seenSubtaskIds: [...state.seenSubtaskIds],
     seenFp: [...state.seenFp],
+    executionId: state.executionId || state.scope?.executionId || state.taskId,
     budget: {
       quotaTokens: bs.max_tokens ?? null,
       quotaCalls: bs.max_model_calls ?? null,
@@ -91,7 +92,8 @@ export function serializeOrchestrationState(state, { approvalId, pausedSubtask, 
       } : {}),
       ...(bs.settled_attempts != null || bs.settledAttempts != null ? {
         settledAttempts: bs.settled_attempts || bs.settledAttempts || []
-      } : {})
+      } : {}),
+      ...(bs.by_role ? { byRole: bs.by_role } : {})
     },
     adoptedExperienceIds: [...(state.adoptedExperienceIds || [])],
     riskCues: [...(state.riskCues || [])],
@@ -127,25 +129,47 @@ export function deserializeOrchestrationState(json) {
     sessionId: json.sessionId,
     executionId: json.executionId || json.taskId,
     env: json.env || { root: null, orchestrationConfig: null },
-    budgetSnapshot: budgetContinuation(json.budget),
+    budgetSnapshot: budgetContinuation(json.budget, json),
     pausedSubtask: { ...json.pausedSubtask },
     remaining: (json.remaining || []).map((s) => ({ ...s }))
   };
 }
 
-export function budgetContinuation(budgetJson) {
+export function budgetContinuation(budgetJson, rootJson = {}) {
   const b = budgetJson || {};
+  const isLegacy = (
+    b.settledAttempts === undefined &&
+    b.unknownUsageAttempts === undefined &&
+    (b.spentCalls === 0 || b.spentTokens === 0) &&
+    Array.isArray(rootJson.allCollected) &&
+    rootJson.allCollected.some((c) => c.status === "complete")
+  );
+
+  let initialCalls = b.spentCalls || 0;
+  let initialUnknown = b.unknownUsageAttempts ?? 0;
+  if (isLegacy) {
+    const completedCount = rootJson.allCollected.filter((c) => c.status === "complete").length;
+    initialCalls = Math.max(initialCalls, completedCount * 2);
+    initialUnknown = Math.max(initialUnknown, 1);
+  }
+
   const continuation = {
     maxTokens: b.quotaTokens ?? null,
     maxModelCalls: b.quotaCalls ?? null,
     initialTokens: b.spentTokens || 0,
-    initialModelCalls: b.spentCalls || 0
+    initialModelCalls: initialCalls
   };
-  if (b.unknownUsageAttempts != null) {
-    continuation.initialUnknownUsageAttempts = b.unknownUsageAttempts;
+  if (b.unknownUsageAttempts != null || isLegacy) {
+    continuation.initialUnknownUsageAttempts = initialUnknown;
   }
   if (b.settledAttempts != null) {
     continuation.initialSettledAttempts = Array.isArray(b.settledAttempts) ? b.settledAttempts : [];
+  }
+  if (b.byRole) {
+    continuation.initialByRole = b.byRole;
+  }
+  if (isLegacy) {
+    continuation.legacyUnmetered = true;
   }
   return continuation;
 }

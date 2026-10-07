@@ -155,11 +155,15 @@ export function createOrchestrator({
   // C4: consolidate experience in the background — never blocks the user's result.
   // Tracked so flushExperience()/dispose can await it (no lost writes).
   function kickConsolidation(state, outcome) {
+    if (state.scope?.signal?.aborted || state.budget?.exceeded()) {
+      publish(eventBus, "experience:consolidation_skipped", { taskId: state.taskId, reason: "budget_or_abort" });
+      return;
+    }
     const p = Promise.resolve()
       .then(() => experienceConsolidator.consolidate({
         message: state.message, done_when: state.done_when, allCollected: state.allCollected,
         outcome, adoptedExperienceIds: state.adoptedExperienceIds, taskId: state.taskId, sessionId: state.sessionId
-      }))
+      }, { scope: state.scope, signal: state.scope?.signal }))
       .then((r) => publish(eventBus, "experience:consolidated", { taskId: state.taskId, written: r?.written || 0 }))
       .catch(() => {});
     pendingConsolidations.add(p);
@@ -177,16 +181,21 @@ export function createOrchestrator({
     if (!saved) { const e = new Error(`no paused orchestration: ${id}`); e.code = "ORCH_NOT_PAUSED"; throw e; }
     orchPaused.delete(id);                                  // consume in-memory
     const { state, dispatchResume } = saved;
-    const res = await resumeDispatchLoop(dispatchResume, decision);
-    state.allCollected.push(...res.collected);
-    if (decision === "deny") await consumeWorkerSidecar(dispatchResume.pausedApprovalId);   // M5: deny cleans worker sidecar
-    if (orchPersistence) await orchPersistence.consume(id).catch(() => {});                  // M5: consume old durable sidecar
-    if (res.status === "awaiting_approval") {
-      orchPaused.set(res.approval.id, { state, dispatchResume: res.resume });   // re-pause: new id
-      await persistDurablePause(state, res);                                    // M5: new durable sidecar
-      return { status: "awaiting_approval", approval: res.approval, collected: state.allCollected };
+    activeRunningScope = state.scope;
+    try {
+      const res = await resumeDispatchLoop(dispatchResume, decision);
+      state.allCollected.push(...res.collected);
+      if (decision === "deny") await consumeWorkerSidecar(dispatchResume.pausedApprovalId);   // M5: deny cleans worker sidecar
+      if (orchPersistence) await orchPersistence.consume(id).catch(() => {});                  // M5: consume old durable sidecar
+      if (res.status === "awaiting_approval") {
+        orchPaused.set(res.approval.id, { state, dispatchResume: res.resume });   // re-pause: new id
+        await persistDurablePause(state, res);                                    // M5: new durable sidecar
+        return { status: "awaiting_approval", approval: res.approval, collected: state.allCollected };
+      }
+      return await driveFrom(state, { afterPausedRound: true });    // round done -> gate + further rounds
+    } finally {
+      if (activeRunningScope === state.scope) activeRunningScope = null;
     }
-    return driveFrom(state, { afterPausedRound: true });    // round done -> gate + further rounds
   }
 
   function blocked(reason) {
@@ -259,7 +268,11 @@ export function createOrchestrator({
   }
   function deserializeState(json) {
     const s = deserializeOrchestrationState(json);
-    const budget = makeResumedBudget ? makeResumedBudget(s.budgetSnapshot) : makeBudget();
+    const budget = makeResumedBudget ? makeResumedBudget({
+      ...s.budgetSnapshot,
+      executionId: s.executionId || s.taskId,
+      initialByRole: s.budgetSnapshot?.initialByRole || {}
+    }) : makeBudget();
     const scope = createRequestScope({ budget, executionId: s.executionId || s.taskId });
     return { ...s, budget, scope, stoppedByCap: false };
   }
