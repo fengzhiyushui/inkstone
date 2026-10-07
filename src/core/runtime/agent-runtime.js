@@ -95,17 +95,20 @@ export function createAgentRuntime({
     }
     if (currentTurnId) { const err = new Error("another turn is in progress"); err.code = "BUSY"; throw err; }
     const generation = ++turnGeneration;
-    currentAbortController = new AbortController();
+    const turnAbortController = new AbortController();
+    currentAbortController = turnAbortController;
+    let abortListener = null;
     if (options.signal) {
       if (options.signal.aborted) {
-        currentAbortController.abort(options.signal.reason);
+        turnAbortController.abort(options.signal.reason);
       } else {
-        options.signal.addEventListener("abort", () => {
-          currentAbortController?.abort(options.signal.reason);
-        }, { once: true });
+        abortListener = () => {
+          turnAbortController.abort(options.signal.reason);
+        };
+        options.signal.addEventListener("abort", abortListener, { once: true });
       }
     }
-    const signal = currentAbortController.signal;
+    const signal = turnAbortController.signal;
     let turn = createAgentTurn({ sessionId, userMessage: message, autonomy: options.autonomy || "gated" });
     const permissionContext = buildPermissionContext(options, turn);
     currentTurnId = turn.id;
@@ -130,11 +133,12 @@ export function createAgentRuntime({
       });
       assertNotInterrupted(generation);
 
+      const effectiveGateway = options.modelGateway || modelGateway;
       let response;
-      if (classification.task_type === "query" || !modelGateway?.invoke || !executeTool) {
-        response = await runReplyFastPath({ message, classification, turn, options, signal, context });
+      if (classification.task_type === "query" || !effectiveGateway?.invoke || !executeTool) {
+        response = await runReplyFastPath({ message, classification, turn, options, signal, context, modelGateway: effectiveGateway });
       } else {
-        response = await runToolLoopPath({ message, classification, turn, options, signal, context, permissionContext });
+        response = await runToolLoopPath({ message, classification, turn, options, signal, context, permissionContext, modelGateway: effectiveGateway });
       }
       assertNotInterrupted(generation);
 
@@ -185,20 +189,30 @@ export function createAgentRuntime({
       currentTurnId = null;
       currentAbortController = null;
       throw error;
+    } finally {
+      if (abortListener && options.signal) {
+        options.signal.removeEventListener("abort", abortListener);
+      }
+      if (currentAbortController === turnAbortController) {
+        currentAbortController = null;
+      }
+      if (currentTurnId === turn.id) {
+        currentTurnId = null;
+      }
     }
   }
 
-  async function runReplyFastPath({ message, classification, turn, options, signal, context = null }) {
+  async function runReplyFastPath({ message, classification, turn, options, signal, context = null, modelGateway: mg = modelGateway }) {
     lifecycle = transitionLifecycle(lifecycle, { to: "complete", reason: "reply fast path", channel: "system" });
     const finalStep = completeAgentStep(createAgentStep({ turnId: turn.id, type: "final", channel: "system" }));
     const updatedTurn = addTurnStep(turn, finalStep);
-    const response = modelGateway && typeof modelGateway.reply === "function"
-      ? await modelGateway.reply({ message, classification, turn, options: { ...options, timeoutMs: options.timeoutMs ?? modelTimeoutMs }, signal, context })
+    const response = mg && typeof mg.reply === "function"
+      ? await mg.reply({ message, classification, turn, options: { ...options, timeoutMs: options.timeoutMs ?? modelTimeoutMs }, signal, context })
       : { content: `V2-0 mock ${classification.task_type} response` };
     return { status: "complete", content: response.content, turn: updatedTurn, context };
   }
 
-  async function runToolLoopPath({ message, classification, turn, options, signal, context = null, permissionContext = null }) {
+  async function runToolLoopPath({ message, classification, turn, options, signal, context = null, permissionContext = null, modelGateway: mg = modelGateway }) {
     lifecycle = transitionLifecycle(lifecycle, { to: "execute", reason: "tool loop started", channel: "act" });
     const budget = createCostBudget({
       maxTokens: options.maxTurnTokens ?? maxTurnTokens,
@@ -211,7 +225,7 @@ export function createAgentRuntime({
       sessionId,
       context,
       permissionContext,
-      modelGateway,
+      modelGateway: mg,
       toolSchemas: typeof toolSchemas === "function" ? toolSchemas() : toolSchemas,
       executeTool: toolExecutorFor(signal),
       createPolicyContext: ({ turnId, toolCall, phase }) => createPolicyContext({
@@ -231,10 +245,10 @@ export function createAgentRuntime({
     if (loop.status === "awaiting_approval") return loop;
     if (loop.status === "stopped") return loop;
 
-    return verifyAndMaybeRepair({ turn, message, classification, loop, options, signal, context, permissionContext, budget });
+    return verifyAndMaybeRepair({ turn, message, classification, loop, options, signal, context, permissionContext, budget, modelGateway: mg });
   }
 
-  async function verifyAndMaybeRepair({ turn, message, classification, loop, options, signal, context = null, permissionContext = null, budget = null }) {
+  async function verifyAndMaybeRepair({ turn, message, classification, loop, options, signal, context = null, permissionContext = null, budget = null, modelGateway: mg = modelGateway }) {
     lifecycle = transitionLifecycle(lifecycle, { to: "verify", reason: "tool loop complete", channel: "system" });
     const verificationPolicy = createVerificationPolicyFrom({ options, permissionContext });
     const verification = await runVerifier({
@@ -283,7 +297,7 @@ export function createAgentRuntime({
         turnId: turn.id,
         userMessage: message,
         classification,
-        modelGateway,
+        modelGateway: mg,
         toolSchemas: typeof toolSchemas === "function" ? toolSchemas() : toolSchemas,
         executeTool: toolExecutorFor(signal),
         createPolicyContext: ({ turnId, toolCall, phase }) => createPolicyContext({
@@ -329,17 +343,20 @@ export function createAgentRuntime({
 
     const recordPermissionContext = permissionContextForRecord(record);
     currentTurnId = record.turn_id;
-    currentAbortController = new AbortController();
+    const turnAbortController = new AbortController();
+    currentAbortController = turnAbortController;
+    let abortListener = null;
     if (opts?.signal) {
       if (opts.signal.aborted) {
-        currentAbortController.abort(opts.signal.reason);
+        turnAbortController.abort(opts.signal.reason);
       } else {
-        opts.signal.addEventListener("abort", () => {
-          currentAbortController?.abort(opts.signal.reason);
-        }, { once: true });
+        abortListener = () => {
+          turnAbortController.abort(opts.signal.reason);
+        };
+        opts.signal.addEventListener("abort", abortListener, { once: true });
       }
     }
-    const signal = currentAbortController.signal;
+    const signal = turnAbortController.signal;
     const generation = ++turnGeneration;
     try {
       publish(eventBus, "approval:resolved", { approval_id: approvalId, decision: normalized });
@@ -571,6 +588,16 @@ export function createAgentRuntime({
       currentTurnId = null;
       currentAbortController = null;
       throw error;
+    } finally {
+      if (abortListener && opts?.signal) {
+        opts.signal.removeEventListener("abort", abortListener);
+      }
+      if (currentAbortController === turnAbortController) {
+        currentAbortController = null;
+      }
+      if (currentTurnId === record.turn_id) {
+        currentTurnId = null;
+      }
     }
   }
 

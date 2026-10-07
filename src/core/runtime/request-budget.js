@@ -17,9 +17,11 @@ function abortError(reason = "This operation was aborted") {
 }
 
 export function combineSignals(sig1, sig2) {
-  if (!sig1 && !sig2) return null;
-  if (!sig1) return sig2;
-  if (!sig2) return sig1;
+  const valid1 = sig1 && typeof sig1.addEventListener === "function";
+  const valid2 = sig2 && typeof sig2.addEventListener === "function";
+  if (!valid1 && !valid2) return null;
+  if (!valid1) return sig2;
+  if (!valid2) return sig1;
   if (sig1.aborted) return sig1;
   if (sig2.aborted) return sig2;
   const c = new AbortController();
@@ -81,6 +83,10 @@ export function createRequestBudget({
     ? fallbackTokensPerUnknown
     : (maxTokens != null ? Math.min(maxTokens, 500) : 500);
 
+  let unknownUsageTokens = (Number.isFinite(initialUnknownUsageAttempts) && initialUnknownUsageAttempts > 0)
+    ? initialUnknownUsageAttempts * fallbackTokens
+    : 0;
+
   if (initialByRole && typeof initialByRole === "object") {
     for (const [r, stats] of Object.entries(initialByRole)) {
       if (stats && typeof stats === "object") {
@@ -100,7 +106,7 @@ export function createRequestBudget({
 
   function exceeded(estimatedTokens = 0) {
     const est = Number.isFinite(estimatedTokens) && estimatedTokens > 0 ? estimatedTokens : 0;
-    const effectiveTokens = tokens + reservedTokens + (unknownUsageAttempts * fallbackTokens);
+    const effectiveTokens = tokens + reservedTokens + unknownUsageTokens;
     if (maxTokens != null) {
       if (est > 0 && (effectiveTokens + est) > maxTokens) {
         return {
@@ -181,6 +187,9 @@ export function createRequestBudget({
       } else {
         reservedTokens = Math.max(0, reservedTokens - (estimatedTokens || 0));
         unknownUsageAttempts += 1;
+        const unknownCharge = Math.max(fallbackTokens, estimatedTokens || 0);
+        unknownUsageTokens += unknownCharge;
+        ensureRole(role).tokens += unknownCharge;
       }
     }
 
@@ -203,11 +212,14 @@ export function createRequestBudget({
       reservedTokens = Math.max(0, reservedTokens - (estimatedTokens || 0));
 
       const validTotal = normalizeUsageTokens(usage);
-      if (validTotal != null && validTotal > 0) {
+      if (validTotal != null && validTotal >= 0) {
         tokens += validTotal;
         ensureRole(role).tokens += validTotal;
       } else {
         unknownUsageAttempts += 1;
+        const unknownCharge = Math.max(fallbackTokens, estimatedTokens || 0);
+        unknownUsageTokens += unknownCharge;
+        ensureRole(role).tokens += unknownCharge;
       }
     }
 
@@ -223,10 +235,11 @@ export function createRequestBudget({
 
   function recordModelResult(modelResult) {
     const validTotal = normalizeUsageTokens(modelResult?.usage);
-    if (validTotal != null && validTotal > 0) {
+    if (validTotal != null && validTotal >= 0) {
       tokens += validTotal;
     } else {
       unknownUsageAttempts += 1;
+      unknownUsageTokens += fallbackTokens;
     }
     modelCalls += 1;
   }
@@ -240,7 +253,8 @@ export function createRequestBudget({
       reserved_calls: reservedCalls,
       reserved_tokens: reservedTokens,
       unknown_usage_attempts: unknownUsageAttempts,
-      effective_tokens: tokens + (unknownUsageAttempts * fallbackTokens),
+      unknown_usage_tokens: unknownUsageTokens,
+      effective_tokens: tokens + unknownUsageTokens,
       fallback_tokens_per_unknown: fallbackTokens,
       execution_id: execId,
       settled_attempts: [...settledAttempts],
@@ -287,10 +301,20 @@ export function createRequestScope({
       if (gateway._isDeepSeekGateway || !budget) {
         return fn();
       }
-      budget.check();
+      let fallbackEstimatedTokens = 500;
+      switch (roleToUse) {
+        case "router": fallbackEstimatedTokens = 200; break;
+        case "planner": fallbackEstimatedTokens = 1000; break;
+        case "worker": fallbackEstimatedTokens = 1500; break;
+        case "reviewer": fallbackEstimatedTokens = 500; break;
+        case "synthesizer": fallbackEstimatedTokens = 800; break;
+        default: fallbackEstimatedTokens = 500;
+      }
+      budget.check(fallbackEstimatedTokens);
       const ticket = budget.reserveCall({
         role: roleToUse,
         attemptId: `mock_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        estimatedTokens: fallbackEstimatedTokens,
         signal: controller.signal
       });
       if (controller.signal.aborted) {

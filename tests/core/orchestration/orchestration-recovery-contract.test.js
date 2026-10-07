@@ -60,7 +60,7 @@ function fakeState() {
     ],
     seenSubtaskIds: new Set(["a", "x", "y"]),
     seenFp: new Set(["g|a.js|edit"]),
-    budget: { snapshot: () => ({ tokens: 40, model_calls: 3, max_tokens: 100, max_model_calls: 10 }) },
+    budget: { snapshot: () => ({ tokens: 40, model_calls: 3, max_tokens: 100, max_model_calls: 10, settled_attempts: [], unknown_usage_attempts: 0 }) },
     adoptedExperienceIds: ["exp_1"],
     riskCues: new Set(["rm -rf"]),
     taskId: "task_1", sessionId: "session",

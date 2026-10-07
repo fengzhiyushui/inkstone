@@ -14,6 +14,7 @@ export function createOrchestrator({
 }) {
   const orchPaused = new Map();   // approvalId -> { state, dispatchResume }  (C5 same-process resume)
   const pendingConsolidations = new Set();   // C4: background experience consolidation promises
+  const backgroundScopes = new Set();
   const learningOn = crossTaskLearning !== "off" && !!experienceRetrieval && !!experienceConsolidator;
   let activeRunningScope = null;
 
@@ -55,7 +56,9 @@ export function createOrchestrator({
           message, options, plan: { subtasks: [] }, round: 1, allCollected: [],
           seenSubtaskIds: new Set(), seenFp: new Set(), budget, scope: activeScope,
           stoppedByCap: true, done_when: "the request is fulfilled", adoptedExperienceIds: [], riskCues: new Set(),
-          taskId: "task_" + Math.trunc(now()).toString(36), sessionId: options.sessionId || "session", env
+          taskId: "task_" + Math.trunc(now()).toString(36), sessionId: options.sessionId || "session",
+          executionId: activeScope?.executionId || budget?.executionId || ("task_" + Math.trunc(now()).toString(36)),
+          env
         };
         return finalize(state);
       }
@@ -72,6 +75,7 @@ export function createOrchestrator({
       budget, scope: activeScope, stoppedByCap: false, done_when: plan.done_when,
       adoptedExperienceIds, riskCues,
       taskId: "task_" + Math.trunc(now()).toString(36), sessionId: options.sessionId || "session",
+      executionId: activeScope?.executionId || budget?.executionId || ("task_" + Math.trunc(now()).toString(36)),
       env
     };
     return driveFrom(state, { afterPausedRound: false });
@@ -107,12 +111,20 @@ export function createOrchestrator({
           await persistDurablePause(state, result);      // M5: durable double-write (no-op when off)
           return { status: "awaiting_approval", approval: result.approval, collected: state.allCollected };
         }
+        if (result.status === "cancelled" || state.scope?.signal?.aborted) {
+          publish(eventBus, "orchestration:cancelled", { round: state.round, completed: count(state.allCollected, "complete") });
+          return { status: "cancelled", outcome: "cancelled", collected: state.allCollected };
+        }
         lastRoundCollected = result.collected;
       } else {
         lastRoundCollected = state.allCollected;   // after a paused round, treat whole round's collected as progress signal
       }
       skipDispatch = false;
       const gate = await gateAndReplan(state, lastRoundCollected);
+      if (gate.cancelled || state.scope?.signal?.aborted) {
+        publish(eventBus, "orchestration:cancelled", { round: state.round, completed: count(state.allCollected, "complete") });
+        return { status: "cancelled", outcome: "cancelled", collected: state.allCollected };
+      }
       if (!gate.continue) { state.stoppedByCap = gate.cap; break; }
       state.plan = { subtasks: gate.subtasks };
       state.round += 1;
@@ -121,6 +133,7 @@ export function createOrchestrator({
   }
 
   async function gateAndReplan(state, roundCollected) {
+    if (state.scope?.signal?.aborted) return { continue: false, cap: false, cancelled: true };
     if (state.round >= maxRounds) return { continue: false, cap: true };
     if (state.budget.exceeded()) return { continue: false, cap: true };
     const completed = state.allCollected.filter((c) => c.status === "complete").map(sumEntry);
@@ -145,11 +158,17 @@ export function createOrchestrator({
   }
 
   async function finalize(state) {
+    if (state.scope?.signal?.aborted) {
+      const abortSnap = typeof state.budget?.snapshot === "function" ? state.budget.snapshot() : null;
+      publish(eventBus, "orchestration:cancelled", { round: state.round, completed: count(state.allCollected, "complete"), executionId: state.executionId });
+      return { status: "cancelled", outcome: "cancelled", collected: state.allCollected, budget: abortSnap, executionId: state.executionId };
+    }
     const content = await synthesizer.synthesize({ message: state.message, collected: state.allCollected, signal: state.scope?.signal, scope: state.scope });
     const status = classifyOutcome(state.allCollected, { stoppedByCap: state.stoppedByCap });
-    publish(eventBus, "orchestration:completed", { rounds: state.round, completed: count(state.allCollected, "complete"), failed: count(state.allCollected, "failed"), status });
+    const snap = typeof state.budget?.snapshot === "function" ? state.budget.snapshot() : null;
+    publish(eventBus, "orchestration:completed", { rounds: state.round, completed: count(state.allCollected, "complete"), failed: count(state.allCollected, "failed"), status, executionId: state.executionId });
     if (learningOn) kickConsolidation(state, status);
-    return { status: "complete", content, collected: state.allCollected, outcome: status };
+    return { status: "complete", content, collected: state.allCollected, outcome: status, budget: snap, executionId: state.executionId };
   }
 
   // C4: consolidate experience in the background — never blocks the user's result.
@@ -159,15 +178,20 @@ export function createOrchestrator({
       publish(eventBus, "experience:consolidation_skipped", { taskId: state.taskId, reason: "budget_or_abort" });
       return;
     }
+    const bgScope = state.scope;
+    if (bgScope) backgroundScopes.add(bgScope);
     const p = Promise.resolve()
       .then(() => experienceConsolidator.consolidate({
         message: state.message, done_when: state.done_when, allCollected: state.allCollected,
         outcome, adoptedExperienceIds: state.adoptedExperienceIds, taskId: state.taskId, sessionId: state.sessionId
-      }, { scope: state.scope, signal: state.scope?.signal }))
+      }, { scope: bgScope, signal: bgScope?.signal }))
       .then((r) => publish(eventBus, "experience:consolidated", { taskId: state.taskId, written: r?.written || 0 }))
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        pendingConsolidations.delete(p);
+        if (bgScope) backgroundScopes.delete(bgScope);
+      });
     pendingConsolidations.add(p);
-    p.finally(() => pendingConsolidations.delete(p));
   }
 
   async function flushExperience() { await Promise.allSettled([...pendingConsolidations]); }
@@ -191,6 +215,10 @@ export function createOrchestrator({
         orchPaused.set(res.approval.id, { state, dispatchResume: res.resume });   // re-pause: new id
         await persistDurablePause(state, res);                                    // M5: new durable sidecar
         return { status: "awaiting_approval", approval: res.approval, collected: state.allCollected };
+      }
+      if (res.status === "cancelled" || state.scope?.signal?.aborted) {
+        publish(eventBus, "orchestration:cancelled", { round: state.round, completed: count(state.allCollected, "complete") });
+        return { status: "cancelled", outcome: "cancelled", collected: state.allCollected };
       }
       return await driveFrom(state, { afterPausedRound: true });    // round done -> gate + further rounds
     } finally {
@@ -233,27 +261,46 @@ export function createOrchestrator({
     try { sidecar = await orchPersistence.load(approvalId); }
     catch (e) { throw blocked(`orchestration sidecar unreadable: ${e.message}`); }
     if (sidecar?.status === "consumed") throw blocked("orchestration sidecar already consumed");
-    const workerRecord = pausedTurnStore?.get?.(approvalId) || null;
+    let workerRecord = pausedTurnStore?.get?.(approvalId) || null;
+    if (!workerRecord && pausedTurnPersistence?.load) {
+      try {
+        const loaded = await pausedTurnPersistence.load(approvalId);
+        if (loaded && loaded.status !== "consumed") {
+          pausedTurnStore?.restore?.(loaded);
+          workerRecord = loaded;
+        }
+      } catch {}
+    }
     const gate = orchestrationResumeGate({ sidecar, workerRecord });   // CST-6 + CST-7, fail-closed
     if (!gate.ok) throw blocked(gate.reason);
 
     const state = deserializeState(sidecar);
-    const pausedWorker = makeWorkerFactory(state.scope).worker(state.pausedSubtask);   // deterministic rebuild (CST-3)
-    const dispatchResume = {
-      pausedWorker, pausedApprovalId: approvalId,
-      pausedSubtask: state.pausedSubtask, remaining: state.remaining, deps: dispatchDeps(state)
-    };
-    const res = await resumeDispatchLoop(dispatchResume, decision);
-    state.allCollected.push(...res.collected);
-    if (decision === "deny") await consumeWorkerSidecar(approvalId);
-    if (res.status === "awaiting_approval") {
-      await persistDurablePause(state, res);                // re-pause: new durable sidecar
-      await orchPersistence.consume(approvalId);            // consume the old one
-      orchPaused.set(res.approval.id, { state, dispatchResume: res.resume });   // same-process re-resume too
-      return { status: "awaiting_approval", approval: res.approval, collected: state.allCollected };
+    activeRunningScope = state.scope;
+    try {
+      const pausedWorker = makeWorkerFactory(state.scope).worker(state.pausedSubtask);   // deterministic rebuild (CST-3)
+      const dispatchResume = {
+        pausedWorker, pausedApprovalId: approvalId,
+        pausedSubtask: state.pausedSubtask, remaining: state.remaining, deps: dispatchDeps(state)
+      };
+      const res = await resumeDispatchLoop(dispatchResume, decision);
+      state.allCollected.push(...res.collected);
+      if (decision === "deny") await consumeWorkerSidecar(approvalId);
+      if (res.status === "awaiting_approval") {
+        await persistDurablePause(state, res);                // re-pause: new durable sidecar
+        await orchPersistence.consume(approvalId);            // consume the old one
+        orchPaused.set(res.approval.id, { state, dispatchResume: res.resume });   // same-process re-resume too
+        return { status: "awaiting_approval", approval: res.approval, collected: state.allCollected };
+      }
+      if (res.status === "cancelled" || state.scope?.signal?.aborted) {
+        await orchPersistence.consume(approvalId);
+        publish(eventBus, "orchestration:cancelled", { round: state.round, completed: count(state.allCollected, "complete") });
+        return { status: "cancelled", outcome: "cancelled", collected: state.allCollected };
+      }
+      await orchPersistence.consume(approvalId);              // round settled: consume this sidecar
+      return await driveFrom(state, { afterPausedRound: true });
+    } finally {
+      if (activeRunningScope === state.scope) activeRunningScope = null;
     }
-    await orchPersistence.consume(approvalId);              // round settled: consume this sidecar
-    return driveFrom(state, { afterPausedRound: true });
   }
 
   function hasDurablePaused(approvalId) {
@@ -277,11 +324,15 @@ export function createOrchestrator({
     return { ...s, budget, scope, stoppedByCap: false };
   }
   function interrupt() {
+    let interrupted = false;
     if (activeRunningScope) {
       activeRunningScope.abort("turn was interrupted");
-      return true;
+      interrupted = true;
     }
-    return false;
+    for (const s of backgroundScopes) {
+      try { s.abort("turn was interrupted"); interrupted = true; } catch {}
+    }
+    return interrupted;
   }
 
   return { run, resume, hasPaused: (id) => orchPaused.has(id), flushExperience, serializeState, deserializeState, resumeDurable, hasDurablePaused, interrupt };

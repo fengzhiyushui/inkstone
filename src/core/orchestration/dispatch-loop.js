@@ -28,7 +28,10 @@ export async function runDispatchLoop({
       collected.push({ st, status: "failed", lastFeedback: `dependency ${failedDep} failed` });
       continue;
     }
-    const r = await processSubtask(st, { workerFactory, makeReviewer, maxWorkerAttempts, autonomy, onEvent, projectRules, orchestrationMarker });
+    const r = await processSubtask(st, { workerFactory, makeReviewer, maxWorkerAttempts, autonomy, onEvent, projectRules, orchestrationMarker, scope });
+    if (r.control === "cancelled" || scope?.signal?.aborted) {
+      return { status: "cancelled", collected, stopped_reason: "aborted" };
+    }
     if (r.control === "awaiting_approval") {
       return { status: "awaiting_approval", approval: r.approval, collected,
         resume: { pausedWorker: r.worker, pausedApprovalId: r.approval.id, pausedSubtask: st, remaining: order.slice(i + 1), deps } };
@@ -54,9 +57,9 @@ export async function resumeDispatchLoop(roundResume, decision) {
   if (decision === "deny") {
     pausedEntry = { st: pausedSubtask, status: "failed", lastFeedback: "approval denied" };
   } else {
-    const wres = await pausedWorker.approve(pausedApprovalId, "approve");
+    const wres = await pausedWorker.approve(pausedApprovalId, "approve", deps?.scope?.signal ? { signal: deps.scope.signal } : {});
     if (wres.status === "complete") {
-      const verdict = await deps.makeReviewer().review(pausedSubtask, wres);
+      const verdict = await deps.makeReviewer().review(pausedSubtask, wres, deps?.scope?.signal ? { signal: deps.scope.signal } : {});
       pausedEntry = verdict.pass
         ? { st: pausedSubtask, wres, verdict, status: "complete" }
         : { st: pausedSubtask, status: "failed", lastFeedback: (verdict.reasons || []).join("; ") || "review rejected" };
@@ -68,6 +71,9 @@ export async function resumeDispatchLoop(roundResume, decision) {
   const collected = [pausedEntry, ...sub.collected];
   if (sub.status === "awaiting_approval") {
     return { status: "awaiting_approval", approval: sub.approval, collected, resume: sub.resume };
+  }
+  if (sub.status === "cancelled" || deps?.scope?.signal?.aborted) {
+    return { status: "cancelled", collected, stopped_reason: sub.stopped_reason || "aborted" };
   }
   return { status: "complete", collected };
 }
@@ -82,18 +88,40 @@ async function finishPartial(collected, synthesizer, stopped_reason, scope = nul
 
 // One sub-task in the MAIN workspace (C1+C2): worker self-audit + retry, then
 // independent reviewer + retry, bounded by maxWorkerAttempts.
-async function processSubtask(st, { workerFactory, makeReviewer, maxWorkerAttempts, autonomy, onEvent, projectRules = [], orchestrationMarker = null }) {
+async function processSubtask(st, { workerFactory, makeReviewer, maxWorkerAttempts, autonomy, onEvent, projectRules = [], orchestrationMarker = null, scope = null }) {
   let priorFeedback = null;
   for (let attempt = 1; attempt <= maxWorkerAttempts; attempt += 1) {
     onEvent?.("subtask_started", { subtask_id: st.id, attempt, tool_profile: st.tool_profile });
     const worker = workerFactory.worker(st);
     const sendOptions = { autonomy, projectRules };
     if (orchestrationMarker) sendOptions.__orchestration = { ...orchestrationMarker, subtaskId: st.id };
-    const wres = await worker.send(workerPrompt(st, priorFeedback), sendOptions);
+    if (scope?.signal && !sendOptions.signal) sendOptions.signal = scope.signal;
+    let wres;
+    try {
+      wres = await worker.send(workerPrompt(st, priorFeedback), sendOptions);
+    } catch (e) {
+      if (e.name === "AbortError" || scope?.signal?.aborted) {
+        return { control: "cancelled" };
+      }
+      if (e.code === "BUDGET_EXCEEDED" || scope?.budget?.exceeded()) {
+        return { entry: { st, status: "failed", lastFeedback: "budget exceeded" } };
+      }
+      throw e;
+    }
+    if (scope?.signal?.aborted) return { control: "cancelled" };
     if (wres.status === "awaiting_approval") return { control: "awaiting_approval", approval: wres.approval, worker };
     if (wres.status === "stopped") return { entry: { st, status: "failed", lastFeedback: "worker stopped (budget)" } };
     if (wres.status !== "complete") { priorFeedback = `self-audit failed: ${wres.content || wres.status}`; continue; }
-    const verdict = await makeReviewer().review(st, wres);
+    let verdict;
+    try {
+      verdict = await makeReviewer().review(st, wres, scope?.signal ? { signal: scope.signal } : {});
+    } catch (e) {
+      if (e.name === "AbortError" || scope?.signal?.aborted) {
+        return { control: "cancelled" };
+      }
+      throw e;
+    }
+    if (scope?.signal?.aborted) return { control: "cancelled" };
     onEvent?.("subtask_reviewed", { subtask_id: st.id, pass: verdict.pass, severity: verdict.severity });
     if (verdict.pass) return { entry: { st, wres, verdict, status: "complete" } };
     priorFeedback = (verdict.reasons || []).join("; ") || "review rejected";
@@ -133,7 +161,11 @@ async function runBatched({ plan, workerFactory, makeReviewer, synthesizer, budg
         await cleanupRun(runDir, removeIso);
         return { status: "cancelled", collected, stopped_reason: "aborted" };
       }
-      const r = await processSubtask(runnable[0], { workerFactory, makeReviewer, maxWorkerAttempts, autonomy, onEvent, projectRules, orchestrationMarker });
+      const r = await processSubtask(runnable[0], { workerFactory, makeReviewer, maxWorkerAttempts, autonomy, onEvent, projectRules, orchestrationMarker, scope });
+      if (r.control === "cancelled" || scope?.signal?.aborted) {
+        await cleanupRun(runDir, removeIso);
+        return { status: "cancelled", collected, stopped_reason: "aborted" };
+      }
       if (r.control === "awaiting_approval") {
         await cleanupRun(runDir, removeIso);
         const remaining = batches.slice(batches.indexOf(batch) + 1).flat();

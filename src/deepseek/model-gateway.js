@@ -15,7 +15,25 @@ export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY ||
   function buildChatRequest(messages, options = {}) {
     const routed = { ...options, models: options.models ?? models };
     const route = routeModel(routed);
-    const body = applyJsonMode({ messages, jsonMode: Boolean(options.jsonMode), body: removeUndefined({ ...buildChannelParams(routed), messages, stream: Boolean(options.stream ?? route.stream), tools: options.tools, tool_choice: options.toolChoice, user_id: userId }) });
+    const channelParams = buildChannelParams(routed);
+    const explicitMaxTokens = Number.isFinite(options.maxTokens) && options.maxTokens > 0
+      ? Math.trunc(options.maxTokens)
+      : (Number.isFinite(options.max_tokens) && options.max_tokens > 0 ? Math.trunc(options.max_tokens) : undefined);
+    if (explicitMaxTokens !== undefined) {
+      channelParams.max_tokens = explicitMaxTokens;
+    }
+    const body = applyJsonMode({
+      messages,
+      jsonMode: Boolean(options.jsonMode),
+      body: removeUndefined({
+        ...channelParams,
+        messages,
+        stream: Boolean(options.stream ?? route.stream),
+        tools: options.tools,
+        tool_choice: options.toolChoice,
+        user_id: userId
+      })
+    });
     if (body.stream) body.stream_options = { include_usage: true };
     return { url: `${baseUrl.replace(/\/+$/, "")}/chat/completions`, body, route };
   }
@@ -24,15 +42,39 @@ export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY ||
     let chars = 0;
     if (Array.isArray(request.body?.messages)) {
       for (const m of request.body.messages) {
-        if (typeof m.content === "string") chars += m.content.length;
+        if (typeof m.content === "string") {
+          chars += m.content.length;
+        } else if (Array.isArray(m.content)) {
+          for (const part of m.content) {
+            if (typeof part?.text === "string") chars += part.text.length;
+          }
+        }
+        if (typeof m.reasoning_content === "string") {
+          chars += m.reasoning_content.length;
+        }
+        if (Array.isArray(m.tool_calls)) {
+          for (const tc of m.tool_calls) {
+            if (tc.function?.name) chars += tc.function.name.length;
+            if (tc.function?.arguments) chars += String(tc.function.arguments).length;
+          }
+        }
       }
+    }
+    if (request.body?.tools) {
+      try {
+        chars += JSON.stringify(request.body.tools).length;
+      } catch {}
     }
     const estimatedInput = Math.max(20, Math.ceil(chars / 2.5));
     let estimatedOutput = 500;
-    if (Number.isFinite(options.maxTokens) && options.maxTokens > 0) {
-      estimatedOutput = options.maxTokens;
-    } else if (Number.isFinite(options.max_tokens) && options.max_tokens > 0) {
-      estimatedOutput = options.max_tokens;
+    const explicitMaxTokens = Number.isFinite(options.maxTokens) && options.maxTokens > 0
+      ? Math.trunc(options.maxTokens)
+      : (Number.isFinite(options.max_tokens) && options.max_tokens > 0
+          ? Math.trunc(options.max_tokens)
+          : null);
+
+    if (explicitMaxTokens != null) {
+      estimatedOutput = explicitMaxTokens;
     } else {
       const role = options.role || options.purpose || request.route?.purpose;
       switch (role) {

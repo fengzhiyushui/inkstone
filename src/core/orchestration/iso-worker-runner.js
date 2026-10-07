@@ -24,9 +24,11 @@ export function createIsoWorkerRunner({ root, buildToolPlane, createRuntime, mak
       }
       if (makeContextSnapshot) overrides.createContextSnapshot = (input) => makeContextSnapshot({ ...input, projectRoot: isoRoot });
       const worker = createRuntime(overrides);
-      const wres = await worker.send(isoWorkerPrompt(subtask), { autonomy: "auto" });
+      const sendOptions = { autonomy: "auto" };
+      if (scope?.signal) sendOptions.signal = scope.signal;
+      const wres = await worker.send(isoWorkerPrompt(subtask), sendOptions);
       let verdict = { pass: false, severity: "warn", reasons: ["worker did not complete"], checked: [] };
-      if (wres.status === "complete") verdict = await makeReviewer(isoRoot, scope).review(subtask, wres);
+      if (wres.status === "complete") verdict = await makeReviewer(isoRoot, scope).review(subtask, wres, scope?.signal ? { signal: scope.signal } : {});
       const actual = changedPaths(await hashTree(isoRoot, { maxCopyFiles }), baseManifest);
       return { st: subtask, wres, verdict, actual, isoRoot, baseManifest };
     } catch (error) {

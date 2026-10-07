@@ -11,9 +11,16 @@ import { createSynthesizer } from "../../src/core/orchestration/synthesizer.js";
 import {
   serializeOrchestrationState,
   deserializeOrchestrationState,
-  budgetContinuation
+  budgetContinuation,
+  orchestrationResumeGate
 } from "../../src/core/orchestration/orchestration-recovery-contract.js";
+import { createWorkerFactory } from "../../src/core/orchestration/worker-factory.js";
+import { runDispatchLoop } from "../../src/core/orchestration/dispatch-loop.js";
 import { createOrchestrationPersistence } from "../../src/core/recovery/orchestration-persistence.js";
+import { createEventBus } from "../../src/shared/event-bus.js";
+import { createEditService } from "../../src/edits/edit-service.js";
+import { createBuiltinTools } from "../../src/tools/builtin/index.js";
+import { createToolRegistry } from "../../src/tools/registry.js";
 import { mkdtemp } from "../helpers/tmp.js";
 
 async function tmpRoot() {
@@ -105,24 +112,24 @@ test("B01: ambiguous prompt routes through model tier and records router role in
     }
   });
 
-  const customBudget = createRequestBudget({ maxTokens: 10000, maxModelCalls: 50 });
-  const scope = createRequestScope({ budget: customBudget });
-
   const ambig = "请处理这些校验逻辑"; // triggers ambiguous band in router
-  const res = await kernel.agent.send(ambig, { autonomy: "auto", scope });
+  // Default entry without passing custom scope (F01 verification)
+  const res = await kernel.agent.send(ambig, { autonomy: "auto" });
 
   assert.ok(res);
-  const snap = customBudget.snapshot();
+  const snap = res.budget;
+  assert.ok(snap, "budget snapshot returned from default entry");
   assert.ok(snap.by_role.router, "router role recorded in budget");
   assert.equal(snap.by_role.router.calls, 1, "router made exactly 1 call");
   assert.equal(snap.by_role.router.tokens, 30, "router tokens recorded correctly");
+  assert.ok(snap.by_role.planner, "planner role recorded in budget");
   assert.ok(snap.model_calls >= 1, "total calls includes router");
-  assert.equal(snap.execution_id, customBudget.executionId);
+  assert.equal(snap.execution_id, res.executionId, "unified executionId across router and orchestrator");
   await kernel.dispose();
 });
 
-// B02: 依次触发 plan、worker、reviewer、replan、synthesizer 全角色
-test("B02: aggregate usage across all roles (plan, worker, reviewer, replan, synth) matches outbound fetch sum", async () => {
+// B02: 依次触发 plan、worker、reviewer、replan、synthesizer 全角色（产品默认入口）
+test("B02: aggregate usage across all roles (router, plan, worker, reviewer, replan, synth) matches outbound fetch sum via default entry", async () => {
   const root = await tmpRoot();
   let physicalOutboundCount = 0;
   let totalOutboundTokens = 0;
@@ -132,7 +139,10 @@ test("B02: aggregate usage across all roles (plan, worker, reviewer, replan, syn
     sessionLog: null,
     branchStore: null,
     verifyMode: "off",
-    orchestration: { maxRounds: 2 },
+    orchestration: {
+      maxRounds: 2,
+      budget: { maxTokens: 5000, maxModelCalls: 30 }
+    },
     deepseek: {
       apiKey: "test-key",
       fetchImpl: async (url, init) => {
@@ -161,7 +171,7 @@ test("B02: aggregate usage across all roles (plan, worker, reviewer, replan, syn
           }
           return jsonResponse({ pass: true, severity: "warn", reasons: [], checked: ["read"] }, { prompt_tokens: pTok, completion_tokens: cTok, total_tokens: pTok + cTok });
         }
-        if (bodyStr.includes("replan") || bodyStr.includes("Replan")) {
+        if (bodyStr.includes("replan") || bodyStr.includes("Replan") || bodyStr.includes("revising a multi-agent plan")) {
           return jsonResponse({
             done: false,
             subtasks: [
@@ -177,13 +187,12 @@ test("B02: aggregate usage across all roles (plan, worker, reviewer, replan, syn
     }
   });
 
-  const budget = createRequestBudget({ maxTokens: 5000, maxModelCalls: 30 });
-  const scope = createRequestScope({ budget });
-
-  const res = await kernel.agent.send("请处理这些校验逻辑", { autonomy: "auto", scope });
+  // Call default send without passing custom scope!
+  const res = await kernel.agent.send("请处理这些校验逻辑", { autonomy: "auto" });
   assert.ok(res);
 
-  const snap = budget.snapshot();
+  const snap = res.budget;
+  assert.ok(snap, "budget snapshot returned from default entry");
   assert.equal(snap.model_calls, physicalOutboundCount, "snap.model_calls equals physical outbound fetch count");
   assert.equal(snap.tokens, totalOutboundTokens, "snap.tokens equals outbound token sum");
 
@@ -203,21 +212,97 @@ test("B02: aggregate usage across all roles (plan, worker, reviewer, replan, syn
 });
 
 // B03: Worker 内 verify/repair 和 task 契约
-test("B03: worker internal calls stay within aggregate scope; task delegation cross-acceptance deferred to R18-04", async () => {
-  const budget = createRequestBudget({ maxModelCalls: 10, maxTokens: 5000 });
-  const scope = createRequestScope({ budget });
-  const mockGw = {
-    _isDeepSeekGateway: false,
-    invoke: async (msgs, opts) => ({ content: "worker tool result", usage: { total_tokens: 25 } })
+test("B03: worker internal verify/repair calls stay within aggregate scope; task delegation cross-acceptance deferred to R18-04", async () => {
+  const root = await tmpRoot();
+  const BROKEN_DIFF = "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+broken";
+  const REPAIR_DIFF = "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-broken\n+fixed";
+  await fs.writeFile(path.join(root, "a.txt"), "old\n");
+
+  let workerInvokeCount = 0;
+  let testRuns = 0;
+  const testResults = [
+    { exit_code: 1, text: "verification failed" },
+    { exit_code: 0, text: "verification passed" }
+  ];
+
+  const fakeTestTool = {
+    name: "test",
+    description: "Fake integration test runner",
+    category: "execute",
+    side_effect: "process",
+    risk_level: "low",
+    source: "test",
+    version: "2.0",
+    params: {
+      detect: { type: "boolean", required: false, default: true },
+      argv: { type: "array", required: false }
+    },
+    execute: async () => {
+      const next = testResults[Math.min(testRuns, testResults.length - 1)];
+      testRuns += 1;
+      return {
+        status: "success",
+        content: [{ type: "text", text: next.text }],
+        metadata: { exit_code: next.exit_code, run: testRuns }
+      };
+    }
   };
 
-  const scopedGw = scope.bindGateway(mockGw, { role: "worker", subtaskId: "st_verify" });
-  await scopedGw.invoke([{ role: "user", content: "verify test" }], {});
+  const budget = createRequestBudget({ maxModelCalls: 10, maxTokens: 5000 });
+  const scope = createRequestScope({ budget });
+
+  const customGateway = {
+    _isDeepSeekGateway: false,
+    invoke: async (msgs, opts) => {
+      workerInvokeCount++;
+      if (opts.purpose === "repair") {
+        return { content: "", tool_calls: [{ id: "call_repair", name: "edit", arguments: { diff: REPAIR_DIFF, prompt: "repair a" } }], usage: { total_tokens: 30 } };
+      }
+      if (workerInvokeCount === 1) {
+        return { content: "", tool_calls: [{ id: "call_edit", name: "edit", arguments: { diff: BROKEN_DIFF, prompt: "break a" } }], usage: { total_tokens: 25 } };
+      }
+      return { content: "worker task completed", tool_calls: [], usage: { total_tokens: 15 } };
+    }
+  };
+
+  const eventBus = createEventBus();
+  const editService = createEditService({ projectRoot: root, eventBus });
+  const tools = createBuiltinTools({ editService }).filter((tool) => tool.name !== "test");
+  const toolRegistry = createToolRegistry({ tools: [...tools, fakeTestTool] });
+
+  const kernel = await createKernel(root, {
+    eventBus,
+    editService,
+    toolRegistry,
+    sessionLog: null,
+    branchStore: null,
+    verifyMode: "run",
+    maxRepairAttempts: 1,
+    modelGateway: customGateway
+  });
+
+  // Rebuild worker with scope binding
+  const scopedGw = scope.bindGateway(customGateway, { role: "worker", subtaskId: "st_verify" });
+  const workerRuntime = kernel.runtime; // AgentRuntime
+  const workerResult = await workerRuntime.send("fix a.txt", {
+    autonomy: "auto",
+    verifyMode: "run",
+    modelGateway: scopedGw,
+    scope,
+    signal: scope.signal
+  });
+
+  assert.equal(workerResult.status, "complete");
+  assert.equal(workerResult.verification.status, "passed");
+  assert.equal(workerResult.repair.status, "complete");
 
   const snap = budget.snapshot();
-  assert.equal(snap.model_calls, 1, "worker verify/repair calls count against aggregate budget");
-  assert.equal(snap.by_role.worker.calls, 1);
-  assert.equal(snap.by_role.worker.tokens, 25);
+  assert.ok(snap.model_calls >= 2, "worker verify and repair calls count against aggregate budget");
+  assert.ok(snap.by_role.worker.calls >= 2, "role worker includes repair attempt");
+  assert.ok(snap.tokens >= 55, "aggregated tokens across worker and repair");
+  assert.equal(await fs.readFile(path.join(root, "a.txt"), "utf8"), "fixed\n");
+
+  await kernel.dispose();
   // Note: Task tool offspring delegation is explicitly cross-accepted in R18-04
 });
 
@@ -302,6 +387,7 @@ test("B04: gateway retries (429 and JSON empty) count separate physical attempts
 
 // B05: 仅剩 1 个名额，并行启动 4 个可控 Worker（屏障并发）
 test("B05: parallel workers atomically compete for remaining quota under barrier: exactly 1 wins, 3 rejected", async () => {
+  const root = await tmpRoot();
   const budget = createRequestBudget({ maxModelCalls: 1 });
   const scope = createRequestScope({ budget });
   const barrier = createBarrier(4);
@@ -315,9 +401,25 @@ test("B05: parallel workers atomically compete for remaining quota under barrier
     }
   });
 
+  const kernel = await createKernel(root, {
+    sessionLog: null,
+    branchStore: null,
+    verifyMode: "off",
+    modelGateway: gateway
+  });
+
+  const workerFactory = createWorkerFactory({
+    createRuntime: kernel.createRuntime,
+    baseToolSchemas: () => [],
+    makeContextSnapshot: () => ({}),
+    modelGateway: gateway,
+    scope
+  });
+
   const runWorker = async (id) => {
     await barrier.arriveAndWait();
-    return gateway.invoke([{ role: "user", content: `worker ${id} prompt` }], { scope, role: "worker", maxTokens: 50 });
+    const w = workerFactory.worker({ id: `st_${id}`, goal: `subtask ${id}`, tool_profile: "readonly" });
+    return w.send(`worker ${id} prompt`);
   };
 
   const results = await Promise.allSettled([
@@ -337,6 +439,8 @@ test("B05: parallel workers atomically compete for remaining quota under barrier
   }
   assert.equal(outboundFetchCount, 1, "outbound HTTP fetchImpl was only called once");
   assert.equal(budget.snapshot().model_calls, 1, "budget model_calls is 1");
+
+  await kernel.dispose();
 });
 
 // B06: 预留后、出站前取消
@@ -465,6 +569,41 @@ test("B09: gateway post-processing exception settles usage exactly once without 
   assert.equal(snap.unknown_usage_attempts, 0, "usage was known and settled");
 });
 
+// B09-b: SSE 流式响应中的 usage 多 chunk / 重复推送恰好结算一次
+test("B09-b: SSE stream with usage in chunks settles exactly once without double counting", async () => {
+  const budget = createRequestBudget({ maxModelCalls: 5, maxTokens: 1000 });
+  const scope = createRequestScope({ budget });
+
+  const encoder = new TextEncoder();
+  const streamBody = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode("data: {\"choices\":[{\"delta\":{\"content\":\"hello \"}}]}\n\n"));
+      controller.enqueue(encoder.encode("data: {\"choices\":[{\"delta\":{\"content\":\"world\"}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}\n\n"));
+      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      controller.close();
+    }
+  });
+
+  const gateway = createDeepSeekGateway({
+    apiKey: "test-key",
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      headers: new Map([["content-type", "text/event-stream"]]),
+      body: streamBody
+    })
+  });
+
+  const res = await gateway.stream([{ role: "user", content: "test stream" }], { scope });
+  assert.equal(res.content, "hello world");
+  assert.deepEqual(res.usage, { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 });
+
+  const snap = budget.snapshot();
+  assert.equal(snap.model_calls, 1, "stream call settled exactly once");
+  assert.equal(snap.tokens, 15, "stream usage settled accurately without double counting");
+  assert.equal(snap.unknown_usage_attempts, 0);
+});
+
 // B10: 预算在 planner 或 router 内部耗尽时不吞错、不降级
 test("B10: planner and router budget exhaustion throws BUDGET_EXCEEDED without swallowing or retrying", async () => {
   const budget = createRequestBudget({ maxModelCalls: 0 }); // zero quota
@@ -509,13 +648,66 @@ test("B11: synthesizer budget exhaustion returns deterministic summary without m
 });
 
 // B12: cancel 发生在运行期 / 全树取消与无迟到合并（R3 & R4）
-test("B12: tree-wide abort cancels running scope and prevents merging uncommitted subtask changes", async () => {
-  const scope = createRequestScope({ budget: createRequestBudget({ maxModelCalls: 10 }) });
-  assert.equal(scope.signal.aborted, false);
+test("B12: tree-wide abort during worker tool execution cancels running scope and prevents merging uncommitted subtask changes", async () => {
+  const root = await tmpRoot();
+  const budget = createRequestBudget({ maxModelCalls: 10 });
+  const scope = createRequestScope({ budget });
+  let mergeCalls = 0;
+  const toolStarted = createDeferred();
+  const toolCanFinish = createDeferred();
 
+  const mockPlane = {
+    editService: { apply: async () => {} },
+    toolRegistry: { toDeepSeekTools: () => [{ type: "function", function: { name: "edit" } }] },
+    execute: async (toolCall, policyContext) => {
+      toolStarted.resolve();
+      await toolCanFinish.promise;
+      if (policyContext?.signal?.aborted) {
+        const err = new Error("interrupted");
+        err.name = "AbortError";
+        throw err;
+      }
+      return { status: "success" };
+    }
+  };
+
+  const dispatchLoopPromise = runDispatchLoop({
+    plan: { subtasks: [{ id: "st_1", goal: "edit in isolation", tool_profile: "edit", depends_on: [] }] },
+    workerFactory: {
+      worker: (st) => ({
+        send: async (msg, opts) => {
+          return mockPlane.execute({ name: "edit" }, { signal: opts.signal || scope.signal });
+        }
+      })
+    },
+    makeReviewer: () => ({ review: async () => ({ pass: true }) }),
+    synthesizer: { synthesize: async () => "summary" },
+    budget,
+    maxWorkerAttempts: 1,
+    autonomy: "auto",
+    onEvent: () => {},
+    toBatches: (tasks) => [tasks],
+    maxParallelWorkers: 1,
+    runIsolatedWorker: async ({ subtask, scope: s }) => {
+      return mockPlane.execute({ name: "edit" }, { signal: s?.signal });
+    },
+    mergeSubtask: async () => { mergeCalls++; return { ok: true }; },
+    removeIso: async () => {},
+    projectRules: [],
+    scope
+  });
+
+  // Wait for tool execution to begin inside worker
+  await toolStarted.promise;
+
+  // Tree-wide abort occurs while worker tool is running!
   scope.abort("interrupted by user");
-  assert.equal(scope.signal.aborted, true);
-  assert.equal(scope.signal.reason, "interrupted by user");
+  toolCanFinish.resolve();
+
+  const loopResult = await dispatchLoopPromise;
+  assert.equal(loopResult.status, "cancelled", "top-level dispatch loop returned cancelled");
+  assert.equal(mergeCalls, 0, "zero merges occurred after abort");
+  assert.equal(scope.signal.aborted, true, "scope signal marked aborted");
 
   assert.throws(() => {
     scope.budget.reserveCall({ role: "worker", signal: scope.signal });
@@ -660,30 +852,77 @@ test("B14: durable recovery continuation does not duplicate billing and preserve
   assert.equal(resumed.result.status, "complete");
   assert.equal(await fs.readFile(path.join(root, "a.js"), "utf8"), "edited a\n");
 
+  const snapResumed = resumed.result.budget;
+  assert.ok(snapResumed, "resumed ledger exists");
+  assert.equal(snapResumed.execution_id, customBudget.executionId, "executionId preserved across restart");
+  assert.ok(snapResumed.by_role.planner, "planner role preserved in resumed ledger");
+  assert.ok(snapResumed.by_role.worker, "worker role preserved in resumed ledger");
+  assert.ok(snapResumed.model_calls > snapA.model_calls, "new calls added to existing calls");
+  assert.ok(snapResumed.tokens > snapA.tokens, "new tokens added to existing tokens");
+  assert.equal(snapResumed.max_model_calls, 20, "quota preserved");
+  assert.equal(snapResumed.max_tokens, 5000, "token quota preserved");
+
   await kB.dispose();
 });
 
-// B15: 旧 schema / v1.17 未记账记录的迁移与安全兼容（R5）
-test("B15: legacy v1.17 unmetered snapshot is conservatively migrated with legacyUnmetered flag and estimate", () => {
-  // Simulate v1.17 legacy snapshot: missing settledAttempts and unknownUsageAttempts, spentCalls=0, but has completed subtask
-  const legacyBudgetJson = {
-    quotaTokens: 1000,
-    quotaCalls: 10,
-    spentTokens: 0,
-    spentCalls: 0
-  };
-  const legacyRootJson = {
+// B15: 旧 schema / v1.17 未记账记录的迁移与安全兼容（R5 & F06）
+test("B15: legacy v1.17 sidecar with finite quota fails closed via gate, while unmetered sidecar migrates safely", () => {
+  // Scenario 1: First worker paused, allCollected = [], finite quotaCalls = 3, legacy format without settledAttempts
+  const legacyFirstWorkerSidecar = {
     schemaVersion: 1,
-    allCollected: [
-      { st: { id: "st_1" }, status: "complete" }
-    ]
+    fingerprints: { workerFactory: 1, toolSubset: 1, subtaskSchema: 1 },
+    approvalId: "app_legacy_1",
+    taskId: "task_legacy_1",
+    sessionId: "sess_legacy_1",
+    message: "do stuff",
+    done_when: "done",
+    plan: { subtasks: [{ id: "st_1" }] },
+    round: 1,
+    pausedSubtask: { id: "st_1" },
+    remaining: [],
+    seenSubtaskIds: ["st_1"],
+    seenFp: ["fp1"],
+    allCollected: [],
+    budget: {
+      quotaTokens: null,
+      quotaCalls: 3, // finite quota!
+      spentTokens: 0,
+      spentCalls: 0
+    }
+  };
+  const legacyWorkerRecord = {
+    approval_id: "app_legacy_1",
+    resume_state: {
+      options: {
+        __orchestration: {
+          taskId: "task_legacy_1",
+          sessionId: "sess_legacy_1",
+          subtaskId: "st_1"
+        }
+      }
+    }
   };
 
-  const continuation = budgetContinuation(legacyBudgetJson, legacyRootJson);
-  assert.equal(continuation.legacyUnmetered, true, "marked as legacyUnmetered");
-  assert.equal(continuation.initialModelCalls, 2, "conservatively estimated at least 2 calls for completed subtask");
-  assert.equal(continuation.initialUnknownUsageAttempts, 1, "marked initialUnknownUsageAttempts = 1");
-  assert.equal(continuation.maxModelCalls, 10);
+  const gateResult = orchestrationResumeGate({ sidecar: legacyFirstWorkerSidecar, workerRecord: legacyWorkerRecord });
+  assert.equal(gateResult.ok, false, "gate must fail closed on legacy sidecar with finite quota");
+  assert.match(gateResult.reason, /legacy unmetered budget: cannot safely verify remaining quota/);
+
+  // Scenario 2: Legacy sidecar with UNMETERED quota (quotaCalls: null, quotaTokens: null) can continue
+  const legacyUnmeteredSidecar = {
+    ...legacyFirstWorkerSidecar,
+    budget: {
+      quotaTokens: null,
+      quotaCalls: null,
+      spentTokens: 0,
+      spentCalls: 0
+    }
+  };
+  const gateUnmetered = orchestrationResumeGate({ sidecar: legacyUnmeteredSidecar, workerRecord: legacyWorkerRecord });
+  assert.equal(gateUnmetered.ok, true, "unmetered legacy sidecar is permitted to resume");
+
+  const continuation = budgetContinuation(legacyUnmeteredSidecar.budget, legacyUnmeteredSidecar);
+  assert.equal(continuation.legacyUnmetered, true, "marked legacyUnmetered");
+  assert.equal(continuation.maxModelCalls, null);
 });
 
 // B16: 未开启聚合限制或普通 single 请求的兼容性（R7）
@@ -740,28 +979,56 @@ test("B16: single lane execution bypasses orchestration aggregate budget and all
   await kernel.dispose();
 });
 
-// B17: scope 完成后迟到结果与后台经验巩固预算（R6）
+// B17: scope 完成后迟到结果与后台经验巩固预算（R6 & F07）
 test("B17: background experience consolidation skips model distillation when budget is exhausted", async () => {
-  const budget = createRequestBudget({ maxModelCalls: 1 });
-  const scope = createRequestScope({ budget });
+  const root = await tmpRoot();
+  let consolidationFetchCount = 0;
+  const consolidationSkippedEvents = [];
 
-  // Consume the single call
-  const ticket = budget.reserveCall({ role: "worker" });
-  ticket.markStarted();
-  ticket.settle({ usage: { total_tokens: 50 } });
+  const kernel = await createKernel(root, {
+    sessionLog: null,
+    branchStore: null,
+    verifyMode: "off",
+    orchestration: {
+      crossTaskLearning: "on",
+      budget: { maxModelCalls: 2 } // router=1, planner=1 -> exhausted!
+    },
+    deepseek: {
+      apiKey: "test-key",
+      fetchImpl: async (url, init) => {
+        const bodyStr = init.body;
+        if (bodyStr.includes("Classify this coding request")) {
+          return jsonResponse({ lane: "orchestrate", reason: "multi-component" });
+        }
+        if (bodyStr.includes("Break the user's request")) {
+          return jsonResponse({ task_summary: "t", done_when: "d", subtasks: [] });
+        }
+        if (bodyStr.includes("experience") || bodyStr.includes("distill") || bodyStr.includes("Distill")) {
+          consolidationFetchCount++;
+          return jsonResponse({ lessons: [] });
+        }
+        return jsonResponse("done");
+      }
+    }
+  });
 
-  assert.ok(budget.exceeded(), "budget is now exceeded");
+  kernel.eventBus.subscribe("experience:consolidation_skipped", (evt) => {
+    consolidationSkippedEvents.push(evt);
+  });
 
-  let consolidatorModelCalled = false;
-  const consolidatorCallModel = async (prompt, opts) => {
-    consolidatorModelCalled = true;
-    return "{}";
-  };
+  // Turn 1: 2 calls allowed, consumed by router and planner
+  const res = await kernel.agent.send("请处理这些校验逻辑", { autonomy: "auto" });
+  assert.ok(res);
 
-  // If orchestrator checks budget.exceeded() before kicking consolidation:
-  const shouldSkip = scope.signal.aborted || Boolean(budget.exceeded());
-  assert.equal(shouldSkip, true, "experience consolidation should be skipped when budget is exceeded");
-  assert.equal(consolidatorModelCalled, false);
+  // Await background consolidation flush
+  await kernel.experience.flush();
+
+  // Consolidation was skipped because budget was exhausted!
+  assert.equal(consolidationFetchCount, 0, "consolidation model fetch was skipped when budget exhausted");
+  assert.ok(consolidationSkippedEvents.length > 0, "experience:consolidation_skipped was published");
+  assert.equal(consolidationSkippedEvents[0].reason, "budget_or_abort");
+
+  await kernel.dispose();
 });
 
 // B18: 生产接线证据与公开入口完整性确认（R3, R9）
@@ -794,6 +1061,7 @@ test("B18: custom gateway fallback wrapping and agent interrupt lifecycle", asyn
   // Test R3: agent.interrupt aborts in-flight turn
   const root = await tmpRoot();
   const deferred = createDeferred();
+  const fetchStarted = createDeferred();
 
   const kernel = await createKernel(root, {
     sessionLog: null,
@@ -803,6 +1071,7 @@ test("B18: custom gateway fallback wrapping and agent interrupt lifecycle", asyn
       apiKey: "test-key",
       fetchImpl: async (url, init) => {
         return new Promise((resolve, reject) => {
+          fetchStarted.resolve(); // Confirm HTTP request is in-flight before interrupting!
           if (init?.signal?.aborted) return reject(new DOMException("aborted", "AbortError"));
           init?.signal?.addEventListener("abort", () => {
             reject(new DOMException("aborted", "AbortError"));
@@ -814,12 +1083,63 @@ test("B18: custom gateway fallback wrapping and agent interrupt lifecycle", asyn
   });
 
   const sendPromise = kernel.agent.send("hello wait for interrupt");
+  await fetchStarted.promise; // Guaranteed in-flight!
   kernel.agent.interrupt();
   deferred.resolve();
 
   await assert.rejects(async () => {
     await sendPromise;
-  }, (err) => err.name === "InterruptedError" || err.name === "AbortError");
+  }, (err) => err.name === "InterruptedError" || err.name === "AbortError" || err.code === "ABORT");
+
+  await kernel.dispose();
+});
+
+// B19 (F02): 自定义 gateway 的 planner 等直接入口计费与防击穿验证
+test("B19 (F02): custom gateway meters all roles (planner, worker, reviewer) under kernel default entry", async () => {
+  const root = await tmpRoot();
+  let invokeCalls = [];
+  const customGateway = {
+    _isDeepSeekGateway: false,
+    invoke: async (msgs, opts) => {
+      invokeCalls.push(opts.role || "unknown");
+      if (opts.role === "planner") {
+        return {
+          content: JSON.stringify({
+            task_summary: "summary",
+            done_when: "done",
+            subtasks: [{ id: "st_1", goal: "task 1", acceptance: ["ok"], context_scope: {}, tool_profile: "readonly", depends_on: [] }]
+          })
+        };
+      }
+      if (opts.role === "worker") {
+        return { content: "worker finished" };
+      }
+      if (opts.role === "reviewer") {
+        return { content: JSON.stringify({ pass: true, severity: "warn", reasons: [], checked: ["read"] }) };
+      }
+      return { content: "done" };
+    }
+  };
+
+  const kernel = await createKernel(root, {
+    sessionLog: null,
+    branchStore: null,
+    verifyMode: "off",
+    modelGateway: customGateway,
+    orchestration: {
+      router: { model: { enabled: false } },
+      budget: { maxModelCalls: 1 } // Only 1 call allowed in total!
+    }
+  });
+
+  // Message routes heuristically to orchestrate lane
+  const res = await kernel.agent.send("重构整个工程并跨多个文件", { autonomy: "auto" });
+  assert.ok(res);
+  // Planner consumed call 1. Worker was intercepted before outbound invoke!
+  assert.equal(invokeCalls.length, 1, "custom gateway invoke was strictly called once (planner)");
+  assert.equal(res.outcome, "partial", "worker was blocked by budget cap resulting in partial outcome");
+  assert.equal(res.collected[0].status, "failed");
+  assert.ok(res.collected[0].lastFeedback.includes("budget"));
 
   await kernel.dispose();
 });

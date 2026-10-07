@@ -287,7 +287,10 @@ export async function createKernel(root, options = {}) {
   // C-Router: model-assisted tier for the ambiguous band (purpose = configured channel, short timeout).
   const routerCallModel = async (prompt, { timeoutMs, signal, scope } = {}) => {
     if (!modelGateway?.invoke) return "";
-    const res = await modelGateway.invoke([{ role: "user", content: prompt }], {
+    const effectiveGateway = (scope?.bindGateway && !modelGateway._isDeepSeekGateway)
+      ? scope.bindGateway(modelGateway, { role: "router" })
+      : modelGateway;
+    const res = await effectiveGateway.invoke([{ role: "user", content: prompt }], {
       purpose: orch.router.model.channel,
       timeoutMs,
       signal,
@@ -309,7 +312,10 @@ export async function createKernel(root, options = {}) {
   };
   const callModel = async (prompt, callOptions = {}) => {
     if (!modelGateway?.invoke) return "";
-    const res = await modelGateway.invoke([{ role: "user", content: prompt }], {
+    const effectiveGateway = (callOptions.scope?.bindGateway && !modelGateway._isDeepSeekGateway)
+      ? callOptions.scope.bindGateway(modelGateway, { role: callOptions.role || "planner" })
+      : modelGateway;
+    const res = await effectiveGateway.invoke([{ role: "user", content: prompt }], {
       purpose: callOptions.purpose || "plan",
       ...callOptions,
       scope: callOptions.scope,
@@ -397,9 +403,21 @@ export async function createKernel(root, options = {}) {
   const activeScopes = new Set();
   async function routedSend(message, sendOptions = {}) {
     const parentSignal = sendOptions.signal;
+    const executionId = sendOptions.executionId || (sendOptions.scope?.executionId) || makeId("exec");
+    let rootBudget = null;
+    if (sendOptions.scope?.budget) {
+      rootBudget = sendOptions.scope.budget;
+    } else if (orch.budget) {
+      rootBudget = createRequestBudget({
+        maxTokens: orch.budget.maxTokens,
+        maxModelCalls: orch.budget.maxModelCalls,
+        executionId
+      });
+    }
     const baseScope = sendOptions.scope || createRequestScope({
       signal: parentSignal,
-      executionId: sendOptions.executionId
+      budget: rootBudget,
+      executionId
     });
     activeScopes.add(baseScope);
     try {
@@ -412,28 +430,17 @@ export async function createKernel(root, options = {}) {
         });
       }
       if (decision.lane === "single") {
-        const singleOptions = { ...sendOptions, scope: baseScope, signal: baseScope.signal };
+        const singleScope = sendOptions.scope || createRequestScope({
+          signal: baseScope.signal,
+          executionId
+        });
+        const singleOptions = { ...sendOptions, scope: singleScope, signal: singleScope.signal };
         return await runtime.send(message, singleOptions);
       }
       eventBus.publish("orchestration:routed", { lane: decision.lane, reason: decision.reason, signals: decision.signals });
 
-      let orchScope = baseScope;
-      if (!orchScope.budget && orch.budget) {
-        orchScope = createRequestScope({
-          signal: baseScope.signal,
-          budget: createRequestBudget({ maxTokens: orch.budget.maxTokens, maxModelCalls: orch.budget.maxModelCalls }),
-          executionId: sendOptions.executionId
-        });
-        activeScopes.add(orchScope);
-      }
-      try {
-        const scopedOptions = { ...sendOptions, scope: orchScope, signal: orchScope.signal };
-        return await orchestrator.run({ message, options: scopedOptions, routing: decision, scope: orchScope });
-      } finally {
-        if (orchScope !== baseScope) {
-          activeScopes.delete(orchScope);
-        }
-      }
+      const scopedOptions = { ...sendOptions, scope: baseScope, signal: baseScope.signal };
+      return await orchestrator.run({ message, options: scopedOptions, routing: decision, scope: baseScope });
     } finally {
       activeScopes.delete(baseScope);
     }
@@ -553,7 +560,8 @@ export async function createKernel(root, options = {}) {
         options,
         transactionJournal,
         orchPersistence,
-        resumeOrchestration: (approvalId, decision) => orchestrator.resumeDurable(approvalId, decision)
+        resumeOrchestration: (approvalId, decision) => orchestrator.resumeDurable(approvalId, decision),
+        sharedPausedTurnStore
       })
     : disabledRecoveryFacade();
 
@@ -561,6 +569,7 @@ export async function createKernel(root, options = {}) {
     root,
     eventBus,
     runtime,
+    createRuntime,
     agent: {
       send: routedSend,
       approve: async (id, decision, opts = {}) => {
@@ -703,14 +712,18 @@ async function createRecoveryServiceFacade({
   options,
   transactionJournal,
   orchPersistence = null,
-  resumeOrchestration = null
+  resumeOrchestration = null,
+  sharedPausedTurnStore = null
 }) {
   const recoveryService = createRecoveryService({
     projectId,
     lock: projectLock || { assertOwner: async () => {}, epoch: 0 },
     paused: pausedTurnPersistence,
     pausedTurnStore: {
-      restore: runtime.restorePaused,
+      restore: (rec) => {
+        sharedPausedTurnStore?.restore?.(rec);
+        return runtime.restorePaused(rec);
+      },
       list: runtime.listPaused
     },
     inbox: recoveryInbox,

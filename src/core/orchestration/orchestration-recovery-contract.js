@@ -60,6 +60,15 @@ export function orchestrationResumeGate({ sidecar, workerRecord }) {
   if (!workerRecord) return { ok: false, reason: "worker sidecar missing" };
   if (!isOrchestrationWorkerSidecar(workerRecord)) return { ok: false, reason: "worker sidecar not orchestration-owned" };
   if (!ownershipOk({ sidecar, workerRecord })) return { ok: false, reason: "ownership mismatch" };
+
+  const b = sidecar.budget || {};
+  const hasFiniteQuota = (b.quotaTokens != null && Number.isFinite(b.quotaTokens)) ||
+                         (b.quotaCalls != null && Number.isFinite(b.quotaCalls));
+  const isLegacyUnmetered = b.settledAttempts === undefined && b.unknownUsageAttempts === undefined;
+  if (hasFiniteQuota && isLegacyUnmetered) {
+    return { ok: false, reason: "legacy unmetered budget: cannot safely verify remaining quota" };
+  }
+
   return { ok: true };
 }
 
@@ -137,19 +146,20 @@ export function deserializeOrchestrationState(json) {
 
 export function budgetContinuation(budgetJson, rootJson = {}) {
   const b = budgetJson || {};
-  const isLegacy = (
+  const isLegacy = Boolean(
+    rootJson && (rootJson.taskId || rootJson.approvalId) &&
     b.settledAttempts === undefined &&
     b.unknownUsageAttempts === undefined &&
-    (b.spentCalls === 0 || b.spentTokens === 0) &&
-    Array.isArray(rootJson.allCollected) &&
-    rootJson.allCollected.some((c) => c.status === "complete")
+    b.quotaTokens == null && b.quotaCalls == null
   );
 
   let initialCalls = b.spentCalls || 0;
   let initialUnknown = b.unknownUsageAttempts ?? 0;
   if (isLegacy) {
-    const completedCount = rootJson.allCollected.filter((c) => c.status === "complete").length;
-    initialCalls = Math.max(initialCalls, completedCount * 2);
+    const completedCount = Array.isArray(rootJson.allCollected)
+      ? rootJson.allCollected.filter((c) => c.status === "complete").length
+      : 0;
+    initialCalls = Math.max(initialCalls, completedCount > 0 ? completedCount * 2 : 1);
     initialUnknown = Math.max(initialUnknown, 1);
   }
 
@@ -159,10 +169,12 @@ export function budgetContinuation(budgetJson, rootJson = {}) {
     initialTokens: b.spentTokens || 0,
     initialModelCalls: initialCalls
   };
-  if (b.unknownUsageAttempts != null || isLegacy) {
+  if (b.unknownUsageAttempts != null && b.unknownUsageAttempts > 0) {
+    continuation.initialUnknownUsageAttempts = b.unknownUsageAttempts;
+  } else if (isLegacy) {
     continuation.initialUnknownUsageAttempts = initialUnknown;
   }
-  if (b.settledAttempts != null) {
+  if (b.settledAttempts != null && b.settledAttempts.length > 0) {
     continuation.initialSettledAttempts = Array.isArray(b.settledAttempts) ? b.settledAttempts : [];
   }
   if (b.byRole) {

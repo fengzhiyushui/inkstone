@@ -9,7 +9,13 @@ export function createWorkerFactory({ createRuntime, baseToolSchemas, makeContex
     if (scope && modelGateway) {
       overrides.modelGateway = scope.bindGateway(modelGateway, { role: "worker", subtaskId: subtask.id });
     }
-    return createRuntime(overrides);
+    const runtime = createRuntime(overrides);
+    if (!scope?.signal) return runtime;
+    return {
+      ...runtime,
+      send: (message, options = {}) => runtime.send(message, { signal: scope.signal, ...options }),
+      approve: (id, decision, options = {}) => runtime.approve(id, decision, { signal: scope.signal, ...options })
+    };
   }
   function reviewerRuntime() {
     const overrides = {
@@ -18,7 +24,12 @@ export function createWorkerFactory({ createRuntime, baseToolSchemas, makeContex
     if (scope && modelGateway) {
       overrides.modelGateway = scope.bindGateway(modelGateway, { role: "reviewer" });
     }
-    return createRuntime(overrides);
+    const runtime = createRuntime(overrides);
+    if (!scope?.signal) return runtime;
+    return {
+      ...runtime,
+      send: (message, options = {}) => runtime.send(message, { signal: scope.signal, ...options })
+    };
   }
   return { worker, reviewerRuntime };
 }
