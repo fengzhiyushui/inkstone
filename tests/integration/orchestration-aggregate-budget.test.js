@@ -21,6 +21,8 @@ import { createEventBus } from "../../src/shared/event-bus.js";
 import { createEditService } from "../../src/edits/edit-service.js";
 import { createBuiltinTools } from "../../src/tools/builtin/index.js";
 import { createToolRegistry } from "../../src/tools/registry.js";
+import { createIso, removeIso } from "../../src/core/orchestration/iso-workspace.js";
+import { toBatches } from "../../src/core/orchestration/batch-planner.js";
 import { mkdtemp } from "../helpers/tmp.js";
 
 async function tmpRoot() {
@@ -297,12 +299,64 @@ test("B03: worker internal verify/repair calls stay within aggregate scope; task
   assert.equal(workerResult.repair.status, "complete");
 
   const snap = budget.snapshot();
-  assert.ok(snap.model_calls >= 2, "worker verify and repair calls count against aggregate budget");
-  assert.ok(snap.by_role.worker.calls >= 2, "role worker includes repair attempt");
-  assert.ok(snap.tokens >= 55, "aggregated tokens across worker and repair");
+  assert.equal(snap.model_calls, 3, "worker edit (1), completion (1), and repair (1) calls exactly equal 3");
+  assert.equal(snap.by_role.worker.calls, 3, "role worker includes exactly 3 attempts");
+  assert.equal(snap.tokens, 70, "aggregated tokens across worker edit (25), completion (15), and repair (30) exactly equal 70");
+  assert.equal(snap.by_role.worker.tokens, 70, "role worker tokens exactly equal 70");
+  assert.equal(workerInvokeCount, 3, "gateway was invoked exactly three times without duplicate billing");
   assert.equal(await fs.readFile(path.join(root, "a.txt"), "utf8"), "fixed\n");
 
   await kernel.dispose();
+
+  // Subtest: Verify that budget exhaustion blocks repair attempt
+  const rootCap = await tmpRoot();
+  await fs.writeFile(path.join(rootCap, "a.txt"), "old\n");
+  const budgetCap = createRequestBudget({ maxModelCalls: 1, maxTokens: 5000 });
+  const scopeCap = createRequestScope({ budget: budgetCap });
+  let capWorkerInvokes = 0;
+  const customGatewayCap = {
+    _isDeepSeekGateway: false,
+    invoke: async (msgs, opts) => {
+      capWorkerInvokes++;
+      if (opts.purpose === "repair") {
+        return { content: "", tool_calls: [{ id: "call_repair", name: "edit", arguments: { diff: REPAIR_DIFF, prompt: "repair a" } }], usage: { total_tokens: 30 } };
+      }
+      return { content: "", tool_calls: [{ id: "call_edit", name: "edit", arguments: { diff: BROKEN_DIFF, prompt: "break a" } }], usage: { total_tokens: 25 } };
+    }
+  };
+  let testRunsCap = 0;
+  const fakeTestToolCap = {
+    ...fakeTestTool,
+    execute: async () => {
+      testRunsCap++;
+      return { status: "success", content: [{ type: "text", text: "fail" }], metadata: { exit_code: 1, run: testRunsCap } };
+    }
+  };
+  const editServiceCap = createEditService({ projectRoot: rootCap });
+  const toolsCap = createBuiltinTools({ editService: editServiceCap }).filter((t) => t.name !== "test");
+  const regCap = createToolRegistry({ tools: [...toolsCap, fakeTestToolCap] });
+  const kernelCap = await createKernel(rootCap, {
+    editService: editServiceCap,
+    toolRegistry: regCap,
+    sessionLog: null,
+    branchStore: null,
+    verifyMode: "run",
+    maxRepairAttempts: 1,
+    modelGateway: customGatewayCap
+  });
+  const scopedGwCap = scopeCap.bindGateway(customGatewayCap, { role: "worker", subtaskId: "st_cap" });
+  await assert.rejects(
+    kernelCap.runtime.send("fix a.txt", {
+      autonomy: "auto",
+      verifyMode: "run",
+      modelGateway: scopedGwCap,
+      scope: scopeCap,
+      signal: scopeCap.signal
+    }),
+    (err) => err.code === "BUDGET_EXCEEDED" || err.message?.includes("budget") || err.message?.includes("verification failed")
+  );
+  assert.equal(capWorkerInvokes, 1, "repair was blocked because budget cap (maxModelCalls: 1) was exhausted");
+  await kernelCap.dispose();
   // Note: Task tool offspring delegation is explicitly cross-accepted in R18-04
 });
 
@@ -577,8 +631,15 @@ test("B09-b: SSE stream with usage in chunks settles exactly once without double
   const encoder = new TextEncoder();
   const streamBody = new ReadableStream({
     start(controller) {
+      // Chunk 1: text delta, no usage
       controller.enqueue(encoder.encode("data: {\"choices\":[{\"delta\":{\"content\":\"hello \"}}]}\n\n"));
-      controller.enqueue(encoder.encode("data: {\"choices\":[{\"delta\":{\"content\":\"world\"}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}\n\n"));
+      // Chunk 2: text delta with interim usage (12 tokens: 10 prompt, 2 completion)
+      controller.enqueue(encoder.encode("data: {\"choices\":[{\"delta\":{\"content\":\"world\"}}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2,\"total_tokens\":12}}\n\n"));
+      // Chunk 3: final cumulative usage (15 tokens: 10 prompt, 5 completion)
+      controller.enqueue(encoder.encode("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}\n\n"));
+      // Chunk 4: duplicate final usage event before DONE
+      controller.enqueue(encoder.encode("data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":5,\"total_tokens\":15}}\n\n"));
+      // Chunk 5: [DONE]
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       controller.close();
     }
@@ -600,7 +661,7 @@ test("B09-b: SSE stream with usage in chunks settles exactly once without double
 
   const snap = budget.snapshot();
   assert.equal(snap.model_calls, 1, "stream call settled exactly once");
-  assert.equal(snap.tokens, 15, "stream usage settled accurately without double counting");
+  assert.equal(snap.tokens, 15, "stream usage settled accurately to final 15 tokens without double counting interim 12 or duplicate 15");
   assert.equal(snap.unknown_usage_attempts, 0);
 });
 
@@ -648,36 +709,29 @@ test("B11: synthesizer budget exhaustion returns deterministic summary without m
 });
 
 // B12: cancel 发生在运行期 / 全树取消与无迟到合并（R3 & R4）
-test("B12: tree-wide abort during worker tool execution cancels running scope and prevents merging uncommitted subtask changes", async () => {
+test("B12: tree-wide abort during parallel isolated worker execution cancels running scope, blocks merges, and cleans up iso directories", async () => {
   const root = await tmpRoot();
   const budget = createRequestBudget({ maxModelCalls: 10 });
   const scope = createRequestScope({ budget });
   let mergeCalls = 0;
-  const toolStarted = createDeferred();
-  const toolCanFinish = createDeferred();
 
-  const mockPlane = {
-    editService: { apply: async () => {} },
-    toolRegistry: { toDeepSeekTools: () => [{ type: "function", function: { name: "edit" } }] },
-    execute: async (toolCall, policyContext) => {
-      toolStarted.resolve();
-      await toolCanFinish.promise;
-      if (policyContext?.signal?.aborted) {
-        const err = new Error("interrupted");
-        err.name = "AbortError";
-        throw err;
-      }
-      return { status: "success" };
-    }
-  };
+  // Root project has initial main.js
+  await fs.writeFile(path.join(root, "main.js"), "original main content\n");
+
+  const workersArrived = createBarrier(2);
+  const workersCanFinish = createDeferred();
+  const createdIsoDirs = [];
+
+  const subtasks = [
+    { id: "st_1", goal: "edit main.js in isolation", tool_profile: "edit", context_scope: { files: ["main.js", "st1.txt"] }, depends_on: [] },
+    { id: "st_2", goal: "create st2.txt in isolation", tool_profile: "readonly", context_scope: { files: ["st2.txt"] }, depends_on: [] }
+  ];
 
   const dispatchLoopPromise = runDispatchLoop({
-    plan: { subtasks: [{ id: "st_1", goal: "edit in isolation", tool_profile: "edit", depends_on: [] }] },
+    plan: { subtasks },
     workerFactory: {
-      worker: (st) => ({
-        send: async (msg, opts) => {
-          return mockPlane.execute({ name: "edit" }, { signal: opts.signal || scope.signal });
-        }
+      worker: () => ({
+        send: async () => ({ status: "complete" })
       })
     },
     makeReviewer: () => ({ review: async () => ({ pass: true }) }),
@@ -686,29 +740,69 @@ test("B12: tree-wide abort during worker tool execution cancels running scope an
     maxWorkerAttempts: 1,
     autonomy: "auto",
     onEvent: () => {},
-    toBatches: (tasks) => [tasks],
-    maxParallelWorkers: 1,
-    runIsolatedWorker: async ({ subtask, scope: s }) => {
-      return mockPlane.execute({ name: "edit" }, { signal: s?.signal });
+    toBatches,
+    maxParallelWorkers: 2,
+    runIsolatedWorker: async ({ subtask, runId }) => {
+      const isoRoot = await createIso({ root, runId, subtaskId: subtask.id });
+      createdIsoDirs.push(isoRoot);
+      if (subtask.id === "st_1") {
+        await fs.writeFile(path.join(isoRoot, "main.js"), "modified by st_1\n");
+        await fs.writeFile(path.join(isoRoot, "st1.txt"), "st1 content\n");
+      } else {
+        await fs.writeFile(path.join(isoRoot, "st2.txt"), "st2 content\n");
+      }
+      await workersArrived.arriveAndWait();
+      await workersCanFinish.promise;
+      return {
+        st: subtask,
+        isoRoot,
+        wres: { status: "complete", content: "done" },
+        verdict: { pass: true, reasons: [] },
+        actual: {
+          added: subtask.id === "st_1" ? ["st1.txt"] : ["st2.txt"],
+          modified: subtask.id === "st_1" ? ["main.js"] : [],
+          deleted: []
+        }
+      };
     },
-    mergeSubtask: async () => { mergeCalls++; return { ok: true }; },
-    removeIso: async () => {},
+    mergeSubtask: async () => {
+      mergeCalls++;
+      return { ok: true, change_id: "c1" };
+    },
+    removeIso,
     projectRules: [],
     scope
   });
 
-  // Wait for tool execution to begin inside worker
-  await toolStarted.promise;
+  // Wait until both parallel workers have created their isolated directories and are in flight
+  await workersArrived.arriveAndWait();
+  assert.equal(createdIsoDirs.length, 2, "both isolated workspaces were created");
+  for (const d of createdIsoDirs) {
+    const stat = await fs.stat(d);
+    assert.equal(stat.isDirectory(), true, "isolated workspace exists on disk");
+  }
 
-  // Tree-wide abort occurs while worker tool is running!
+  // Tree-wide abort occurs while workers are actively running in isolation!
   scope.abort("interrupted by user");
-  toolCanFinish.resolve();
+  workersCanFinish.resolve();
 
   const loopResult = await dispatchLoopPromise;
-  assert.equal(loopResult.status, "cancelled", "top-level dispatch loop returned cancelled");
+  assert.equal(loopResult.status, "cancelled", "dispatch loop returned cancelled");
   assert.equal(mergeCalls, 0, "zero merges occurred after abort");
   assert.equal(scope.signal.aborted, true, "scope signal marked aborted");
 
+  // Verify main project files are completely untouched
+  const mainContent = await fs.readFile(path.join(root, "main.js"), "utf8");
+  assert.equal(mainContent, "original main content\n", "main.js was untouched in root");
+  await assert.rejects(fs.access(path.join(root, "st1.txt")), "st1.txt was not merged into root");
+  await assert.rejects(fs.access(path.join(root, "st2.txt")), "st2.txt was not merged into root");
+
+  // Verify isolated directories were cleanly removed by removeIso
+  for (const d of createdIsoDirs) {
+    await assert.rejects(fs.access(d), `isolated directory ${d} was cleaned up on abort`);
+  }
+
+  // Future reservations throw AbortError
   assert.throws(() => {
     scope.budget.reserveCall({ role: "worker", signal: scope.signal });
   }, (err) => err.name === "AbortError" || err.code === "ABORT");
@@ -811,12 +905,19 @@ test("B14: durable recovery continuation does not duplicate billing and preserve
     }
   });
 
-  const customBudget = createRequestBudget({ maxTokens: 5000, maxModelCalls: 20 });
+  const customBudget = createRequestBudget({ maxTokens: 5000, maxModelCalls: 6 });
   const p = await kA.agent.send("逐一处理 a.js 的输入校验", { autonomy: "supervised", scope: createRequestScope({ budget: customBudget }) });
   assert.equal(p.status, "awaiting_approval");
 
   const snapA = customBudget.snapshot();
-  assert.ok(snapA.model_calls > 0, "non-zero calls spent in kernel A");
+  assert.equal(snapA.model_calls, 3, "exactly 3 calls spent in kernel A (router + planner + worker)");
+  assert.equal(snapA.tokens, 70, "exactly 70 tokens spent in kernel A (20 router + 30 planner + 20 worker)");
+  assert.equal(snapA.by_role.router.calls, 1);
+  assert.equal(snapA.by_role.router.tokens, 20);
+  assert.equal(snapA.by_role.planner.calls, 1);
+  assert.equal(snapA.by_role.planner.tokens, 30);
+  assert.equal(snapA.by_role.worker.calls, 1);
+  assert.equal(snapA.by_role.worker.tokens, 20);
 
   // Dispose kernel A (preserves sidecars)
   await kA.dispose();
@@ -855,12 +956,48 @@ test("B14: durable recovery continuation does not duplicate billing and preserve
   const snapResumed = resumed.result.budget;
   assert.ok(snapResumed, "resumed ledger exists");
   assert.equal(snapResumed.execution_id, customBudget.executionId, "executionId preserved across restart");
-  assert.ok(snapResumed.by_role.planner, "planner role preserved in resumed ledger");
-  assert.ok(snapResumed.by_role.worker, "worker role preserved in resumed ledger");
-  assert.ok(snapResumed.model_calls > snapA.model_calls, "new calls added to existing calls");
-  assert.ok(snapResumed.tokens > snapA.tokens, "new tokens added to existing tokens");
-  assert.equal(snapResumed.max_model_calls, 20, "quota preserved");
+
+  // Exact diff assertions: Kernel B added exactly 3 calls (worker resumed + reviewer + synthesizer)
+  assert.equal(snapResumed.model_calls, snapA.model_calls + 3, "strictly 3 new calls added across resume (total 6)");
+  assert.equal(snapResumed.tokens, snapA.tokens + 50, "strictly 50 new tokens added across resume (total 120: 20 worker + 15 reviewer + 15 synthesizer)");
+
+  // Exact by_role assertions
+  assert.equal(snapResumed.by_role.router.calls, snapA.by_role.router.calls);
+  assert.equal(snapResumed.by_role.router.tokens, snapA.by_role.router.tokens);
+  assert.equal(snapResumed.by_role.planner.calls, snapA.by_role.planner.calls);
+  assert.equal(snapResumed.by_role.planner.tokens, snapA.by_role.planner.tokens);
+  assert.equal(snapResumed.by_role.worker.calls, snapA.by_role.worker.calls + 1);
+  assert.equal(snapResumed.by_role.worker.tokens, snapA.by_role.worker.tokens + 20);
+  assert.equal(snapResumed.by_role.reviewer.calls, 1);
+  assert.equal(snapResumed.by_role.reviewer.tokens, 15);
+  assert.equal(snapResumed.by_role.synthesizer.calls, 1);
+  assert.equal(snapResumed.by_role.synthesizer.tokens, 15);
+
+  assert.equal(snapResumed.max_model_calls, 6, "quota preserved");
   assert.equal(snapResumed.max_tokens, 5000, "token quota preserved");
+
+  // Attempt deduplication check: all 6 attempts recorded, duplicate settle is no-op
+  assert.equal(snapResumed.settled_attempts.length, 6, "6 settled attempts tracked");
+  const testBudget = createRequestBudget({
+    maxModelCalls: 10,
+    initialModelCalls: snapResumed.model_calls,
+    initialTokens: snapResumed.tokens,
+    initialSettledAttempts: snapResumed.settled_attempts
+  });
+  const dupTicket = testBudget.reserveCall({ attemptId: snapResumed.settled_attempts[0], role: "worker" });
+  dupTicket.settle({ usage: { total_tokens: 100 } });
+  assert.equal(testBudget.snapshot().model_calls, snapResumed.model_calls, "duplicate attemptId did not increment model_calls");
+  assert.equal(testBudget.snapshot().tokens, snapResumed.tokens, "duplicate attemptId did not increment tokens");
+
+  // Quota exhaustion check: budget of 6 calls is now full (6/6), next call is blocked
+  const fullBudget = createRequestBudget({
+    maxModelCalls: snapResumed.max_model_calls,
+    initialModelCalls: snapResumed.model_calls,
+    initialTokens: snapResumed.tokens
+  });
+  assert.throws(() => {
+    fullBudget.reserveCall({ role: "worker" });
+  }, (err) => err.code === "BUDGET_EXCEEDED");
 
   await kB.dispose();
 });
@@ -1140,6 +1277,230 @@ test("B19 (F02): custom gateway meters all roles (planner, worker, reviewer) und
   assert.equal(res.outcome, "partial", "worker was blocked by budget cap resulting in partial outcome");
   assert.equal(res.collected[0].status, "failed");
   assert.ok(res.collected[0].lastFeedback.includes("budget"));
+
+  await kernel.dispose();
+});
+
+// B17-b: 前台返回后的后台在途经验巩固请求被 interrupt 取消
+test("B17-b: in-flight background distill fetch is aborted when foreground send has returned and kernel.agent.interrupt() is called", async () => {
+  const root = await tmpRoot();
+  const distillStarted = createDeferred();
+  const distillCanFinish = createDeferred();
+  let distillAborted = false;
+  let distillCalls = 0;
+
+  const kernel = await createKernel(root, {
+    sessionLog: null,
+    branchStore: null,
+    verifyMode: "off",
+    orchestration: {
+      maxRounds: 1,
+      crossTaskLearning: "on",
+      budget: { maxModelCalls: 30 }
+    },
+    deepseek: {
+      apiKey: "test-key",
+      fetchImpl: async (url, init) => {
+        const bodyStr = init.body;
+        if (bodyStr.includes("Classify this coding request")) {
+          return jsonResponse({ lane: "orchestrate", reason: "multi-component" });
+        }
+        if (bodyStr.includes("Break the user's request")) {
+          return jsonResponse({
+            task_summary: "t",
+            done_when: "d",
+            subtasks: [{ id: "st_1", goal: "task 1", acceptance: ["ok"], context_scope: { files: [] }, tool_profile: "readonly", depends_on: [] }]
+          });
+        }
+        if (bodyStr.includes("INDEPENDENT reviewer")) {
+          return jsonResponse({ pass: true, severity: "warn", reasons: [], checked: ["read"] });
+        }
+        if (bodyStr.includes("experience") || bodyStr.includes("distill") || bodyStr.includes("Distill")) {
+          distillCalls++;
+          distillStarted.resolve();
+          return new Promise((resolve, reject) => {
+            if (init?.signal?.aborted) {
+              distillAborted = true;
+              return reject(new DOMException("aborted", "AbortError"));
+            }
+            init?.signal?.addEventListener("abort", () => {
+              distillAborted = true;
+              reject(new DOMException("aborted", "AbortError"));
+            }, { once: true });
+            distillCanFinish.promise.then(() => resolve(jsonResponse({ lessons: [] })));
+          });
+        }
+        if (bodyStr.includes("Synthesize a final answer")) {
+          return jsonResponse("synthesis summary");
+        }
+        return jsonResponse("worker response ok");
+      }
+    }
+  });
+
+  const res = await kernel.agent.send("请处理这些校验逻辑", { autonomy: "auto" });
+  assert.equal(res.status, "complete", "foreground send returned complete");
+
+  await distillStarted.promise;
+  assert.equal(distillCalls, 1, "background distill fetch started after foreground completed");
+
+  kernel.agent.interrupt();
+
+  distillCanFinish.resolve();
+  await kernel.experience.flush();
+
+  assert.equal(distillAborted, true, "in-flight background distill fetch was cleanly aborted");
+
+  await kernel.dispose();
+});
+
+// B20: T01 回归测试 - 恢复必须完整保留未知占额 (unknown_usage_tokens) 并阻断后续超支
+test("B20 (T01 regression): durable recovery preserves unknown_usage_tokens liability and blocks overspend", async () => {
+  const customBudget = createRequestBudget({
+    maxTokens: 5000,
+    fallbackTokensPerUnknown: 500
+  });
+  const scope = createRequestScope({ budget: customBudget });
+
+  const gateway = createDeepSeekGateway({
+    apiKey: "test-key",
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      headers: new Map([["content-type", "application/json"]]),
+      json: async () => ({
+        choices: [{ finish_reason: "stop", message: { role: "assistant", content: "ok" } }]
+      }),
+      text: async () => ""
+    })
+  });
+
+  // Turn 1: 20 prompt tokens estimated + 4000 output tokens = 4020 liability
+  const messages = [{ role: "user", content: "x" }];
+  const args = { scope, role: "worker", maxTokens: 4000 };
+  await gateway.invoke(messages, args);
+
+  const snapBefore = customBudget.snapshot();
+  assert.equal(snapBefore.unknown_usage_tokens, 4020, "unknown_usage_tokens is 4020");
+  assert.equal(snapBefore.effective_tokens, 4020, "effective_tokens is 4020");
+
+  // Next identical request would need 4020 tokens -> 4020 + 4020 = 8040 > 5000 -> rejected!
+  await assert.rejects(gateway.invoke(messages, args), { code: "BUDGET_EXCEEDED" });
+
+  // Serialize and deserialize orchestration state
+  const pausedState = {
+    taskId: "t1",
+    sessionId: "s1",
+    message: "msg",
+    done_when: "done",
+    plan: { subtasks: [{ id: "st_1" }] },
+    round: 1,
+    pausedSubtask: { id: "st_1" },
+    remaining: [],
+    seenSubtaskIds: ["st_1"],
+    seenFp: [],
+    allCollected: [],
+    budget: customBudget,
+    executionId: customBudget.executionId,
+    deps: {}
+  };
+
+  const serialized = serializeOrchestrationState(pausedState, "app_1");
+  const jsonStr = JSON.stringify(serialized);
+  const roundtripped = JSON.parse(jsonStr);
+  const continuation = budgetContinuation(roundtripped.budget, roundtripped);
+
+  assert.equal(continuation.initialUnknownUsageTokens, 4020, "continuation preserves unknown_usage_tokens");
+
+  const resumedBudget = createRequestBudget({
+    maxTokens: continuation.maxTokens,
+    maxModelCalls: continuation.maxModelCalls,
+    fallbackTokensPerUnknown: continuation.fallbackTokensPerUnknown,
+    initialTokens: continuation.initialTokens,
+    initialModelCalls: continuation.initialModelCalls,
+    initialUnknownUsageAttempts: continuation.initialUnknownUsageAttempts,
+    initialUnknownUsageTokens: continuation.initialUnknownUsageTokens,
+    initialByRole: continuation.initialByRole,
+    initialSettledAttempts: continuation.initialSettledAttempts,
+    executionId: continuation.executionId
+  });
+
+  const snapAfter = resumedBudget.snapshot();
+  assert.equal(snapAfter.unknown_usage_tokens, 4020, "resumed budget unknown_usage_tokens is still 4020");
+  assert.equal(snapAfter.effective_tokens, 4020, "resumed budget effective_tokens is still 4020");
+
+  // Resumed budget ALSO rejects the overspend request!
+  const resumedScope = createRequestScope({ budget: resumedBudget });
+  await assert.rejects(gateway.invoke(messages, { ...args, scope: resumedScope }), { code: "BUDGET_EXCEEDED" });
+});
+
+// B21: T02 回归测试 - 最终汇总期间 interrupt 返回 cancelled 终态并发布 orchestration:cancelled
+test("B21 (T02 regression): interrupt during final synthesis returns cancelled status and outcome and publishes orchestration:cancelled", async () => {
+  const root = await tmpRoot();
+  let synthesisCount = 0;
+  let fetchAborted = false;
+  const synthFetchStarted = createDeferred();
+  const events = [];
+
+  const kernel = await createKernel(root, {
+    sessionLog: null,
+    branchStore: null,
+    verifyMode: "off",
+    orchestration: { maxRounds: 1, budget: { maxModelCalls: 30 } },
+    deepseek: {
+      apiKey: "test-key",
+      fetchImpl: async (url, init) => {
+        const bodyStr = init.body;
+        if (bodyStr.includes("Classify this coding request")) {
+          return jsonResponse({ lane: "orchestrate", reason: "multi-component" });
+        }
+        if (bodyStr.includes("Break the user's request")) {
+          return jsonResponse({
+            task_summary: "summary",
+            done_when: "done",
+            subtasks: [{ id: "st_1", goal: "task 1", acceptance: ["ok"], context_scope: {}, tool_profile: "readonly", depends_on: [] }]
+          });
+        }
+        if (bodyStr.includes("INDEPENDENT reviewer")) {
+          return jsonResponse({ pass: true, severity: "warn", reasons: [], checked: ["read"] });
+        }
+        if (bodyStr.includes("Synthesize a final answer")) {
+          synthesisCount += 1;
+          if (synthesisCount === 2) {
+            return new Promise((resolve, reject) => {
+              const onAbort = () => {
+                fetchAborted = true;
+                reject(Object.assign(new Error("cancelled during final synthesis"), { name: "AbortError" }));
+              };
+              if (init?.signal?.aborted) onAbort();
+              else init?.signal?.addEventListener("abort", onAbort, { once: true });
+              synthFetchStarted.resolve();
+            });
+          }
+          return jsonResponse("round summary");
+        }
+        return jsonResponse("worker response ok");
+      }
+    }
+  });
+
+  for (const name of ["orchestration:completed", "orchestration:cancelled"]) {
+    kernel.eventBus.subscribe(name, (data) => events.push({ name, data }));
+  }
+
+  const sendPromise = kernel.agent.send("请处理这些校验逻辑", { autonomy: "auto" });
+
+  await synthFetchStarted.promise;
+
+  kernel.agent.interrupt();
+
+  const res = await sendPromise;
+
+  assert.equal(fetchAborted, true, "in-flight final synthesis received abort");
+  assert.equal(res.status, "cancelled", "status is cancelled");
+  assert.equal(res.outcome, "cancelled", "outcome is cancelled");
+  assert.equal(events.some((e) => e.name === "orchestration:completed"), false, "orchestration:completed was NOT published");
+  assert.equal(events.some((e) => e.name === "orchestration:cancelled"), true, "orchestration:cancelled event was published");
 
   await kernel.dispose();
 });

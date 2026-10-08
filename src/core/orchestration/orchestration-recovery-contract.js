@@ -99,6 +99,12 @@ export function serializeOrchestrationState(state, { approvalId, pausedSubtask, 
       ...(bs.unknown_usage_attempts != null || bs.unknownUsageAttempts != null ? {
         unknownUsageAttempts: bs.unknown_usage_attempts || bs.unknownUsageAttempts || 0
       } : {}),
+      ...(bs.unknown_usage_tokens != null || bs.unknownUsageTokens != null ? {
+        unknownUsageTokens: bs.unknown_usage_tokens ?? bs.unknownUsageTokens ?? 0
+      } : {}),
+      ...(bs.fallback_tokens_per_unknown != null || bs.fallbackTokensPerUnknown != null ? {
+        fallbackTokensPerUnknown: bs.fallback_tokens_per_unknown ?? bs.fallbackTokensPerUnknown
+      } : {}),
       ...(bs.settled_attempts != null || bs.settledAttempts != null ? {
         settledAttempts: bs.settled_attempts || bs.settledAttempts || []
       } : {}),
@@ -174,6 +180,27 @@ export function budgetContinuation(budgetJson, rootJson = {}) {
   } else if (isLegacy) {
     continuation.initialUnknownUsageAttempts = initialUnknown;
   }
+
+  // Preserve unknown usage liability across recovery
+  let recoveredUnknownTokens = 0;
+  if (b.unknownUsageTokens != null && b.unknownUsageTokens > 0) {
+    recoveredUnknownTokens = b.unknownUsageTokens;
+  } else if (continuation.initialUnknownUsageAttempts > 0) {
+    const byRoleTokens = Object.values(b.byRole || {}).reduce((acc, r) => acc + (r?.tokens || 0), 0);
+    const fb = b.fallbackTokensPerUnknown || 500;
+    if (byRoleTokens > (b.spentTokens || 0)) {
+      recoveredUnknownTokens = Math.max(byRoleTokens - (b.spentTokens || 0), continuation.initialUnknownUsageAttempts * fb);
+    } else {
+      recoveredUnknownTokens = continuation.initialUnknownUsageAttempts * fb;
+    }
+  }
+  if (recoveredUnknownTokens > 0) {
+    continuation.initialUnknownUsageTokens = recoveredUnknownTokens;
+  }
+  if (b.fallbackTokensPerUnknown != null && b.fallbackTokensPerUnknown > 0) {
+    continuation.fallbackTokensPerUnknown = b.fallbackTokensPerUnknown;
+  }
+
   if (b.settledAttempts != null && b.settledAttempts.length > 0) {
     continuation.initialSettledAttempts = Array.isArray(b.settledAttempts) ? b.settledAttempts : [];
   }

@@ -391,6 +391,8 @@ export async function createKernel(root, options = {}) {
       initialTokens: s.initialTokens,
       initialModelCalls: s.initialModelCalls,
       initialUnknownUsageAttempts: s.initialUnknownUsageAttempts,
+      initialUnknownUsageTokens: s.initialUnknownUsageTokens,
+      fallbackTokensPerUnknown: s.fallbackTokensPerUnknown,
       initialSettledAttempts: s.initialSettledAttempts,
       initialByRole: s.initialByRole || {},
       executionId: s.executionId || null

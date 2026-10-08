@@ -187,6 +187,7 @@ async function runBatched({ plan, workerFactory, makeReviewer, synthesizer, budg
       // R4: 检查在并发 worker 执行期间是否被取消！
       if (scope?.signal?.aborted) {
         for (const r of results) {
+          if (r.isoRoot && !runDir) runDir = path.dirname(r.isoRoot);
           if (r.isoRoot && removeIso) await removeIso(r.isoRoot).catch(() => {});
         }
         await cleanupRun(runDir, removeIso);

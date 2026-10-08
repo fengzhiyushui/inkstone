@@ -163,7 +163,22 @@ export function createOrchestrator({
       publish(eventBus, "orchestration:cancelled", { round: state.round, completed: count(state.allCollected, "complete"), executionId: state.executionId });
       return { status: "cancelled", outcome: "cancelled", collected: state.allCollected, budget: abortSnap, executionId: state.executionId };
     }
-    const content = await synthesizer.synthesize({ message: state.message, collected: state.allCollected, signal: state.scope?.signal, scope: state.scope });
+    let content;
+    try {
+      content = await synthesizer.synthesize({ message: state.message, collected: state.allCollected, signal: state.scope?.signal, scope: state.scope });
+    } catch (err) {
+      if (err?.name === "AbortError" || state.scope?.signal?.aborted) {
+        const abortSnap = typeof state.budget?.snapshot === "function" ? state.budget.snapshot() : null;
+        publish(eventBus, "orchestration:cancelled", { round: state.round, completed: count(state.allCollected, "complete"), executionId: state.executionId });
+        return { status: "cancelled", outcome: "cancelled", collected: state.allCollected, budget: abortSnap, executionId: state.executionId };
+      }
+      throw err;
+    }
+    if (state.scope?.signal?.aborted) {
+      const abortSnap = typeof state.budget?.snapshot === "function" ? state.budget.snapshot() : null;
+      publish(eventBus, "orchestration:cancelled", { round: state.round, completed: count(state.allCollected, "complete"), executionId: state.executionId });
+      return { status: "cancelled", outcome: "cancelled", collected: state.allCollected, budget: abortSnap, executionId: state.executionId };
+    }
     const status = classifyOutcome(state.allCollected, { stoppedByCap: state.stoppedByCap });
     const snap = typeof state.budget?.snapshot === "function" ? state.budget.snapshot() : null;
     publish(eventBus, "orchestration:completed", { rounds: state.round, completed: count(state.allCollected, "complete"), failed: count(state.allCollected, "failed"), status, executionId: state.executionId });

@@ -64,6 +64,7 @@ export function createRequestBudget({
   initialTokens = 0,
   initialModelCalls = 0,
   initialUnknownUsageAttempts = 0,
+  initialUnknownUsageTokens = null,
   initialSettledAttempts = [],
   initialByRole = {},
   fallbackTokensPerUnknown = null,
@@ -83,9 +84,11 @@ export function createRequestBudget({
     ? fallbackTokensPerUnknown
     : (maxTokens != null ? Math.min(maxTokens, 500) : 500);
 
-  let unknownUsageTokens = (Number.isFinite(initialUnknownUsageAttempts) && initialUnknownUsageAttempts > 0)
-    ? initialUnknownUsageAttempts * fallbackTokens
-    : 0;
+  let unknownUsageTokens = (Number.isFinite(initialUnknownUsageTokens) && initialUnknownUsageTokens >= 0)
+    ? Math.max(initialUnknownUsageTokens, (initialUnknownUsageAttempts || 0) * fallbackTokens)
+    : ((Number.isFinite(initialUnknownUsageAttempts) && initialUnknownUsageAttempts > 0)
+      ? initialUnknownUsageAttempts * fallbackTokens
+      : 0);
 
   if (initialByRole && typeof initialByRole === "object") {
     for (const [r, stats] of Object.entries(initialByRole)) {

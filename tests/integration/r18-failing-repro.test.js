@@ -132,9 +132,11 @@ test("REPRO 2 (F04-a): aborting old turn's signal after it completes must not ab
 });
 
 // 3. 工具 signal 未继承 (F04-b)
-test("REPRO 3 (F04-b): orchestration scope cancellation must propagate into running tool context signal", async () => {
+test("REPRO 3 (F04-b): orchestration scope cancellation must propagate into running tool context signal via AgentRuntime", async () => {
+  const root = await tmpRoot();
   const scope = createRequestScope({ budget: createRequestBudget({ maxModelCalls: 10 }) });
   let toolSignalAborted = false;
+  const toolStarted = createDeferred();
   const toolDeferred = createDeferred();
 
   const mockTool = {
@@ -142,7 +144,7 @@ test("REPRO 3 (F04-b): orchestration scope cancellation must propagate into runn
     description: "test",
     parameters: { type: "object", properties: {} },
     execute: async (args, context) => {
-      // Record whether context.signal aborts
+      toolStarted.resolve();
       if (context.signal) {
         if (context.signal.aborted) toolSignalAborted = true;
         context.signal.addEventListener("abort", () => {
@@ -154,21 +156,66 @@ test("REPRO 3 (F04-b): orchestration scope cancellation must propagate into runn
     }
   };
 
+  const kernel = await createKernel(root, {
+    sessionLog: null,
+    branchStore: null,
+    verifyMode: "off",
+    tools: [mockTool],
+    deepseek: {
+      apiKey: "test-key",
+      fetchImpl: async () => {
+        return {
+          ok: true,
+          status: 200,
+          headers: new Map(),
+          json: async () => ({
+            choices: [{
+              finish_reason: "tool_calls",
+              message: {
+                role: "assistant",
+                content: null,
+                tool_calls: [{
+                  id: "tc_1",
+                  type: "function",
+                  function: { name: "test_tool", arguments: "{}" }
+                }]
+              }
+            }],
+            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
+          }),
+          text: async () => ""
+        };
+      }
+    }
+  });
+
   const workerFactory = createWorkerFactory({
-    createRuntime: (overrides) => ({
-      send: async (prompt, opts = {}) => {
-        // opts must receive signal from scope!
-        assert.ok(opts.signal, "worker.send options must carry signal from scope");
-        return { status: "complete" };
+    createRuntime: (overrides) => kernel.createRuntime({
+      ...overrides,
+      executeTool: async (toolCall, policyContext) => {
+        return mockTool.execute(toolCall.function?.arguments, policyContext);
       }
     }),
-    baseToolSchemas: () => [],
+    baseToolSchemas: () => [{ type: "function", function: { name: "test_tool" } }],
     makeContextSnapshot: () => ({}),
+    modelGateway: kernel.modelGateway,
     scope
   });
 
-  const worker = workerFactory.worker({ id: "st1", goal: "g", tool_profile: "edit" });
-  await worker.send("do work");
+  const worker = workerFactory.worker({ id: "st1", goal: "g", tool_profile: "all" });
+  const sendPromise = worker.send("do work");
+
+  await toolStarted.promise;
+  scope.abort("tool interrupted by orchestration scope");
+  toolDeferred.resolve();
+
+  await assert.rejects(async () => {
+    await sendPromise;
+  }, (err) => err.name === "InterruptedError" || err.name === "AbortError" || err.code === "ABORT");
+
+  assert.equal(toolSignalAborted, true, "running tool context.signal was aborted when scope aborted");
+
+  await kernel.dispose();
 });
 
 // 4. resumeDurable 无活跃登记 (F04-c)
