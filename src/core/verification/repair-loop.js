@@ -16,6 +16,7 @@ export async function runRepairLoop({
   eventBus = null,
   signal = null,
   maxRepairAttempts = 2,
+  maxToolCallRepairs = null,
   options = {},
   modelTimeoutMs = null,
   permissionContext = null,
@@ -26,6 +27,14 @@ export async function runRepairLoop({
   budget = null,
   sessionId = null
 } = {}) {
+  const effectiveMaxToolCallRepairs = Math.max(
+    0,
+    Math.trunc(Number(maxToolCallRepairs ?? resumeAfterApproval?.max_tool_call_repairs ?? options?.maxToolCallRepairs ?? 0) || 0)
+  );
+  let totalToolCallRepairs = Math.max(
+    0,
+    Math.trunc(Number(resumeAfterApproval?.total_tool_call_repairs ?? resumeAfterApproval?.tool_call_repairs ?? 0) || 0)
+  );
   const attempts = resumeAfterApproval ? [...resumeAfterApproval.attempts] : [];
   let verification = resumeAfterApproval ? resumeAfterApproval.verification : initialVerification;
   let allToolResults = resumeAfterApproval
@@ -52,7 +61,7 @@ export async function runRepairLoop({
         content: `Stopped: cost budget exceeded (${over.reason}).`,
         toolResults: allToolResults,
         verification,
-        repair: { attempts: attempt - 1, status: "stopped", history: attempts }
+        repair: { attempts: attempt - 1, status: "stopped", history: attempts, tool_call_repairs: totalToolCallRepairs }
       };
     }
     if (!skipToVerification) {
@@ -66,6 +75,7 @@ export async function runRepairLoop({
         maxRepairAttempts,
         context
       });
+      const priorToolCallRepairs = totalToolCallRepairs;
       const repairExec = await runRepairExecutorImpl({
         turnId,
         messages,
@@ -76,15 +86,27 @@ export async function runRepairLoop({
         eventBus,
         signal,
         modelTimeoutMs,
+        maxToolCallRepairs: effectiveMaxToolCallRepairs,
         permissionContext,
         sessionId,
-        options: { ...options, message: userMessage, classification, context },
+        options: { ...options, message: userMessage, classification, context, maxToolCallRepairs: effectiveMaxToolCallRepairs },
         budget
       });
+      totalToolCallRepairs += (repairExec.toolCallRepairs || 0);
+      if (repairExec.status === "stopped") {
+        return {
+          status: "stopped",
+          reason: repairExec.reason,
+          content: repairExec.content || `Stopped: cost budget exceeded (${repairExec.reason?.reason || "budget_exceeded"}).`,
+          toolResults: allToolResults,
+          verification,
+          repair: { attempts: attempt - 1, status: "stopped", history: attempts, tool_call_repairs: totalToolCallRepairs }
+        };
+      }
       if (repairExec.status === "awaiting_approval") {
         return {
           ...repairExec,
-          repair: { attempts: attempt, status: "awaiting_approval" },
+          repair: { attempts: attempt, status: "awaiting_approval", tool_call_repairs: totalToolCallRepairs },
           verification,
           resume_state: {
             ...repairExec.resume_state,
@@ -97,6 +119,10 @@ export async function runRepairLoop({
               initial_verification: initialVerification,
               initial_tool_results: initialToolResults || [],
               max_repair_attempts: maxRepairAttempts,
+              prior_tool_call_repairs: priorToolCallRepairs,
+              tool_call_repairs: repairExec.toolCallRepairs || 0,
+              total_tool_call_repairs: totalToolCallRepairs,
+              max_tool_call_repairs: effectiveMaxToolCallRepairs,
               context
             }
           }
@@ -127,7 +153,7 @@ export async function runRepairLoop({
         approval: verification.tool_result?.metadata?.approval || null,
         toolResults: allToolResults,
         verification,
-        repair: { attempts: attempt, status: "awaiting_approval", history: attempts },
+        repair: { attempts: attempt, status: "awaiting_approval", history: attempts, tool_call_repairs: totalToolCallRepairs },
         resume_state: {
           ...verifierApprovalResumeState({
             turnId,
@@ -140,6 +166,8 @@ export async function runRepairLoop({
             initialVerification,
             initialToolResults,
             maxRepairAttempts,
+            totalToolCallRepairs,
+            effectiveMaxToolCallRepairs,
             options,
             permissionContext,
             context
@@ -165,7 +193,7 @@ export async function runRepairLoop({
         content: "Repair complete.",
         toolResults: allToolResults,
         verification,
-        repair: { attempts: attempt, status: "complete", history: attempts }
+        repair: { attempts: attempt, status: "complete", history: attempts, tool_call_repairs: totalToolCallRepairs }
       };
     }
   }
@@ -176,7 +204,7 @@ export async function runRepairLoop({
     content: verification?.reason || "Repair attempts exhausted",
     toolResults: allToolResults,
     verification,
-    repair: { attempts: maxRepairAttempts, status: "exhausted", history: attempts }
+    repair: { attempts: maxRepairAttempts, status: "exhausted", history: attempts, tool_call_repairs: totalToolCallRepairs }
   };
 }
 
@@ -197,6 +225,8 @@ function verifierApprovalResumeState({
   initialVerification,
   initialToolResults,
   maxRepairAttempts,
+  totalToolCallRepairs = 0,
+  effectiveMaxToolCallRepairs = 0,
   options,
   permissionContext,
   context
@@ -221,6 +251,8 @@ function verifierApprovalResumeState({
     tool_results: [],
     tool_schemas: [],
     max_iterations: 1,
+    tool_call_repairs: totalToolCallRepairs,
+    max_tool_call_repairs: effectiveMaxToolCallRepairs,
     options,
     context,
     permission_context: permissionContext,
@@ -233,6 +265,8 @@ function verifierApprovalResumeState({
       initial_verification: initialVerification,
       initial_tool_results: initialToolResults || [],
       max_repair_attempts: maxRepairAttempts,
+      total_tool_call_repairs: totalToolCallRepairs,
+      max_tool_call_repairs: effectiveMaxToolCallRepairs,
       context
     }
   };

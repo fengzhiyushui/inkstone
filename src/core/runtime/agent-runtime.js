@@ -314,6 +314,7 @@ export function createAgentRuntime({
         eventBus,
         signal,
         maxRepairAttempts: options.maxRepairAttempts || maxRepairAttempts,
+        maxToolCallRepairs: options.maxToolCallRepairs ?? maxToolCallRepairs,
         modelTimeoutMs: options.modelTimeoutMs ?? modelTimeoutMs,
         options,
         permissionContext,
@@ -380,11 +381,21 @@ export function createAgentRuntime({
       }
 
       lifecycle = transitionLifecycle(lifecycle, { to: "execute", reason: "approval resolved", channel: "act" });
+      const resumeOptions = record.resume_state.options || {};
+      // 暂停时已消耗的预算续扣(executor-loop 在 resume_state.budget_spent 落盘),
+      // 避免审批暂停/续跑把已计 token/调用次数清零而实际超限。
+      const budgetSpent = record.resume_state.budget_spent || null;
+      const budget = createCostBudget({
+        maxTokens: resumeOptions.maxTurnTokens ?? maxTurnTokens,
+        maxModelCalls: resumeOptions.maxModelCalls ?? maxModelCalls,
+        initialTokens: budgetSpent?.tokens || 0,
+        initialModelCalls: budgetSpent?.model_calls || 0
+      });
       if (record.resume_state.repair_context?.approval_phase === "verify") {
-        return await resumeRepairVerifierApproval({ record, approvalId, permissionContext: recordPermissionContext, signal });
+        return await resumeRepairVerifierApproval({ record, approvalId, permissionContext: recordPermissionContext, signal, budget });
       }
       if (record.resume_state.verification_context?.approval_phase === "verify") {
-        return await resumeRuntimeVerifierApproval({ record, approvalId, permissionContext: recordPermissionContext, signal });
+        return await resumeRuntimeVerifierApproval({ record, approvalId, permissionContext: recordPermissionContext, signal, budget });
       }
 
       await grantApprovalForToolCall(record.resume_state.pending_tool_call, {
@@ -396,16 +407,6 @@ export function createAgentRuntime({
       });
       await publishTurnResumed(record, approvalId);
       assertNotInterrupted(generation);
-      const resumeOptions = record.resume_state.options || {};
-      // 暂停时已消耗的预算续扣(executor-loop 在 resume_state.budget_spent 落盘),
-      // 避免审批暂停/续跑把已计 token/调用次数清零而实际超限。
-      const budgetSpent = record.resume_state.budget_spent || null;
-      const budget = createCostBudget({
-        maxTokens: resumeOptions.maxTurnTokens ?? maxTurnTokens,
-        maxModelCalls: resumeOptions.maxModelCalls ?? maxModelCalls,
-        initialTokens: budgetSpent?.tokens || 0,
-        initialModelCalls: budgetSpent?.model_calls || 0
-      });
       const loop = await runAfterClearingConsumedPause(approvalId, () => resumeExecutorLoop({
         resumeState: record.resume_state,
         modelGateway,
@@ -420,7 +421,7 @@ export function createAgentRuntime({
         signal,
         budget,
         modelTimeoutMs: resumeOptions.modelTimeoutMs ?? modelTimeoutMs,
-        maxToolCallRepairs: resumeOptions.maxToolCallRepairs ?? maxToolCallRepairs,
+        maxToolCallRepairs: record.resume_state.max_tool_call_repairs ?? resumeOptions.maxToolCallRepairs ?? maxToolCallRepairs,
         sessionId
       }));
       assertNotInterrupted(generation);
@@ -452,6 +453,12 @@ export function createAgentRuntime({
       if (record.resume_state.repair_context) {
         const ctx = record.resume_state.repair_context;
         const mergedToolResults = [...ctx.all_tool_results, ...(loop.toolResults || [])];
+        const effectiveRepairMaxToolCallRepairs = record.resume_state.max_tool_call_repairs
+          ?? ctx.max_tool_call_repairs
+          ?? record.resume_state.options?.maxToolCallRepairs
+          ?? maxToolCallRepairs;
+        const attemptToolCallRepairs = loop.toolCallRepairs ?? record.resume_state.tool_call_repairs ?? ctx.tool_call_repairs ?? 0;
+        const totalToolCallRepairs = (ctx.prior_tool_call_repairs ?? 0) + attemptToolCallRepairs;
         const repairResult = await runAfterClearingConsumedPause(approvalId, () => runRepairLoop({
           turnId: record.turn_id,
           userMessage: record.turn.user_message,
@@ -473,6 +480,7 @@ export function createAgentRuntime({
           eventBus,
           signal,
           maxRepairAttempts: ctx.max_repair_attempts,
+          maxToolCallRepairs: effectiveRepairMaxToolCallRepairs,
           modelTimeoutMs: record.resume_state.options?.modelTimeoutMs ?? modelTimeoutMs,
           options: record.resume_state.options || {},
           permissionContext: recordPermissionContext,
@@ -482,6 +490,8 @@ export function createAgentRuntime({
             verification: ctx.verification,
             attempt: ctx.attempt,
             attempts: ctx.attempts,
+            total_tool_call_repairs: totalToolCallRepairs,
+            max_tool_call_repairs: effectiveRepairMaxToolCallRepairs,
             skip_to_verification: true
           },
           budget,
@@ -509,6 +519,16 @@ export function createAgentRuntime({
             turn: setTurnStatus(record.turn, "awaiting_approval"),
             verification: repairResult.verification
           };
+        }
+
+        if (repairResult.status === "stopped") {
+          const stoppedTurn = setTurnStatus(record.turn, "completed");
+          publish(eventBus, "agent:final", { turn_id: record.turn_id, content: repairResult.content, status: "stopped" });
+          await clearConsumedPausedRecord(approvalId);
+          lifecycle = transitionLifecycle(lifecycle, { to: "idle", reason: "cost budget stop", channel: null });
+          currentTurnId = null;
+          currentAbortController = null;
+          return { status: "stopped", state: "idle", content: repairResult.content, turn: stoppedTurn, budget: repairResult.reason || null, verification: repairResult.verification, repair: repairResult.repair || null };
         }
 
         if (repairResult.status === "failed") {
@@ -559,6 +579,15 @@ export function createAgentRuntime({
           turn: setTurnStatus(record.turn, "awaiting_approval"),
           verification: repaired.verification
         };
+      }
+      if (repaired.status === "stopped") {
+        const stoppedTurn = setTurnStatus(record.turn, "completed");
+        publish(eventBus, "agent:final", { turn_id: record.turn_id, content: repaired.content, status: "stopped" });
+        await clearConsumedPausedRecord(approvalId);
+        lifecycle = transitionLifecycle(lifecycle, { to: "idle", reason: "cost budget stop", channel: null });
+        currentTurnId = null;
+        currentAbortController = null;
+        return { status: "stopped", state: "idle", content: repaired.content, turn: stoppedTurn, budget: repaired.reason || null, verification: repaired.verification, repair: repaired.repair || null };
       }
       if (repaired.status === "failed") {
         await throwAfterClearingConsumedPause(
@@ -636,7 +665,7 @@ export function createAgentRuntime({
     return pausedTurnStore.restore(record);
   }
 
-  async function resumeRuntimeVerifierApproval({ record, approvalId, permissionContext, signal }) {
+  async function resumeRuntimeVerifierApproval({ record, approvalId, permissionContext, signal, budget = null }) {
     const ctx = record.resume_state.verification_context;
     const pendingToolCall = verifierPendingToolCallForResume(
       record.resume_state.pending_tool_call,
@@ -726,6 +755,8 @@ export function createAgentRuntime({
         eventBus,
         signal,
         maxRepairAttempts: record.resume_state.options?.maxRepairAttempts || maxRepairAttempts,
+        maxToolCallRepairs: record.resume_state.max_tool_call_repairs ?? record.resume_state.options?.maxToolCallRepairs ?? maxToolCallRepairs,
+        modelTimeoutMs: record.resume_state.options?.modelTimeoutMs ?? modelTimeoutMs,
         options: record.resume_state.options || {},
         permissionContext,
         context: record.resume_state.context || ctx.context || null,
@@ -755,6 +786,16 @@ export function createAgentRuntime({
           verification: repairLoop.verification
         };
       }
+      if (repairLoop.status === "stopped") {
+        const stoppedTurn = setTurnStatus(record.turn, "completed");
+        publish(eventBus, "agent:final", { turn_id: record.turn_id, content: repairLoop.content, status: "stopped" });
+        await clearConsumedPausedRecord(approvalId);
+        await flushEvents();
+        lifecycle = transitionLifecycle(lifecycle, { to: "idle", reason: "cost budget stop", channel: null });
+        currentTurnId = null;
+        currentAbortController = null;
+        return { status: "stopped", state: "idle", content: repairLoop.content, turn: stoppedTurn, budget: repairLoop.reason || null, verification: repairLoop.verification, repair: repairLoop.repair || null };
+      }
       if (repairLoop.status === "failed") {
         await throwAfterClearingConsumedPause(
           approvalId,
@@ -777,7 +818,7 @@ export function createAgentRuntime({
     );
   }
 
-  async function resumeRepairVerifierApproval({ record, approvalId, permissionContext, signal }) {
+  async function resumeRepairVerifierApproval({ record, approvalId, permissionContext, signal, budget = null }) {
     const ctx = record.resume_state.repair_context;
     const pendingToolCall = verifierPendingToolCallForResume(
       record.resume_state.pending_tool_call,
@@ -856,11 +897,16 @@ export function createAgentRuntime({
         content: "Repair complete.",
         turn: finalTurn,
         verification,
-        repair: { attempts: ctx.attempt, status: "complete", history: attempts }
+        repair: { attempts: ctx.attempt, status: "complete", history: attempts, tool_call_repairs: ctx.total_tool_call_repairs ?? ctx.tool_call_repairs ?? 0 }
       };
     }
 
     if (ctx.attempt < ctx.max_repair_attempts) {
+      const effectiveRepairMaxToolCallRepairs = record.resume_state.max_tool_call_repairs
+        ?? ctx.max_tool_call_repairs
+        ?? record.resume_state.options?.maxToolCallRepairs
+        ?? maxToolCallRepairs;
+      const totalToolCallRepairs = ctx.total_tool_call_repairs ?? ctx.tool_call_repairs ?? record.resume_state.tool_call_repairs ?? 0;
       const repairLoop = await runAfterClearingConsumedPause(approvalId, () => runRepairLoop({
         turnId: record.turn_id,
         userMessage: record.turn.user_message,
@@ -882,6 +928,8 @@ export function createAgentRuntime({
         eventBus,
         signal,
         maxRepairAttempts: ctx.max_repair_attempts,
+        maxToolCallRepairs: effectiveRepairMaxToolCallRepairs,
+        modelTimeoutMs: record.resume_state.options?.modelTimeoutMs ?? modelTimeoutMs,
         options: record.resume_state.options || {},
         permissionContext,
         context: record.resume_state.context || ctx.context || null,
@@ -890,6 +938,8 @@ export function createAgentRuntime({
           verification,
           attempt: ctx.attempt + 1,
           attempts,
+          total_tool_call_repairs: totalToolCallRepairs,
+          max_tool_call_repairs: effectiveRepairMaxToolCallRepairs,
           skip_to_verification: false
         },
         budget,
@@ -916,6 +966,16 @@ export function createAgentRuntime({
           turn: setTurnStatus(record.turn, "awaiting_approval"),
           verification: repairLoop.verification
         };
+      }
+      if (repairLoop.status === "stopped") {
+        const stoppedTurn = setTurnStatus(record.turn, "completed");
+        publish(eventBus, "agent:final", { turn_id: record.turn_id, content: repairLoop.content, status: "stopped" });
+        await clearConsumedPausedRecord(approvalId);
+        await flushEvents();
+        lifecycle = transitionLifecycle(lifecycle, { to: "idle", reason: "cost budget stop", channel: null });
+        currentTurnId = null;
+        currentAbortController = null;
+        return { status: "stopped", state: "idle", content: repairLoop.content, turn: stoppedTurn, budget: repairLoop.reason || null, verification: repairLoop.verification, repair: repairLoop.repair || null };
       }
       if (repairLoop.status === "failed") {
         await throwAfterClearingConsumedPause(
@@ -1009,10 +1069,16 @@ export function createAgentRuntime({
   function preserveRepairContextOnRePause(previousResumeState, nextResumeState) {
     const ctx = previousResumeState?.repair_context;
     if (!ctx || !nextResumeState) return nextResumeState;
+    const priorRepairs = ctx.prior_tool_call_repairs ?? 0;
+    const attemptRepairs = nextResumeState.tool_call_repairs ?? ctx.tool_call_repairs ?? 0;
     return {
       ...nextResumeState,
       repair_context: {
         ...ctx,
+        prior_tool_call_repairs: priorRepairs,
+        tool_call_repairs: attemptRepairs,
+        total_tool_call_repairs: priorRepairs + attemptRepairs,
+        max_tool_call_repairs: nextResumeState.max_tool_call_repairs ?? ctx.max_tool_call_repairs ?? 0,
         all_tool_results: [
           ...(ctx.all_tool_results || []),
           ...((nextResumeState.tool_results || []).filter((result) => !(ctx.all_tool_results || []).includes(result)))
@@ -1160,6 +1226,7 @@ export function createAgentRuntime({
       source: "runtime",
       requested_by_step_id: `verify:${turn.id}`
     };
+    const effectiveMaxToolCallRepairs = Math.max(0, Math.trunc(Number(options.maxToolCallRepairs ?? maxToolCallRepairs ?? 0) || 0));
     return {
       turn_id: turn.id,
       message,
@@ -1173,6 +1240,8 @@ export function createAgentRuntime({
       tool_results: [],
       tool_schemas: [],
       max_iterations: 1,
+      tool_call_repairs: loop.toolCallRepairs || 0,
+      max_tool_call_repairs: effectiveMaxToolCallRepairs,
       options,
       context,
       permission_context: permissionContext,

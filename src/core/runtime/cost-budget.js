@@ -9,7 +9,10 @@ export function createCostBudget({ maxTokens = null, maxModelCalls = null, initi
         || ((usage.prompt_tokens || 0) + (usage.completion_tokens || 0));
       tokens += total;
     }
-    modelCalls += 1;
+    const callCount = Number.isFinite(modelResult?.attempt_count) && modelResult.attempt_count > 0
+      ? Math.trunc(modelResult.attempt_count)
+      : 1;
+    modelCalls += callCount;
   }
 
   function exceeded() {

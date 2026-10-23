@@ -136,7 +136,7 @@ export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY ||
         }
         throw error;
       }
-      return { response, timeout, ticket };
+      return { response, timeout, ticket, httpAttempts: attempts };
     }
   }
 
@@ -145,10 +145,12 @@ export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY ||
     const started = Date.now();
     let attempts = 0;
     let jsonAttempts = 0;
+    let totalHttpAttempts = 0;
     while (true) {
       attempts += 1;
       // fetch 阶段走有限退避重试;MODEL_TIMEOUT/调用方 abort 等不可重试错误直接穿传。
-      const { response, timeout, ticket } = await fetchChatWithRetry(request, options);
+      const { response, timeout, ticket, httpAttempts } = await fetchChatWithRetry(request, options);
+      totalHttpAttempts += (httpAttempts || 1);
       try {
         const latencyMs = Date.now() - started;
         let payload;
@@ -183,6 +185,13 @@ export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY ||
         ticket?.settle({ usage: processed.usage });
         // 重试逻辑不重复计费用:仅最终返回的 attempt 记录一次 usage。
         usageTracker.recordUsage({ usage: processed.usage, channel: request.route.channel, model: request.body.model, latency_ms: latencyMs });
+        if (totalHttpAttempts > 1) {
+          Object.defineProperty(processed, "attempt_count", {
+            value: totalHttpAttempts,
+            enumerable: false,
+            configurable: true
+          });
+        }
         return processed;
       } finally {
         timeout.cleanup();
