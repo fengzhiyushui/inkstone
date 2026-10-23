@@ -46,6 +46,8 @@ import { createIsoWorkerRunner } from "./core/orchestration/iso-worker-runner.js
 import { mergeSubtask } from "./core/orchestration/merge-back.js";
 import { removeIso, sweepOrphans } from "./core/orchestration/iso-workspace.js";
 import { filterToolSchemas } from "./core/orchestration/tool-profiles.js";
+import { createTaskPausedPersistence } from "./core/recovery/task-paused-persistence.js";
+import { createTaskDelegationService } from "./core/orchestration/task-delegation-service.js";
 
 export async function createKernel(root, options = {}) {
   const eventBus = options.eventBus || createEventBus();
@@ -86,6 +88,9 @@ export async function createKernel(root, options = {}) {
   const sharedPausedTurnStore = recoveryEnabled ? createPausedTurnStore() : null;
   const orchPersistence = recoveryEnabled
     ? createOrchestrationPersistence({ root, projectId, faults: options.recovery?.faults || options.recoveryFaults })
+    : null;
+  const taskPausedPersistence = recoveryEnabled
+    ? createTaskPausedPersistence({ root, projectId, faults: options.recovery?.faults || options.recoveryFaults })
     : null;
   let kernelDisposed = false;
 
@@ -221,6 +226,7 @@ export async function createKernel(root, options = {}) {
     await contextEngine.scan();
   }
 
+  let taskDelegationService = null;
   const runtimeConfig = {
     eventBus,
     sessionId,
@@ -249,6 +255,13 @@ export async function createKernel(root, options = {}) {
       context.turnId = executionOptions.turnId;
       context.toolCall = executionOptions.toolCall;
       context.phase = executionOptions.phase;
+      context.sessionId = executionOptions.sessionId || sessionId;
+      context.taskDelegationService = taskDelegationService;
+      if (executionOptions.parentToolNames) context.parentToolNames = executionOptions.parentToolNames;
+      if (executionOptions.parentBudget) context.parentBudget = executionOptions.parentBudget;
+      if (executionOptions.parentOptions) context.parentOptions = executionOptions.parentOptions;
+      if (executionOptions.scope) context.scope = executionOptions.scope;
+      if (executionOptions.taskDelegationResume) context.taskDelegationResume = executionOptions.taskDelegationResume;
       return context;
     },
     verifyMode: options.verifyMode || "auto",
@@ -259,6 +272,12 @@ export async function createKernel(root, options = {}) {
     maxModelCalls: options.limits?.maxModelCalls ?? null,
     modelTimeoutMs: options.limits?.modelTimeoutMs ?? null,
     maxToolCallRepairs: options.limits?.maxToolCallRepairs ?? 0,
+    taskDelegationHooks: {
+      onParentPaused: (approvalId) => taskDelegationService?.markParentPausePersisted?.(approvalId),
+      onParentDenied: (approvalId) => taskDelegationService?.denyTask?.(approvalId),
+      onParentCompleted: (approvalId) => taskDelegationService?.completeParentTaskPause?.(approvalId),
+      onInterrupt: () => taskDelegationService?.interruptAll?.()
+    },
     grantApprovalForToolCall: async (toolCall, approvalContext = {}) => {
       const securedCall = toolRegistry.secureToolCall(toolCall);
       const permissionContext = approvalContext.permission_context || approvalContext.options?.permission_context || null;
@@ -283,6 +302,18 @@ export async function createKernel(root, options = {}) {
   // Worker/Reviewer sub-agents reuse the same runtime config with a filtered tool
   // set + scoped context — agent-runtime itself is unchanged.
   const createRuntime = (overrides = {}) => createAgentRuntime({ ...runtimeConfig, ...overrides });
+  taskDelegationService = createTaskDelegationService({
+    createRuntime,
+    toolRegistry,
+    toolExecutor,
+    modelGateway,
+    eventBus,
+    sessionId,
+    projectId,
+    projectRoot: root,
+    taskPausedPersistence,
+    grantApprovalForToolCall: runtimeConfig.grantApprovalForToolCall
+  });
 
   const orch = normalizeOrchestration(options.orchestration);
   // C-Router: model-assisted tier for the ambiguous band (purpose = configured channel, short timeout).
@@ -547,6 +578,12 @@ export async function createKernel(root, options = {}) {
       policyContext.turnId = executionOptions.turnId;
       policyContext.signal = executionOptions.signal;
       policyContext.toolTimeoutMs = executionOptions.toolTimeoutMs ?? executionOptions.timeoutMs;
+      policyContext.sessionId = executionOptions.sessionId || sessionId;
+      policyContext.taskDelegationService = taskDelegationService;
+      if (executionOptions.parentToolNames) policyContext.parentToolNames = executionOptions.parentToolNames;
+      if (executionOptions.parentBudget) policyContext.parentBudget = executionOptions.parentBudget;
+      if (executionOptions.parentOptions) policyContext.parentOptions = executionOptions.parentOptions;
+      if (executionOptions.scope) policyContext.scope = executionOptions.scope;
       return toolExecutor.execute(toolCall, policyContext);
     }
   };
@@ -564,7 +601,9 @@ export async function createKernel(root, options = {}) {
         transactionJournal,
         orchPersistence,
         resumeOrchestration: (approvalId, decision) => orchestrator.resumeDurable(approvalId, decision),
-        sharedPausedTurnStore
+        sharedPausedTurnStore,
+        taskPausedPersistence,
+        rehydrateTaskDelegation: (info) => taskDelegationService?.rehydrateTaskDelegation?.(info)
       })
     : disabledRecoveryFacade();
 
@@ -585,6 +624,7 @@ export async function createKernel(root, options = {}) {
           try { scope.abort("turn was interrupted"); } catch {}
         }
         try { orchestrator.interrupt?.(); } catch {}
+        try { taskDelegationService?.interruptAll?.(); } catch {}
         return runtime.interrupt(...args);
       },
       listPaused: runtime.listPaused,
@@ -616,6 +656,7 @@ export async function createKernel(root, options = {}) {
         try { scope.abort("kernel disposed"); } catch {}
       }
       try { orchestrator.interrupt?.(); } catch {}
+      try { taskDelegationService?.abortActive?.(); } catch {}
       mcpTrials.dispose();
       mcpHub.inputBroker.dispose();
       try { await orchestrator.flushExperience?.(); } catch { /* best-effort */ }
@@ -623,6 +664,7 @@ export async function createKernel(root, options = {}) {
       unmountMcpCapabilities();
       try { await mcpHub?.stopAll?.(); } catch { /* best-effort */ }
       for (const unsubscribe of mcpSubscriptions) unsubscribe();
+      try { await sessionManager.flush?.(); } catch { /* best-effort */ }
       try { sessionManager.dispose?.(); } catch { /* best-effort */ }
       try { await projectLock?.release?.(); } catch { /* best-effort */ }
     },
@@ -716,7 +758,9 @@ async function createRecoveryServiceFacade({
   transactionJournal,
   orchPersistence = null,
   resumeOrchestration = null,
-  sharedPausedTurnStore = null
+  sharedPausedTurnStore = null,
+  taskPausedPersistence = null,
+  rehydrateTaskDelegation = null
 }) {
   const recoveryService = createRecoveryService({
     projectId,
@@ -738,7 +782,9 @@ async function createRecoveryServiceFacade({
     cancelPaused: async (approvalId) => runtime.cancelPaused(approvalId),
     transactionJournal,
     orchPersistence,
-    resumeOrchestration
+    resumeOrchestration,
+    taskPausedPersistence,
+    rehydrateTaskDelegation
   });
 
   if (!options.recovery?.skipStartupRecovery) {

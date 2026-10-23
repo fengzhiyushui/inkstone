@@ -1,4 +1,9 @@
 import { isOrchestrationWorkerSidecar, orchestrationResumeGate } from "../orchestration/orchestration-recovery-contract.js";
+import {
+  isTaskDelegationParentRecord,
+  isTaskChildWorkerRecord,
+  taskDelegationResumeGate
+} from "../orchestration/task-delegation-contract.js";
 
 export function createRecoveryService({
   projectId,
@@ -11,7 +16,9 @@ export function createRecoveryService({
   cancelPaused = null,
   transactionJournal = null,
   orchPersistence = null,
-  resumeOrchestration = null
+  resumeOrchestration = null,
+  taskPausedPersistence = null,
+  rehydrateTaskDelegation = null
 }) {
   let latestReport = null;
 
@@ -30,6 +37,24 @@ export function createRecoveryService({
       await inbox.upsert({ id: `rec_orch_${approvalId}`, type: "blocked_recovery", status: "blocked", source_id: approvalId,
         summary: `Blocked orchestration recovery: ${approvalId}`, evidence: { reason }, allowed_actions: ["cancel"] });
       await appendMarker("recovery:blocked", { item_id: `rec_orch_${approvalId}`, source_id: approvalId, reason });
+    }
+
+    async function blockTaskDelegation(approvalId, reason) {
+      blocked.push({ type: "paused_turn", source_id: approvalId, summary: `Blocked task delegation: ${approvalId}`, reason });
+      await inbox.upsert({
+        id: `rec_pause_${approvalId}`,
+        type: "blocked_recovery",
+        status: "blocked",
+        source_id: approvalId,
+        summary: `Blocked task delegation recovery: ${approvalId}`,
+        evidence: { reason },
+        allowed_actions: ["cancel"]
+      });
+      await appendMarker("recovery:blocked", {
+        item_id: `rec_pause_${approvalId}`,
+        source_id: approvalId,
+        reason
+      });
     }
 
     // Scan transaction journals
@@ -88,10 +113,11 @@ export function createRecoveryService({
       }
     }
 
-    // Scan paused sidecars. Orchestration-owned worker sidecars are deferred to the
-    // orchestration join below (never treated as single-agent — CST-4).
+    // Scan paused sidecars. Orchestration-owned worker sidecars and task-delegation parent
+    // sidecars are deferred to their respective joins below (never treated as single-agent — CST-4 / T14).
     const scanned = await paused.scan();
     const orchWorkers = new Map();   // approvalId -> valid orchestration worker sidecar
+    const taskParents = new Map();   // approvalId -> valid task delegation parent sidecar
     for (const item of scanned) {
       if (item.status === "corrupt") {
         found.push({ type: "paused_turn", summary: `Corrupt paused sidecar: ${item.approval_id}` });
@@ -102,7 +128,12 @@ export function createRecoveryService({
         continue;
       }
       if (item.status === "consumed") continue;
+      if (isTaskChildWorkerRecord(item)) {
+        await blockTaskDelegation(item.approval_id, "orphaned task child worker sidecar in parent paused directory");
+        continue;
+      }
       if (isOrchestrationWorkerSidecar(item)) { orchWorkers.set(item.approval_id, item); continue; }  // defer to join
+      if (isTaskDelegationParentRecord(item)) { taskParents.set(item.approval_id, item); continue; }  // defer to task delegation join
       // Valid single-agent paused record (unchanged path)
       found.push({ type: "paused_turn", summary: `Paused approval: ${item.approval_id}` });
       pausedTurnStore.restore(item);
@@ -112,6 +143,15 @@ export function createRecoveryService({
       await appendMarker("turn:rehydrated", { approval_id: item.approval_id, turn_id: item.turn_id, original_session_id: item.session_id, marker_status: "ok" });
       done.push({ type: "paused_turn", summary: `Rehydrated approval: ${item.approval_id}` });
       next.push(`/recovery resume rec_pause_${item.approval_id}`);
+    }
+
+    // Pre-scan task-paused sidecars so both single-turn task delegation and orchestrated task delegation can join
+    const taskScanned = taskPausedPersistence ? await taskPausedPersistence.scan() : [];
+    const taskSidecars = new Map();
+    const handledTaskApprovals = new Set();
+    for (const tc of taskScanned) {
+      if (tc.status === "consumed") continue;
+      taskSidecars.set(tc.approval_id, tc);
     }
 
     // Orchestration join: match each orchestration sidecar to its worker sidecar under
@@ -126,6 +166,20 @@ export function createRecoveryService({
       if (oc.status === "corrupt") { await blockOrchestration(approvalId, oc.reason || "corrupt orchestration sidecar"); continue; }
       const gate = orchestrationResumeGate({ sidecar: oc, workerRecord });
       if (!gate.ok) { await blockOrchestration(approvalId, gate.reason); continue; }
+      if (isTaskDelegationParentRecord(workerRecord)) {
+        handledTaskApprovals.add(approvalId);
+        const childSidecar = taskSidecars.get(approvalId) || null;
+        if (childSidecar?.status === "corrupt") {
+          await blockOrchestration(approvalId, childSidecar.reason || "corrupt task child sidecar");
+          continue;
+        }
+        const taskGate = taskDelegationResumeGate({ parentRecord: workerRecord, childSidecar });
+        if (!taskGate.ok) {
+          await blockOrchestration(approvalId, taskGate.reason);
+          continue;
+        }
+        rehydrateTaskDelegation?.({ parentRecord: workerRecord, childSidecar, mode: taskGate.mode });
+      }
       // OK: restore the worker turn into the shared store so the rebuilt worker's approve sees it.
       pausedTurnStore.restore(workerRecord);
       const completed = (oc.allCollected || []).filter((c) => c.status === "complete").length;
@@ -145,6 +199,60 @@ export function createRecoveryService({
       await inbox.upsert({ id: `rec_pause_${approvalId}`, type: "blocked_recovery", status: "blocked", source_id: approvalId,
         summary: `Blocked orphan orchestration worker: ${approvalId}`, evidence: { reason }, allowed_actions: ["cancel"] });
       await appendMarker("recovery:blocked", { item_id: `rec_pause_${approvalId}`, source_id: approvalId, reason });
+    }
+
+    // Task delegation join (R18-02 T13, T14, T15): match each parent task_delegation record with its task-paused child sidecar.
+    for (const [approvalId, childSidecar] of taskSidecars) {
+      if (handledTaskApprovals.has(approvalId)) continue;
+      handledTaskApprovals.add(approvalId);
+      const parentRecord = taskParents.get(approvalId) || null;
+      if (childSidecar.status === "corrupt") {
+        found.push({ type: "paused_turn", summary: `Corrupt task child sidecar: ${approvalId}` });
+        await blockTaskDelegation(approvalId, childSidecar.reason || "corrupt task child sidecar");
+        continue;
+      }
+      const gate = taskDelegationResumeGate({ parentRecord, childSidecar });
+      if (!gate.ok) {
+        found.push({ type: "paused_turn", summary: `Blocked task delegation: ${approvalId}` });
+        await blockTaskDelegation(approvalId, gate.reason);
+        continue;
+      }
+      rehydrateTaskDelegation?.({ parentRecord, childSidecar, mode: gate.mode });
+      pausedTurnStore.restore(parentRecord);
+      found.push({ type: "paused_turn", summary: `Paused task delegation approval: ${approvalId}` });
+      await inbox.upsert({
+        id: `rec_pause_${approvalId}`,
+        type: "paused_turn",
+        status: "pending",
+        source_id: approvalId,
+        summary: `Paused ${parentRecord.surface || "turn"}: ${parentRecord.approval?.summary || "task approval required"}`,
+        evidence: { sidecar_path: paused.baseDir, child_id: childSidecar.child_id, state: childSidecar.state },
+        allowed_actions: ["resume", "cancel"],
+        metadata: {
+          turn_id: parentRecord.turn_id,
+          autonomy: parentRecord.permission_context?.autonomy || parentRecord.turn?.autonomy,
+          surface: parentRecord.surface,
+          child_id: childSidecar.child_id
+        }
+      });
+      await appendMarker("turn:rehydrated", {
+        approval_id: approvalId,
+        turn_id: parentRecord.turn_id,
+        original_session_id: parentRecord.session_id,
+        marker_status: "ok"
+      });
+      done.push({ type: "paused_turn", summary: `Rehydrated task delegation approval: ${approvalId}` });
+      next.push(`/recovery resume rec_pause_${approvalId}`);
+    }
+
+    // Orphan parent task delegation records with no matching child sidecar -> blocked (T14)
+    for (const [approvalId] of taskParents) {
+      if (handledTaskApprovals.has(approvalId)) continue;
+      const reason = taskPausedPersistence
+        ? "orphaned parent task delegation sidecar (task child sidecar missing)"
+        : "task delegation recovery persistence unavailable";
+      found.push({ type: "paused_turn", summary: `Blocked orphan parent task delegation: ${approvalId}` });
+      await blockTaskDelegation(approvalId, reason);
     }
 
     latestReport = { found, done, blocked, next };
@@ -234,8 +342,11 @@ export function createRecoveryService({
     // Check if this is a blocked corrupt sidecar
     const item = await inbox.get(id);
     if (item && item.type === "blocked_recovery" && item.status === "blocked") {
-      // Quarantine the corrupt sidecar
+      // Quarantine the corrupt sidecar (both parent paused and task-paused if present)
       const result = await paused.quarantine(approvalId, "operator cancelled corrupt sidecar");
+      if (taskPausedPersistence) {
+        await taskPausedPersistence.quarantine(approvalId, "operator cancelled blocked task recovery").catch(() => {});
+      }
       await inbox.mark(id, { status: "cancelled" });
       return { status: result.status, item, result };
     }
