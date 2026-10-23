@@ -393,6 +393,7 @@ export function createAgentRuntime({
 
       lifecycle = transitionLifecycle(lifecycle, { to: "execute", reason: "approval resolved", channel: "act" });
       const resumeOptions = record.resume_state.options || {};
+      const resumeModelGateway = resumeOptions.modelGateway || modelGateway;
       // 暂停时已消耗的预算续扣(executor-loop 在 resume_state.budget_spent 落盘),
       // 避免审批暂停/续跑把已计 token/调用次数清零而实际超限。
       const budgetSpent = record.resume_state.budget_spent || null;
@@ -426,7 +427,7 @@ export function createAgentRuntime({
         .filter(Boolean);
       const loop = await runAfterClearingConsumedPause(approvalId, () => resumeExecutorLoop({
         resumeState: record.resume_state,
-        modelGateway,
+        modelGateway: resumeModelGateway,
         executeTool: toolExecutorFor(signal),
         createPolicyContext: ({ turnId, toolCall, phase }) => createPolicyContext({
           ...policyOptionsFromPermissionContext(recordPermissionContext, { autonomy: recordPermissionContext.autonomy || record.turn.autonomy }),
@@ -498,7 +499,7 @@ export function createAgentRuntime({
           turnId: record.turn_id,
           userMessage: record.turn.user_message,
           classification: record.resume_state.classification || { task_type: "edit" },
-          modelGateway,
+          modelGateway: resumeModelGateway,
           toolSchemas: typeof toolSchemas === "function" ? toolSchemas() : toolSchemas,
           executeTool: toolExecutorFor(signal),
           createPolicyContext: ({ turnId, toolCall, phase }) => createPolicyContext({
@@ -591,7 +592,8 @@ export function createAgentRuntime({
         signal,
         context: record.resume_state.context || null,
         permissionContext: recordPermissionContext,
-        budget
+        budget,
+        modelGateway: resumeModelGateway
       }));
       if (repaired.status === "awaiting_approval") {
         if (repaired.approval?.id && repaired.resume_state) {
@@ -777,7 +779,7 @@ export function createAgentRuntime({
         turnId: record.turn_id,
         userMessage: record.turn.user_message,
         classification: record.resume_state.classification || { task_type: "edit" },
-        modelGateway,
+        modelGateway: (record.resume_state.options || {}).modelGateway || modelGateway,
         toolSchemas: typeof toolSchemas === "function" ? toolSchemas() : toolSchemas,
         executeTool: toolExecutorFor(signal),
         createPolicyContext: ({ turnId, toolCall, phase }) => createPolicyContext({
@@ -950,7 +952,7 @@ export function createAgentRuntime({
         turnId: record.turn_id,
         userMessage: record.turn.user_message,
         classification: record.resume_state.classification || { task_type: "edit" },
-        modelGateway,
+        modelGateway: (record.resume_state.options || {}).modelGateway || modelGateway,
         toolSchemas: typeof toolSchemas === "function" ? toolSchemas() : toolSchemas,
         executeTool: toolExecutorFor(signal),
         createPolicyContext: ({ turnId, toolCall, phase }) => createPolicyContext({

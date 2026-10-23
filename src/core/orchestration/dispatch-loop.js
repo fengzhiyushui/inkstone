@@ -125,6 +125,9 @@ async function processSubtask(st, { workerFactory, makeReviewer, maxWorkerAttemp
       if (e.name === "AbortError" || scope?.signal?.aborted) {
         return { control: "cancelled" };
       }
+      if (e.code === "BUDGET_EXCEEDED" || scope?.budget?.exceeded()) {
+        return { entry: { st, status: "failed", lastFeedback: "budget exceeded" } };
+      }
       throw e;
     }
     if (scope?.signal?.aborted) return { control: "cancelled" };

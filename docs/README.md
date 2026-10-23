@@ -138,6 +138,8 @@ docs/
 - [v1.2.0 agent-findings-p2](specs/backend/2026-07-17-v1.2.0-agent-findings-p2-design.md)
 - [v1.3.0 agent-findings-p3](specs/backend/2026-07-26-v1.3.0-agent-findings-p3-design.md)
 - [v1.6.3 agent-runtime refactor](specs/backend/2026-08-09-v1.6.3-agent-runtime-refactor-design.md) — 阶段 1–2 成果；3–4 延后至大版本
+- [v1.18 r18-01 aggregate-budget-contract](specs/backend/2026-10-07-v1.18-r18-01-aggregate-budget-contract.md) — 请求级编排总预算、未知 usage 负债、全树取消与恢复续扣契约
+- [v1.18.0 runtime-closure](specs/backend/2026-10-23-v1.18.0-runtime-closure-design.md) — 运行能力闭环（编排总预算、真实 `task` 子委派与恢复、`repair` 有界语法重试、安全加固）
 
 ### specs/frontend
 - [v2-14 gui-workbench-branch-rewind](specs/frontend/2026-05-31-v2-14-gui-workbench-branch-rewind-design.md)
@@ -180,7 +182,7 @@ docs/
 - [c1+c2](plans/backend/2026-06-27-v3-phase-c1-c2-orchestration.md) · [c3](plans/backend/2026-06-27-v3-phase-c3-parallel-isolation.md) · [c4](plans/backend/2026-06-27-v3-phase-c4-experience-memory.md) · [c5](plans/backend/2026-06-27-v3-phase-c5-replan-resume.md) · [c-router](plans/backend/2026-06-27-v3-phase-c-router-tiered.md) · [c-durable](plans/backend/2026-06-27-v3-phase-c-durable-orchestration-recovery.md)
 
 **版本收口**
-- [v1.2.0 findings](plans/backend/2026-07-16-v1.2.0-agent-findings-p2.md) · [v1.3.0 findings](plans/backend/2026-07-26-v1.3.0-agent-findings-p3.md) · [v1.6 backlog](plans/backend/2026-08-09-v1.6-backlog-closure.md)
+- [v1.2.0 findings](plans/backend/2026-07-16-v1.2.0-agent-findings-p2.md) · [v1.3.0 findings](plans/backend/2026-07-26-v1.3.0-agent-findings-p3.md) · [v1.6 backlog](plans/backend/2026-08-09-v1.6-backlog-closure.md) · [v1.18.0 runtime-closure](plans/backend/2026-10-23-v1.18.0-runtime-closure.md)
 
 ### plans/frontend
 - [v2-5 interface-migration](plans/frontend/2026-05-30-v2-5-interface-migration.md) · [v2-14](plans/frontend/2026-05-31-v2-14-gui-workbench-branch-rewind.md) · [v2-15](plans/frontend/2026-05-31-v2-15-natural-agent-workbench.md) · [v2-16](plans/frontend/2026-05-31-v2-16-gui-interaction-hardening.md) · [v2 workbench](plans/frontend/2026-05-31-v2-frontend-workbench-redesign.md)
@@ -193,6 +195,6 @@ docs/
 
 ## 版本与里程碑
 
-当前产品版本以 [`package.json`](../package.json) 与 [`CHANGELOG.md`](CHANGELOG.md) 为准（**v1.17.0 preview**，2026-10-06）。`package.json`、`package-lock.json`、`src/theme.js`、`gui/src/App.jsx` 四处版本应一致。
+当前产品版本以 [`package.json`](../package.json) 与 [`CHANGELOG.md`](CHANGELOG.md) 为准（**v1.18.0 preview**，2026-10-23）。`package.json`、`package-lock.json`、`src/theme.js`、`gui/src/App.jsx` 四处版本应一致。
 
 开发历程简记：V1 原型 → V2 干净运行时（内核统一、工具平面、编辑回滚、验证修复、上下文、分支 rewind、持久化恢复、护栏）→ V3 三支柱（语义上下文、多智能体调度、三端前端）→ v1.x 产品化（v1.4 会话优先 UI，v1.8 工学换肤与壳层重构）。

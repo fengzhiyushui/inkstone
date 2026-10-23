@@ -17,7 +17,7 @@ import SensitiveNoticeModal from "./components/v4/SensitiveNoticeModal.jsx";
 import ConfirmModal from "./components/v4/ConfirmModal.jsx";
 import McpInputRequests from "./components/v4/McpInputRequests.jsx";
 
-const VERSION = "1.17.0";
+const VERSION = "1.18.0";
 
 export default function App() {
   const [state, dispatch] = useWorkbench();

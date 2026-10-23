@@ -63,7 +63,9 @@ export async function runRepairExecutor({
     if (signal?.aborted) {
       throw abortFromSignal(signal);
     }
-    const over = budget?.exceeded?.() || options?.scope?.budget?.exceeded?.();
+    const over = syntaxAttempt > 0
+      ? (budget?.exceeded?.() || options?.scope?.budget?.exceeded?.())
+      : budget?.exceeded?.();
     if (over) {
       return {
         status: "stopped",
@@ -86,7 +88,7 @@ export async function runRepairExecutor({
         signal
       });
     } catch (error) {
-      if (error?.code === "BUDGET_EXCEEDED") {
+      if (error?.code === "BUDGET_EXCEEDED" && syntaxAttempt > 0) {
         const overReason = error.details || budget?.exceeded?.() || options?.scope?.budget?.exceeded?.() || { reason: "budget_exceeded" };
         return {
           status: "stopped",

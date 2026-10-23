@@ -214,7 +214,7 @@ test("B02: aggregate usage across all roles (router, plan, worker, reviewer, rep
 });
 
 // B03: Worker 内 verify/repair 和 task 契约
-test("B03: worker internal verify/repair calls stay within aggregate scope; task delegation cross-acceptance deferred to R18-04", async (t) => {
+test("B03: worker internal verify/repair and task delegation calls stay within aggregate scope", async (t) => {
   const root = await tmpRoot();
   const BROKEN_DIFF = "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+broken";
   const REPAIR_DIFF = "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-broken\n+fixed";
@@ -393,7 +393,60 @@ test("B03: worker internal verify/repair calls stay within aggregate scope; task
   assert.equal(snapCap.reserved_tokens, 0);
   assert.equal(snapCap.unknown_usage_attempts, 0);
   assert.equal(await fs.readFile(path.join(rootCap, "a.txt"), "utf8"), "broken\n", "edit was applied but no repair side effect occurred");
-  // Note: Task tool offspring delegation is explicitly cross-accepted in R18-04
+
+  // Task delegation inside shared RequestScope bills under role "task" on the same RequestBudget
+  const rootTask = await tmpRoot();
+  await fs.writeFile(path.join(rootTask, "target.txt"), "TASK_TARGET_DATA\n");
+  const budgetTask = createRequestBudget({ maxModelCalls: 10, maxTokens: 5000 });
+  const scopeTask = createRequestScope({ budget: budgetTask });
+  let taskParentCalls = 0;
+  let taskChildCalls = 0;
+  const gatewayTask = {
+    _isDeepSeekGateway: false,
+    invoke: async (msgs) => {
+      const isChild = msgs.some((m) => typeof m.content === "string" && m.content.includes("[B03_TASK_CHILD]"));
+      if (isChild) {
+        taskChildCalls += 1;
+        if (taskChildCalls === 1) {
+          return {
+            content: "Child reading target.txt",
+            tool_calls: [{ id: "b03_c_read", name: "read", arguments: { path: "target.txt" } }],
+            usage: { total_tokens: 12 }
+          };
+        }
+        return { content: "Child read TASK_TARGET_DATA", tool_calls: [], usage: { total_tokens: 8 } };
+      }
+      taskParentCalls += 1;
+      if (taskParentCalls === 1) {
+        return {
+          content: "Parent delegating task",
+          tool_calls: [{ id: "b03_p_task", name: "task", arguments: { prompt: "[B03_TASK_CHILD] read target.txt", tools: ["read"] } }],
+          usage: { total_tokens: 20 }
+        };
+      }
+      return { content: "Parent finished with child result", tool_calls: [], usage: { total_tokens: 10 } };
+    }
+  };
+  const kernelTask = await createKernel(rootTask, {
+    sessionLog: null,
+    branchStore: null,
+    verifyMode: "off",
+    modelGateway: gatewayTask
+  });
+  t.after(() => kernelTask.dispose());
+  const scopedGwTask = scopeTask.bindGateway(gatewayTask, { role: "worker", subtaskId: "st_parent" });
+  const taskRes = await kernelTask.runtime.send("Run task delegation in shared scope", {
+    autonomy: "auto",
+    modelGateway: scopedGwTask,
+    scope: scopeTask,
+    signal: scopeTask.signal
+  });
+  assert.equal(taskRes.status, "complete");
+  const snapTask = budgetTask.snapshot();
+  assert.equal(snapTask.model_calls, 4, "2 parent worker calls + 2 child task calls = 4 total");
+  assert.equal(snapTask.tokens, 50, "20 + 10 parent tokens + 12 + 8 child tokens = 50 total");
+  assert.deepEqual(snapTask.by_role.worker, { calls: 2, tokens: 30 });
+  assert.deepEqual(snapTask.by_role.task, { calls: 2, tokens: 20 });
 });
 
 // B04: 网关 429 和 JSON 空回复重试物理计数与配额保护

@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
+import { writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { mkdtemp } from "../helpers/tmp.js";
 import { createKernel } from "../../src/index.js";
 import { createAgentRuntime } from "../../src/core/runtime/agent-runtime.js";
 import { createTaskPausedPersistence } from "../../src/core/recovery/task-paused-persistence.js";
