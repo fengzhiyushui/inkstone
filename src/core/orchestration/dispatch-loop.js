@@ -79,10 +79,16 @@ export async function resumeDispatchLoop(roundResume, decision) {
 }
 
 async function finishPartial(collected, synthesizer, stopped_reason, scope = null) {
-  if (scope?.signal?.aborted) {
-    return { status: "cancelled", content: "Orchestration was cancelled.", collected, stopped_reason: "aborted" };
+  const cancelled = () => ({ status: "cancelled", content: "Orchestration was cancelled.", collected, stopped_reason: "aborted" });
+  if (scope?.signal?.aborted) return cancelled();
+  let content;
+  try {
+    content = await synthesizer.synthesize({ collected, scope, signal: scope?.signal });
+  } catch (error) {
+    if (error?.name === "AbortError" || scope?.signal?.aborted) return cancelled();
+    throw error;
   }
-  const content = await synthesizer.synthesize({ collected, scope, signal: scope?.signal });
+  if (scope?.signal?.aborted) return cancelled();
   return stopped_reason ? { status: "complete", content, collected, stopped_reason } : { status: "complete", content, collected };
 }
 

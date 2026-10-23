@@ -214,13 +214,14 @@ test("B02: aggregate usage across all roles (router, plan, worker, reviewer, rep
 });
 
 // B03: Worker 内 verify/repair 和 task 契约
-test("B03: worker internal verify/repair calls stay within aggregate scope; task delegation cross-acceptance deferred to R18-04", async () => {
+test("B03: worker internal verify/repair calls stay within aggregate scope; task delegation cross-acceptance deferred to R18-04", async (t) => {
   const root = await tmpRoot();
   const BROKEN_DIFF = "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+broken";
   const REPAIR_DIFF = "--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-broken\n+fixed";
   await fs.writeFile(path.join(root, "a.txt"), "old\n");
 
   let workerInvokeCount = 0;
+  let repairInvokeCount = 0;
   let testRuns = 0;
   const testResults = [
     { exit_code: 1, text: "verification failed" },
@@ -258,6 +259,7 @@ test("B03: worker internal verify/repair calls stay within aggregate scope; task
     invoke: async (msgs, opts) => {
       workerInvokeCount++;
       if (opts.purpose === "repair") {
+        repairInvokeCount++;
         return { content: "", tool_calls: [{ id: "call_repair", name: "edit", arguments: { diff: REPAIR_DIFF, prompt: "repair a" } }], usage: { total_tokens: 30 } };
       }
       if (workerInvokeCount === 1) {
@@ -282,6 +284,7 @@ test("B03: worker internal verify/repair calls stay within aggregate scope; task
     maxRepairAttempts: 1,
     modelGateway: customGateway
   });
+  t.after(() => kernel.dispose());
 
   // Rebuild worker with scope binding
   const scopedGw = scope.bindGateway(customGateway, { role: "worker", subtaskId: "st_verify" });
@@ -297,6 +300,8 @@ test("B03: worker internal verify/repair calls stay within aggregate scope; task
   assert.equal(workerResult.status, "complete");
   assert.equal(workerResult.verification.status, "passed");
   assert.equal(workerResult.repair.status, "complete");
+  assert.equal(repairInvokeCount, 1, "one repair request reached the gateway");
+  assert.equal(testRuns, 2, "verification failed before repair and passed afterwards");
 
   const snap = budget.snapshot();
   assert.equal(snap.model_calls, 3, "worker edit (1), completion (1), and repair (1) calls exactly equal 3");
@@ -306,22 +311,26 @@ test("B03: worker internal verify/repair calls stay within aggregate scope; task
   assert.equal(workerInvokeCount, 3, "gateway was invoked exactly three times without duplicate billing");
   assert.equal(await fs.readFile(path.join(root, "a.txt"), "utf8"), "fixed\n");
 
-  await kernel.dispose();
-
-  // Subtest: Verify that budget exhaustion blocks repair attempt
+  // Complete edit and completion first, then exhaust the shared budget at repair.
   const rootCap = await tmpRoot();
   await fs.writeFile(path.join(rootCap, "a.txt"), "old\n");
-  const budgetCap = createRequestBudget({ maxModelCalls: 1, maxTokens: 5000 });
+  const budgetCap = createRequestBudget({ maxModelCalls: 2, maxTokens: 5000 });
   const scopeCap = createRequestScope({ budget: budgetCap });
   let capWorkerInvokes = 0;
+  let capRepairInvokes = 0;
+  let repairBoundaryAttempts = 0;
   const customGatewayCap = {
     _isDeepSeekGateway: false,
     invoke: async (msgs, opts) => {
       capWorkerInvokes++;
       if (opts.purpose === "repair") {
+        capRepairInvokes++;
         return { content: "", tool_calls: [{ id: "call_repair", name: "edit", arguments: { diff: REPAIR_DIFF, prompt: "repair a" } }], usage: { total_tokens: 30 } };
       }
-      return { content: "", tool_calls: [{ id: "call_edit", name: "edit", arguments: { diff: BROKEN_DIFF, prompt: "break a" } }], usage: { total_tokens: 25 } };
+      if (capWorkerInvokes === 1) {
+        return { content: "", tool_calls: [{ id: "call_edit", name: "edit", arguments: { diff: BROKEN_DIFF, prompt: "break a" } }], usage: { total_tokens: 25 } };
+      }
+      return { content: "worker task completed", tool_calls: [], usage: { total_tokens: 15 } };
     }
   };
   let testRunsCap = 0;
@@ -344,7 +353,15 @@ test("B03: worker internal verify/repair calls stay within aggregate scope; task
     maxRepairAttempts: 1,
     modelGateway: customGatewayCap
   });
+  t.after(() => kernelCap.dispose());
+  const verificationsCap = [];
+  kernelCap.eventBus.subscribe("verification:result", ({ result }) => verificationsCap.push(result));
   const scopedGwCap = scopeCap.bindGateway(customGatewayCap, { role: "worker", subtaskId: "st_cap" });
+  const invokeScopedCap = scopedGwCap.invoke.bind(scopedGwCap);
+  scopedGwCap.invoke = async (messages, options) => {
+    if (options.purpose === "repair") repairBoundaryAttempts++;
+    return invokeScopedCap(messages, options);
+  };
   await assert.rejects(
     kernelCap.runtime.send("fix a.txt", {
       autonomy: "auto",
@@ -353,10 +370,29 @@ test("B03: worker internal verify/repair calls stay within aggregate scope; task
       scope: scopeCap,
       signal: scopeCap.signal
     }),
-    (err) => err.code === "BUDGET_EXCEEDED" || err.message?.includes("budget") || err.message?.includes("verification failed")
+    (err) => {
+      assert.equal(err.code, "BUDGET_EXCEEDED");
+      assert.deepEqual(err.details, {
+        reason: "max_model_calls", model_calls: 2, max_model_calls: 2, reserved_calls: 0
+      });
+      return true;
+    }
   );
-  assert.equal(capWorkerInvokes, 1, "repair was blocked because budget cap (maxModelCalls: 1) was exhausted");
-  await kernelCap.dispose();
+  assert.equal(testRunsCap, 1, "verification ran and failed before the repair budget check");
+  assert.deepEqual(verificationsCap.map(({ status, exit_code }) => ({ status, exit_code })), [
+    { status: "failed", exit_code: 1 }
+  ]);
+  assert.equal(repairBoundaryAttempts, 1, "repair reached the gateway budget boundary");
+  assert.equal(capWorkerInvokes, 2, "only edit and completion reached the underlying gateway");
+  assert.equal(capRepairInvokes, 0, "the exhausted budget blocked repair before an outbound call");
+  const snapCap = budgetCap.snapshot();
+  assert.equal(snapCap.model_calls, 2);
+  assert.equal(snapCap.tokens, 40, "only edit (25) and completion (15) were billed");
+  assert.deepEqual(snapCap.by_role, { worker: { calls: 2, tokens: 40 } });
+  assert.equal(snapCap.reserved_calls, 0);
+  assert.equal(snapCap.reserved_tokens, 0);
+  assert.equal(snapCap.unknown_usage_attempts, 0);
+  assert.equal(await fs.readFile(path.join(rootCap, "a.txt"), "utf8"), "broken\n", "edit was applied but no repair side effect occurred");
   // Note: Task tool offspring delegation is explicitly cross-accepted in R18-04
 });
 

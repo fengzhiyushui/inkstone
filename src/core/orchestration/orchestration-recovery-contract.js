@@ -51,6 +51,14 @@ export function validateOrchestrationSidecar(json) {
   return { ok: true };
 }
 
+function unknownUsageRecoveryBlockReason(budget) {
+  if (!Number.isFinite(budget.quotaTokens) || !(budget.unknownUsageAttempts > 0)) return null;
+  if (Number.isFinite(budget.unknownUsageTokens) && budget.unknownUsageTokens > 0) return null;
+  // Older role totals omit some unknown charges, so they cannot establish the
+  // remaining token quota. Keep the record blocked instead of inferring an amount.
+  return "unknown usage amount missing or invalid: cannot safely verify remaining token quota";
+}
+
 // Authoritative resume gate (CST-6 version + CST-7 ownership). Used by both the
 // scan-time presentation (M6) and the resume-time gate (M4). Fails closed.
 export function orchestrationResumeGate({ sidecar, workerRecord }) {
@@ -68,6 +76,8 @@ export function orchestrationResumeGate({ sidecar, workerRecord }) {
   if (hasFiniteQuota && isLegacyUnmetered) {
     return { ok: false, reason: "legacy unmetered budget: cannot safely verify remaining quota" };
   }
+  const unknownUsageIssue = unknownUsageRecoveryBlockReason(b);
+  if (unknownUsageIssue) return { ok: false, reason: unknownUsageIssue };
 
   return { ok: true };
 }
@@ -152,6 +162,13 @@ export function deserializeOrchestrationState(json) {
 
 export function budgetContinuation(budgetJson, rootJson = {}) {
   const b = budgetJson || {};
+  // Direct deserialization must obey the same rule as startup and resume gates.
+  const unknownUsageIssue = unknownUsageRecoveryBlockReason(b);
+  if (unknownUsageIssue) {
+    const error = new Error(`orchestration recovery blocked: ${unknownUsageIssue}`);
+    error.code = "ORCH_RECOVERY_BLOCKED";
+    throw error;
+  }
   const isLegacy = Boolean(
     rootJson && (rootJson.taskId || rootJson.approvalId) &&
     b.settledAttempts === undefined &&
@@ -186,6 +203,7 @@ export function budgetContinuation(budgetJson, rootJson = {}) {
   if (b.unknownUsageTokens != null && b.unknownUsageTokens > 0) {
     recoveredUnknownTokens = b.unknownUsageTokens;
   } else if (continuation.initialUnknownUsageAttempts > 0) {
+    // Compatibility estimate only: the guard above excludes finite token quotas.
     const byRoleTokens = Object.values(b.byRole || {}).reduce((acc, r) => acc + (r?.tokens || 0), 0);
     const fb = b.fallbackTokensPerUnknown || 500;
     if (byRoleTokens > (b.spentTokens || 0)) {
