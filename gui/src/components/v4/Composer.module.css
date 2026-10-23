@@ -151,7 +151,7 @@
   display: inline-flex;
   flex-shrink: 1;
   min-width: 0;
-  max-width: 180px;
+  max-width: 220px;
 }
 
 .modelPill {
@@ -178,7 +178,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 90px;
+  max-width: 140px;
   min-width: 0;
 }
 .modelPill:hover {
