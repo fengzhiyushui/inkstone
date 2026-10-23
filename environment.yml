@@ -2,5 +2,6 @@ name: inkstone
 channels:
   - defaults
 dependencies:
-  - python=3.12
-  - nodejs
+  - python>=3.12
+  - certifi>=2026.10.19
+  - nodejs>=24.22.1

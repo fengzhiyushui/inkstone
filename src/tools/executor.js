@@ -31,6 +31,9 @@ export function createToolExecutor({ registry, permissionEngine, eventBus = null
     try {
       securedCall = registry.secureToolCall(toolCall);
     } catch (error) {
+      if (error?.code === "RECOVERY_FAULT") {
+        throw error;
+      }
       return publishResult(createToolResult({
         callId: toolCall.id,
         status: "error",
@@ -39,40 +42,47 @@ export function createToolExecutor({ registry, permissionEngine, eventBus = null
       }));
     }
 
-    publish("tool:call", { call: securedCall, tool: publicTool(def) });
+    const isTaskDelegationChildResume =
+      def.name === "task" &&
+      Boolean(context.taskDelegationResume) &&
+      context.taskDelegationResume.taskDelegation?.parent_tool_call_id === toolCall.id;
 
-    const permission = permissionEngine.decide(securedCall, context);
-    publish("permission:decision", { call_id: toolCall.id, tool: def.name, category: securedCall.category, permission });
+    if (!isTaskDelegationChildResume) {
+      publish("tool:call", { call: securedCall, tool: publicTool(def) });
 
-    if (permission.decision === "deny") {
-      return publishResult(createToolResult({
-        callId: toolCall.id,
-        status: "denied",
-        content: [{ type: "error", text: `Permission denied: ${permission.matched_rule}` }],
-        metadata: { permission },
-        durationMs: Date.now() - started
-      }));
-    }
+      const permission = permissionEngine.decide(securedCall, context);
+      publish("permission:decision", { call_id: toolCall.id, tool: def.name, category: securedCall.category, permission });
 
-    if (permission.decision === "ask") {
-      const approval = createApprovalRequest({
-        turnId: context.turnId || "turn_unknown",
-        kind: "tool",
-        risk: def.risk_level,
-        summary: approvalSummary(def.name, securedCall.params),
-        detailsRef: toolCall.id,
-        // v1.13.1:把风险等级带到审批请求上,三端据此决定是否提供
-        // "本项目/永久" 这类持久放行(destructive 一律只允许逐次审批)。
-        category: securedCall.category
-      });
-      publish("approval:requested", { approval, call: securedCall });
-      return publishResult(createToolResult({
-        callId: toolCall.id,
-        status: "approval_required",
-        content: [{ type: "text", text: approval.summary }],
-        metadata: { permission, approval },
-        durationMs: Date.now() - started
-      }));
+      if (permission.decision === "deny") {
+        return publishResult(createToolResult({
+          callId: toolCall.id,
+          status: "denied",
+          content: [{ type: "error", text: `Permission denied: ${permission.matched_rule}` }],
+          metadata: { permission },
+          durationMs: Date.now() - started
+        }));
+      }
+
+      if (permission.decision === "ask") {
+        const approval = createApprovalRequest({
+          turnId: context.turnId || "turn_unknown",
+          kind: "tool",
+          risk: def.risk_level,
+          summary: approvalSummary(def.name, securedCall.params),
+          detailsRef: toolCall.id,
+          // v1.13.1:把风险等级带到审批请求上,三端据此决定是否提供
+          // "本项目/永久" 这类持久放行(destructive 一律只允许逐次审批)。
+          category: securedCall.category
+        });
+        publish("approval:requested", { approval, call: securedCall });
+        return publishResult(createToolResult({
+          callId: toolCall.id,
+          status: "approval_required",
+          content: [{ type: "text", text: approval.summary }],
+          metadata: { permission, approval },
+          durationMs: Date.now() - started
+        }));
+      }
     }
 
     try {
@@ -90,6 +100,9 @@ export function createToolExecutor({ registry, permissionEngine, eventBus = null
         durationMs: Date.now() - started
       }));
     } catch (error) {
+      if (error?.code === "RECOVERY_FAULT") {
+        throw error;
+      }
       return publishResult(createToolResult({
         callId: toolCall.id,
         status: "error",
@@ -105,6 +118,11 @@ export function createToolExecutor({ registry, permissionEngine, eventBus = null
   }
 
   function publishResult(result) {
+    if (result?.metadata && Object.prototype.hasOwnProperty.call(result.metadata, "task_delegation")) {
+      const { task_delegation, ...publicMetadata } = result.metadata;
+      publish("tool:result", { result: { ...result, metadata: publicMetadata } });
+      return result;
+    }
     publish("tool:result", { result });
     return result;
   }

@@ -14,6 +14,17 @@
 
 ---
 
+## v1.18.0 — 2026-10-23 · 运行能力闭环：编排总预算、真实 task 委派与修复期语法重试（preview）
+
+- **请求级编排总预算与全树取消 R18-01**：新增 [`request-budget.js`](../src/core/runtime/request-budget.js)（`createRequestBudget` / `createRequestScope`），在 `routedSend` 入口建立贯穿 `router`、`planner`、`worker`（含内部 verify/repair 与 `task` 子委派）、`reviewer`、`replan`、`synthesizer` 与后台 `experience` 蒸馏的统一请求账本与取消树。出站前原子预留调用与估算 token（`reserveCall`）、发起时锁定物理调用（`markStarted`）、完成后按 `attemptId` 幂等结算（`settle`）；缺失或非法负值 usage 计入 `unknownUsageAttempts` 与保守保底负债 `unknownUsageTokens`，跨进程恢复完整继承负债并阻断不完整旧记录。预算耗尽时 `synthesizer` 自动降级确定性摘要、后台经验蒸馏主动跳过；轮内与最终汇总期间触发 `interrupt()` / `dispose()` 统一返回 `cancelled` 并阻断隔离工作区迟到合并。普通 `single` 泳道不挂载编排总预算。
+- **真实 `task` 子任务委派与父子恢复 R18-02**：新增 [`task-delegation-contract.js`](../src/core/orchestration/task-delegation-contract.js)、[`task-delegation-service.js`](../src/core/orchestration/task-delegation-service.js) 与 [`task-paused-persistence.js`](../src/core/recovery/task-paused-persistence.js)，将内置 `task` 工具从排队占位升级为真实受限子 Worker 执行。子工具集严格取请求 `tools`（最多 5 项）与父可用工具的交集（只读父任务请求 `edit`/`shell` 直接 `denied`），硬性剥离 `task`/`ask_user` 并在 schema 与执行层双层强制 `depth=1` 防递归。共享父局部 `CostBudget`、编排 `RequestScope`（`role: "task"`）与取消信号；外层 `task` 批准不自动批准子写工具，子写工具审批暂停向上冒泡至父回合，支持二次暂停、State 5 完成检查点幂等回灌与 `task-paused/` 跨进程恢复（孤儿或指纹不匹配一律 `blocked_recovery`）。
+- **`repair` 路径有界 tool-call 语法修复 R18-03**：[`repair-executor.js`](../src/core/execution/repair-executor.js) 接入 `maxToolCallRepairs`（默认 `0` 保持旧行为），严格划分「模型调用 → 整批 tool-call 语法/结构预校验 → 顺序执行工具」三阶段；批次中任一项含 JSON 解析错误、非对象参数、缺失工具名或重复 ID 时整批拒绝，确保零前置写副作用。仅模型输出语法/结构畸形触发有界重试（权限拒绝、未知工具、schema 业务参数错误不重试），保留 thinking `reasoning_content` 并对错误原因脱敏；跨审批暂停与跨进程恢复完整保留已规范化批次、已完成工具结果及累计语法修复计数。
+- **安全加固**：① 未受信工作区（`workspaceTrusted === false`）禁止授予 `project`/`always` 持久化 MCP 审批作用域（强制降级 `session`）且不加载工作区本地 `.deepseek-code/mcp-policy.json`；② [`ssrf.js`](../src/security/ssrf.js) `createPinnedLookup` 支持 `options.all === true` 多 A/AAAA 记录全量校验返回；③ [`gui/main.js`](../gui/main.js) 拦截 `will-navigate` 与 `setWindowOpenHandler` 的外部非受信 URL 跳转。
+- **验证 R18-04**：全量 `npm test` **1844 通过、0 失败、0 取消、0 跳过**；`npm run check` 检查 **649 个 JS 文件**，GUI 构建与 `git diff --check` 通过。专项覆盖 `B01–B21`（编排总预算与取消恢复）、`T01–T18`（真实 `task` 委派与父子恢复）、`P01–P14`（修复期有界语法重试）及 `Chain A/B/C` 跨模块联合验收。四处代码版本同步为 `1.18.0`。
+- **边界**：运行护栏与总预算统计为配额控制指标，不等同于云端精确账单；跨进程恢复仅保证已落盘审批暂停检查点与事务日志边界，不承诺任意网络崩溃点的分布式 `exactly-once`；`task` 委派深度固定 `depth=1`；审计台账 `#10` 阶段 3–4（`agent-runtime` 结构拆分）继续延期至 `v2.0`。
+
+---
+
 ## v1.17.0 — 2026-10-06 · MCP 多轮人工输入与 Modern 列表订阅（preview）
 
 - **MRTR H1/H2**：为每服务显式开启的 elicitation 接入 tools/call、resources/read、prompts/get 多轮表单；确认后以新 RPC ID 回送当前轮 state，state-only 继续同样需确认。最多 4 轮、每轮 8 份、32 份待处理；表单默认 120 秒，可配 1–300 秒，外围工具超时与生命周期取消仍生效。

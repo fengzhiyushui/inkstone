@@ -1,6 +1,15 @@
 import { assembleReplyMessages } from "../../deepseek/prompt-assembler.js";
-import { adaptDeepSeekToolCalls } from "./tool-call-adapter.js";
+import { adaptDeepSeekToolCalls, isToolCallSyntaxError } from "./tool-call-adapter.js";
 import { toolResultsToMessages } from "./tool-result-router.js";
+
+function abortFromSignal(signal) {
+  const reason = signal?.reason;
+  if (reason instanceof Error) return reason;
+  const err = new Error(typeof reason === "string" && reason ? reason : "Operation was aborted");
+  err.name = "AbortError";
+  err.code = "ABORT";
+  return err;
+}
 
 export async function runExecutorLoop({
   message,
@@ -38,6 +47,9 @@ export async function runExecutorLoop({
   let toolCallRepairs = 0;
 
   for (let iteration = 0; iteration < maxIterations; iteration++) {
+    if (signal?.aborted) {
+      throw abortFromSignal(signal);
+    }
     const over = budget?.exceeded();
     if (over) {
       return { status: "stopped", reason: over, content: `Stopped: cost budget exceeded (${over.reason}).`, iterations: iteration, toolResults };
@@ -52,6 +64,9 @@ export async function runExecutorLoop({
       timeoutMs: modelTimeoutMs ?? options.timeoutMs
     });
     if (budget) budget.recordModelResult(modelResult);
+    if (signal?.aborted) {
+      throw abortFromSignal(signal);
+    }
     eventBus?.publish?.("model:response", {
       turn_id: turnId,
       purpose: iteration === 0 ? "plan" : "act",
@@ -78,7 +93,7 @@ export async function runExecutorLoop({
     try {
       toolCalls = adaptDeepSeekToolCalls(rawToolCalls, { requestedByStepId: `model:${turnId}:${iteration}` });
     } catch (error) {
-      if (toolCallRepairs >= maxToolCallRepairs) throw error;
+      if (!isToolCallSyntaxError(error) || toolCallRepairs >= maxToolCallRepairs) throw error;
       toolCallRepairs += 1;
       eventBus?.publish?.("model:tool_call_repair", { turn_id: turnId, iteration, attempt: toolCallRepairs, reason: error.message });
       messages = [
@@ -100,6 +115,8 @@ export async function runExecutorLoop({
       toolResults,
       toolSchemas,
       maxIterations,
+      toolCallRepairs,
+      maxToolCallRepairs,
       options,
       context,
       permissionContext,
@@ -169,6 +186,8 @@ async function continueToolIteration({
   toolResults,
   toolSchemas,
   maxIterations,
+  toolCallRepairs = 0,
+  maxToolCallRepairs = 0,
   options,
   context,
   permissionContext,
@@ -202,9 +221,12 @@ async function continueToolIteration({
           tool_results: iterationResults.slice(0, -1),
           tool_schemas: toolSchemas,
           max_iterations: maxIterations,
+          tool_call_repairs: toolCallRepairs,
+          max_tool_call_repairs: maxToolCallRepairs,
           options,
           context,
-          permission_context: permissionContext
+          permission_context: permissionContext,
+          ...(result.metadata?.task_delegation ? { task_delegation: result.metadata.task_delegation } : {})
         }
       };
     }
@@ -231,6 +253,13 @@ export async function resumeExecutorLoop({
   if (typeof executeTool !== "function") throw new Error("executeTool is required");
   if (typeof createPolicyContext !== "function") throw new Error("createPolicyContext is required");
 
+  let resumeToolCallRepairs = Number.isFinite(resumeState.tool_call_repairs) && resumeState.tool_call_repairs >= 0
+    ? resumeState.tool_call_repairs
+    : 0;
+  const effectiveMaxToolCallRepairs = Number.isFinite(resumeState.max_tool_call_repairs) && resumeState.max_tool_call_repairs >= 0
+    ? resumeState.max_tool_call_repairs
+    : maxToolCallRepairs;
+
   const iterationResults = [];
   const toolResults = [...(resumeState.tool_results || [])];
   const pendingAndRemaining = [
@@ -251,7 +280,7 @@ export async function resumeExecutorLoop({
         approval: result.metadata?.approval || null,
         toolResults,
         iterations: resumeState.iteration + 1,
-        resume_state: {
+        resume_state: withBudgetSpent({
           turn_id: resumeState.turn_id,
           message: resumeState.message,
           classification: resumeState.classification,
@@ -264,10 +293,13 @@ export async function resumeExecutorLoop({
           tool_results: toolResults.slice(0, -1),
           tool_schemas: resumeState.tool_schemas || [],
           max_iterations: resumeState.max_iterations || 5,
+          tool_call_repairs: resumeToolCallRepairs,
+          max_tool_call_repairs: effectiveMaxToolCallRepairs,
           options: resumeState.options || {},
           context: resumeState.context || null,
-          permission_context: resumeState.permission_context || resumeState.options?.permission_context || null
-        }
+          permission_context: resumeState.permission_context || resumeState.options?.permission_context || null,
+          ...(result.metadata?.task_delegation ? { task_delegation: result.metadata.task_delegation } : {})
+        }, budget)
       };
     }
   }
@@ -278,8 +310,10 @@ export async function resumeExecutorLoop({
     ...toolResultsToMessages([...resumeState.tool_results, ...iterationResults])
   ];
 
-  let resumeToolCallRepairs = 0;
   for (let iteration = resumeState.iteration + 1; iteration < (resumeState.max_iterations || 5); iteration += 1) {
+    if (signal?.aborted) {
+      throw abortFromSignal(signal);
+    }
     const over = budget?.exceeded();
     if (over) {
       return { status: "stopped", reason: over, content: `Stopped: cost budget exceeded (${over.reason}).`, iterations: iteration, toolResults };
@@ -294,6 +328,9 @@ export async function resumeExecutorLoop({
       timeoutMs: modelTimeoutMs ?? resumeState.options?.timeoutMs
     });
     if (budget) budget.recordModelResult(modelResult);
+    if (signal?.aborted) {
+      throw abortFromSignal(signal);
+    }
     eventBus?.publish?.("model:response", {
       turn_id: resumeState.turn_id,
       purpose: "act",
@@ -313,7 +350,7 @@ export async function resumeExecutorLoop({
     try {
       toolCalls = adaptDeepSeekToolCalls(rawToolCalls, { requestedByStepId: `model:${resumeState.turn_id}:${iteration}` });
     } catch (error) {
-      if (resumeToolCallRepairs >= maxToolCallRepairs) throw error;
+      if (!isToolCallSyntaxError(error) || resumeToolCallRepairs >= effectiveMaxToolCallRepairs) throw error;
       resumeToolCallRepairs += 1;
       eventBus?.publish?.("model:tool_call_repair", { turn_id: resumeState.turn_id, iteration, attempt: resumeToolCallRepairs, reason: error.message });
       messages = [
@@ -335,6 +372,8 @@ export async function resumeExecutorLoop({
       toolResults,
       toolSchemas: resumeState.tool_schemas || [],
       maxIterations: resumeState.max_iterations || 5,
+      toolCallRepairs: resumeToolCallRepairs,
+      maxToolCallRepairs: effectiveMaxToolCallRepairs,
       options: resumeState.options || {},
       context: resumeState.context || null,
       permissionContext: resumeState.permission_context || resumeState.options?.permission_context || null,

@@ -51,6 +51,14 @@ export function validateOrchestrationSidecar(json) {
   return { ok: true };
 }
 
+function unknownUsageRecoveryBlockReason(budget) {
+  if (!Number.isFinite(budget.quotaTokens) || !(budget.unknownUsageAttempts > 0)) return null;
+  if (Number.isFinite(budget.unknownUsageTokens) && budget.unknownUsageTokens > 0) return null;
+  // Older role totals omit some unknown charges, so they cannot establish the
+  // remaining token quota. Keep the record blocked instead of inferring an amount.
+  return "unknown usage amount missing or invalid: cannot safely verify remaining token quota";
+}
+
 // Authoritative resume gate (CST-6 version + CST-7 ownership). Used by both the
 // scan-time presentation (M6) and the resume-time gate (M4). Fails closed.
 export function orchestrationResumeGate({ sidecar, workerRecord }) {
@@ -60,6 +68,17 @@ export function orchestrationResumeGate({ sidecar, workerRecord }) {
   if (!workerRecord) return { ok: false, reason: "worker sidecar missing" };
   if (!isOrchestrationWorkerSidecar(workerRecord)) return { ok: false, reason: "worker sidecar not orchestration-owned" };
   if (!ownershipOk({ sidecar, workerRecord })) return { ok: false, reason: "ownership mismatch" };
+
+  const b = sidecar.budget || {};
+  const hasFiniteQuota = (b.quotaTokens != null && Number.isFinite(b.quotaTokens)) ||
+                         (b.quotaCalls != null && Number.isFinite(b.quotaCalls));
+  const isLegacyUnmetered = b.settledAttempts === undefined && b.unknownUsageAttempts === undefined;
+  if (hasFiniteQuota && isLegacyUnmetered) {
+    return { ok: false, reason: "legacy unmetered budget: cannot safely verify remaining quota" };
+  }
+  const unknownUsageIssue = unknownUsageRecoveryBlockReason(b);
+  if (unknownUsageIssue) return { ok: false, reason: unknownUsageIssue };
+
   return { ok: true };
 }
 
@@ -71,6 +90,7 @@ export function serializeOrchestrationState(state, { approvalId, pausedSubtask, 
     approvalId,
     taskId: state.taskId,
     sessionId: state.sessionId,
+    executionId: state.executionId || bs.execution_id || state.taskId,
     message: state.message,
     done_when: state.done_when,
     autonomy: state.options?.autonomy || "gated",
@@ -80,11 +100,25 @@ export function serializeOrchestrationState(state, { approvalId, pausedSubtask, 
     allCollected: (state.allCollected || []).map(serializeCollected),
     seenSubtaskIds: [...state.seenSubtaskIds],
     seenFp: [...state.seenFp],
+    executionId: state.executionId || state.scope?.executionId || state.taskId,
     budget: {
       quotaTokens: bs.max_tokens ?? null,
       quotaCalls: bs.max_model_calls ?? null,
       spentTokens: bs.tokens || 0,
-      spentCalls: bs.model_calls || 0
+      spentCalls: bs.model_calls || 0,
+      ...(bs.unknown_usage_attempts != null || bs.unknownUsageAttempts != null ? {
+        unknownUsageAttempts: bs.unknown_usage_attempts || bs.unknownUsageAttempts || 0
+      } : {}),
+      ...(bs.unknown_usage_tokens != null || bs.unknownUsageTokens != null ? {
+        unknownUsageTokens: bs.unknown_usage_tokens ?? bs.unknownUsageTokens ?? 0
+      } : {}),
+      ...(bs.fallback_tokens_per_unknown != null || bs.fallbackTokensPerUnknown != null ? {
+        fallbackTokensPerUnknown: bs.fallback_tokens_per_unknown ?? bs.fallbackTokensPerUnknown
+      } : {}),
+      ...(bs.settled_attempts != null || bs.settledAttempts != null ? {
+        settledAttempts: bs.settled_attempts || bs.settledAttempts || []
+      } : {}),
+      ...(bs.by_role ? { byRole: bs.by_role } : {})
     },
     adoptedExperienceIds: [...(state.adoptedExperienceIds || [])],
     riskCues: [...(state.riskCues || [])],
@@ -118,20 +152,82 @@ export function deserializeOrchestrationState(json) {
     adoptedExperienceIds: [...(json.adoptedExperienceIds || [])],
     taskId: json.taskId,
     sessionId: json.sessionId,
+    executionId: json.executionId || json.taskId,
     env: json.env || { root: null, orchestrationConfig: null },
-    budgetSnapshot: budgetContinuation(json.budget),
+    budgetSnapshot: budgetContinuation(json.budget, json),
     pausedSubtask: { ...json.pausedSubtask },
     remaining: (json.remaining || []).map((s) => ({ ...s }))
   };
 }
 
-export function budgetContinuation(budgetJson) {
+export function budgetContinuation(budgetJson, rootJson = {}) {
   const b = budgetJson || {};
-  return {
+  // Direct deserialization must obey the same rule as startup and resume gates.
+  const unknownUsageIssue = unknownUsageRecoveryBlockReason(b);
+  if (unknownUsageIssue) {
+    const error = new Error(`orchestration recovery blocked: ${unknownUsageIssue}`);
+    error.code = "ORCH_RECOVERY_BLOCKED";
+    throw error;
+  }
+  const isLegacy = Boolean(
+    rootJson && (rootJson.taskId || rootJson.approvalId) &&
+    b.settledAttempts === undefined &&
+    b.unknownUsageAttempts === undefined &&
+    b.quotaTokens == null && b.quotaCalls == null
+  );
+
+  let initialCalls = b.spentCalls || 0;
+  let initialUnknown = b.unknownUsageAttempts ?? 0;
+  if (isLegacy) {
+    const completedCount = Array.isArray(rootJson.allCollected)
+      ? rootJson.allCollected.filter((c) => c.status === "complete").length
+      : 0;
+    initialCalls = Math.max(initialCalls, completedCount > 0 ? completedCount * 2 : 1);
+    initialUnknown = Math.max(initialUnknown, 1);
+  }
+
+  const continuation = {
     maxTokens: b.quotaTokens ?? null,
     maxModelCalls: b.quotaCalls ?? null,
     initialTokens: b.spentTokens || 0,
-    initialModelCalls: b.spentCalls || 0
+    initialModelCalls: initialCalls
   };
+  if (b.unknownUsageAttempts != null && b.unknownUsageAttempts > 0) {
+    continuation.initialUnknownUsageAttempts = b.unknownUsageAttempts;
+  } else if (isLegacy) {
+    continuation.initialUnknownUsageAttempts = initialUnknown;
+  }
+
+  // Preserve unknown usage liability across recovery
+  let recoveredUnknownTokens = 0;
+  if (b.unknownUsageTokens != null && b.unknownUsageTokens > 0) {
+    recoveredUnknownTokens = b.unknownUsageTokens;
+  } else if (continuation.initialUnknownUsageAttempts > 0) {
+    // Compatibility estimate only: the guard above excludes finite token quotas.
+    const byRoleTokens = Object.values(b.byRole || {}).reduce((acc, r) => acc + (r?.tokens || 0), 0);
+    const fb = b.fallbackTokensPerUnknown || 500;
+    if (byRoleTokens > (b.spentTokens || 0)) {
+      recoveredUnknownTokens = Math.max(byRoleTokens - (b.spentTokens || 0), continuation.initialUnknownUsageAttempts * fb);
+    } else {
+      recoveredUnknownTokens = continuation.initialUnknownUsageAttempts * fb;
+    }
+  }
+  if (recoveredUnknownTokens > 0) {
+    continuation.initialUnknownUsageTokens = recoveredUnknownTokens;
+  }
+  if (b.fallbackTokensPerUnknown != null && b.fallbackTokensPerUnknown > 0) {
+    continuation.fallbackTokensPerUnknown = b.fallbackTokensPerUnknown;
+  }
+
+  if (b.settledAttempts != null && b.settledAttempts.length > 0) {
+    continuation.initialSettledAttempts = Array.isArray(b.settledAttempts) ? b.settledAttempts : [];
+  }
+  if (b.byRole) {
+    continuation.initialByRole = b.byRole;
+  }
+  if (isLegacy) {
+    continuation.legacyUnmetered = true;
+  }
+  return continuation;
 }
 

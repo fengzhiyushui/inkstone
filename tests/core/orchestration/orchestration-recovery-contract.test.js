@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { createRequestBudget } from "../../../src/core/runtime/request-budget.js";
 import {
   ORCH_RECOVERY_SCHEMA_VERSION, ORCH_FINGERPRINTS,
   fingerprintsMatch, isOrchestrationWorkerSidecar, ownershipOk
@@ -60,7 +61,7 @@ function fakeState() {
     ],
     seenSubtaskIds: new Set(["a", "x", "y"]),
     seenFp: new Set(["g|a.js|edit"]),
-    budget: { snapshot: () => ({ tokens: 40, model_calls: 3, max_tokens: 100, max_model_calls: 10 }) },
+    budget: { snapshot: () => ({ tokens: 40, model_calls: 3, max_tokens: 100, max_model_calls: 10, settled_attempts: [], unknown_usage_attempts: 0 }) },
     adoptedExperienceIds: ["exp_1"],
     riskCues: new Set(["rm -rf"]),
     taskId: "task_1", sessionId: "session",
@@ -135,4 +136,69 @@ test("budgetContinuation maps quota+spent, tolerates nulls (never resets — CST
   assert.deepEqual(budgetContinuation({ quotaTokens: null, quotaCalls: null, spentTokens: 0, spentCalls: 0 }),
     { maxTokens: null, maxModelCalls: null, initialTokens: 0, initialModelCalls: 0 });
   assert.deepEqual(budgetContinuation(undefined), { maxTokens: null, maxModelCalls: null, initialTokens: 0, initialModelCalls: 0 });
+});
+
+function meteredSidecar(budget) {
+  const json = serializeOrchestrationState(fakeState(), {
+    approvalId: "ap1", pausedSubtask: { id: "a" }, remaining: []
+  });
+  json.budget = {
+    quotaTokens: 5000, quotaCalls: 10, spentTokens: 0, spentCalls: 2,
+    unknownUsageAttempts: 2, settledAttempts: ["old_unknown", "new_unknown"],
+    // Historical role totals omit the first unknown charge of 500 tokens.
+    byRole: { worker: { calls: 2, tokens: 4020 } },
+    ...budget
+  };
+  return json;
+}
+
+test("finite token recovery blocks incomplete unknown amounts even when role totals are present", () => {
+  const values = [undefined, null, 0, -1, NaN, Infinity, "4520"];
+  for (const amount of values) {
+    const sc = meteredSidecar({ unknownUsageTokens: amount });
+    if (amount === undefined) delete sc.budget.unknownUsageTokens;
+    const original = structuredClone(sc);
+    const gate = orchestrationResumeGate({ sidecar: sc, workerRecord: workerRecord() });
+    assert.equal(gate.ok, false, `unknown amount ${String(amount)} must not release quota`);
+    assert.match(gate.reason, /unknown usage amount/i);
+    const isBlocked = (err) => err.code === "ORCH_RECOVERY_BLOCKED" && /unknown usage amount/i.test(err.message);
+    assert.throws(() => budgetContinuation(sc.budget, sc), isBlocked);
+    assert.throws(() => deserializeOrchestrationState(sc), isBlocked);
+    assert.deepEqual(sc, original, "blocked recovery must not alter the saved record");
+  }
+});
+
+test("exact unknown amount takes precedence over incomplete role history and keeps the next request blocked", () => {
+  const sc = meteredSidecar({ unknownUsageTokens: 4520, fallbackTokensPerUnknown: 500 });
+  assert.deepEqual(orchestrationResumeGate({ sidecar: sc, workerRecord: workerRecord() }), { ok: true });
+  const decoded = deserializeOrchestrationState(JSON.parse(JSON.stringify(sc)));
+  const budget = createRequestBudget({ ...decoded.budgetSnapshot, executionId: decoded.executionId });
+  assert.equal(budget.snapshot().unknown_usage_tokens, 4520);
+  assert.equal(budget.snapshot().model_calls, 2);
+  assert.equal(budget.snapshot().execution_id, sc.executionId);
+  assert.throws(() => budget.reserveCall({ role: "worker", estimatedTokens: 620 }), { code: "BUDGET_EXCEEDED" });
+  assert.equal(budget.snapshot().reserved_calls, 0);
+});
+
+test("metered records without unknown charges remain resumable without the new amount field", () => {
+  for (const amount of [undefined, 0]) {
+    const sc = meteredSidecar({ unknownUsageAttempts: 0, unknownUsageTokens: amount, spentTokens: 70,
+      byRole: { worker: { calls: 2, tokens: 70 } } });
+    assert.deepEqual(orchestrationResumeGate({ sidecar: sc, workerRecord: workerRecord() }), { ok: true });
+    const budget = createRequestBudget(deserializeOrchestrationState(sc).budgetSnapshot);
+    assert.equal(budget.snapshot().tokens, 70);
+    assert.equal(budget.snapshot().unknown_usage_tokens, 0);
+  }
+});
+
+test("missing legacy unknown amount does not block recovery when only model calls are limited", () => {
+  for (const quotaCalls of [null, 10]) {
+    const sc = meteredSidecar({ quotaTokens: null, quotaCalls });
+    assert.deepEqual(orchestrationResumeGate({ sidecar: sc, workerRecord: workerRecord() }), { ok: true });
+    const continuation = deserializeOrchestrationState(sc).budgetSnapshot;
+    assert.equal(continuation.maxTokens, null);
+    assert.equal(continuation.maxModelCalls, quotaCalls);
+    assert.equal(continuation.initialModelCalls, 2);
+    assert.equal(continuation.initialUnknownUsageAttempts, 2);
+  }
 });

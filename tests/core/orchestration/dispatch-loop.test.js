@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { runDispatchLoop } from "../../../src/core/orchestration/dispatch-loop.js";
+import { createSynthesizer } from "../../../src/core/orchestration/synthesizer.js";
 
 function st(id, deps = []) { return { id, goal: id, acceptance: [], context_scope: {}, tool_profile: "edit", depends_on: deps }; }
 const noBudget = { exceeded: () => null };
@@ -53,4 +54,61 @@ test("worker awaiting_approval -> surfaced, loop stops", async () => {
   const r = await runDispatchLoop({ plan, workerFactory: wf, makeReviewer: passReviewer, synthesizer: synth, budget: noBudget, maxWorkerAttempts: 1, autonomy: "gated" });
   assert.equal(r.status, "awaiting_approval");
   assert.equal(r.approval.id, "ap_1");
+});
+
+function completedRound(synthesizer, scope = {}) {
+  return runDispatchLoop({
+    plan: { subtasks: [st("st_1")] }, workerFactory: { worker: () => okWorker("worker result") },
+    makeReviewer: passReviewer, synthesizer, budget: scope.budget || noBudget,
+    maxWorkerAttempts: 1, autonomy: "auto", scope
+  });
+}
+
+function assertCancelledRound(result) {
+  assert.equal(result.status, "cancelled");
+  assert.equal(result.stopped_reason, "aborted");
+  assert.deepEqual(result.collected.map((c) => [c.st.id, c.status, c.wres.content]), [
+    ["st_1", "complete", "worker result"]
+  ]);
+}
+
+for (const abortSignal of [false, true]) {
+  test(`round synthesis cancellation preserves collected work (${abortSignal ? "aborted signal" : "AbortError"})`, async () => {
+    const controller = new AbortController();
+    const synthesizer = { synthesize: async () => {
+      if (abortSignal) controller.abort();
+      const error = new Error("synthesis interrupted");
+      if (!abortSignal) error.name = "AbortError";
+      throw error;
+    } };
+    assertCancelledRound(await completedRound(synthesizer, { signal: controller.signal }));
+  });
+}
+
+test("round synthesis ignores a late model result after cancellation", async () => {
+  const controller = new AbortController();
+  const synthesizer = { synthesize: async () => {
+    controller.abort();
+    return "late model result";
+  } };
+  const result = await completedRound(synthesizer, { signal: controller.signal });
+  assertCancelledRound(result);
+  assert.notEqual(result.content, "late model result");
+});
+
+test("round synthesis propagates ordinary errors without cancellation", async () => {
+  const error = new Error("unexpected synthesis failure");
+  await assert.rejects(completedRound({ synthesize: async () => { throw error; } }), (caught) => caught === error);
+});
+
+test("exhausted budget still returns a deterministic partial summary", async () => {
+  let modelCalls = 0;
+  const budget = { exceeded: () => ({ reason: "max_model_calls" }) };
+  const synthesizer = createSynthesizer({ callModel: async () => { modelCalls += 1; return "unexpected"; } });
+  const result = await completedRound(synthesizer, { budget });
+  assert.equal(result.status, "complete");
+  assert.equal(result.stopped_reason, "budget");
+  assert.match(result.content, /st_1/);
+  assert.equal(result.collected[0].status, "complete");
+  assert.equal(modelCalls, 0);
 });

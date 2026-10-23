@@ -166,6 +166,24 @@ async function createWindow() {
   });
   mainWindow = win;
 
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("https://") || url.startsWith("http://")) {
+      shell.openExternal(url);
+    }
+    return { action: "deny" };
+  });
+
+  win.webContents.on("will-navigate", (event, url) => {
+    const isDev = devUrl && url.startsWith(devUrl);
+    const isFile = url.startsWith("file://");
+    if (!isDev && !isFile) {
+      event.preventDefault();
+      if (url.startsWith("https://") || url.startsWith("http://")) {
+        shell.openExternal(url);
+      }
+    }
+  });
+
   registerIpcHandlers();
   // Load order: dev server (DEEPSEEK_CODE_GUI_DEV_URL) → built React renderer (renderer-dist).
   // Neither available → show error dialog and exit (no legacy fallback).
@@ -628,7 +646,15 @@ function registerIpcHandlers() {
   });
   // 在系统文件管理器中显示项目目录(设计稿的「在终端打开」在无终端面板时降级为此)。
   handle("projects:reveal", async (_event, root) => {
-    try { const err = await shell.openPath(String(root || "")); return err ? { error: err } : { ok: true }; }
+    try {
+      const raw = String(root || "").trim();
+      if (!raw || raw.includes("\0")) return { error: "Invalid path" };
+      const resolved = path.resolve(raw);
+      const stat = await fs.promises.stat(resolved);
+      if (!stat.isDirectory()) return { error: "Path must be a directory" };
+      const err = await shell.openPath(resolved);
+      return err ? { error: err } : { ok: true };
+    }
     catch (error) { return { error: error.message }; }
   });
   // 「打开文件夹…」:唯一需要选目录的入口(新增项目)。取消时返回 { canceled: true },不改注册表。

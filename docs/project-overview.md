@@ -100,6 +100,8 @@ think 通道**不声明 `temperature`**：官方协议下 thinking 开启时 tem
 
 编辑类工具延迟绑定（[`builtin/edit-deferred.js`](../src/tools/builtin/edit-deferred.js)），装配时注入 `editService`：`diff_preview → preview`、`diff_apply`/`edit → apply`、`diff_rollback → rollback`。
 
+`task` 子任务委派（[`builtin/task.js`](../src/tools/builtin/task.js)、[`core/orchestration/task-delegation-service.js`](../src/core/orchestration/task-delegation-service.js)，v1.18.0）：创建真实受限子 Worker 执行子任务并将输出脱敏限长后回灌父回合。工具集取请求 `tools`（最多 5 项）与父回合可用工具的交集（只读父回合请求 `edit`/`shell` 直接 `denied`），硬性剥离 `task`/`ask_user` 并强制 `depth=1` 防递归；共享父回合局部预算与编排 `RequestScope`（按 `role: "task"` 记账）及取消信号；批准外层 `task` 不自动放行子写工具，子写工具触发审批时向上冒泡暂停父回合，支持二次暂停与 `task-paused/` 跨进程恢复。
+
 安全相关工具行为：
 
 - `grep`：每文件 2s + 总 10s 协作式超时，超时优雅返回并在 metadata 标 `timed_out` 等字段。
@@ -230,6 +232,7 @@ Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（
 - **事务日志**：`.deepseek-code/v2/journal/`，edit/rewind 写文件前 `open()`、成功 `commit()`、失败 `abort()`（恢复 preimage）。
 - **CLI `/recovery`** 与启动扫描：发现 open/aborting/committed/corrupt 日志并入收件箱。
 - **编排级 durable 恢复**（C-Durable，依赖 `recovery.enabled`）：编排回合中串行主区 worker 命中审批暂停时，另落 `orchestration-paused/<approvalId>.json`；重启后 `/recovery` 呈现 `orchestration_paused` 项。详见 [§14.5](#145-跨进程编排级-durable-恢复)。
+- **`task` 父子委派 durable 恢复**（v1.18.0，依赖 `recovery.enabled`）：`task` 子 Worker 命中写工具审批暂停时，除父 `paused/<approvalId>.json` 外同步落 `task-paused/<approvalId>.json`（含 schema/fingerprint/归属 ID 及 State 5 完成检查点）；启动扫描交叉校验父子双记录，孤儿或指纹不匹配一律 `blocked_recovery` 并保全证据。
 
 设计见 [`specs/backend/2026-06-01-v2-18-durable-recovery-resume-hardening-design.md`](specs/backend/2026-06-01-v2-18-durable-recovery-resume-hardening-design.md)。
 
@@ -249,7 +252,7 @@ Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（
 | `maxModelCalls` | `null`（关） | 单 turn 模型调用次数上限 |
 | `maxToolCallRepairs` | `null`（关） | 畸形 tool-call 有界重试次数 |
 
-`maxTurnTokens` / `maxModelCalls` 计数含 repair 阶段。取值语义（`toLimit`）：省略取默认；`null` / `≤0` / 非法关闭；否则取整。
+`maxTurnTokens` / `maxModelCalls` 计数含 repair 阶段与 `task` 子委派。`maxToolCallRepairs` 同时覆盖主执行循环（`executor-loop`）与验证修复执行器（`repair-executor`，v1.18.0 补齐：整批工具语法预校验通过前不执行任何工具副作用，仅对 JSON/结构畸形做有界纠正，跨审批暂停与恢复保持计数）。取值语义（`toLimit`）：省略取默认；`null` / `≤0` / 非法关闭；否则取整。
 
 覆盖方式：`config.json` 的 `limits`，或环境变量 `DEEPSEEK_TOOL_TIMEOUT_MS` / `DEEPSEEK_MODEL_TIMEOUT_MS`。`loadConfig` 对用户 `limits` 做 per-field 深合并。
 
@@ -293,6 +296,7 @@ Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（
       <sessionId>.jsonl
       <sessionId>.branches.json
       paused/                  暂停 sidecar
+      task-paused/             task 子任务暂停 sidecar（含 quarantine/）
       orchestration-paused/    编排暂停 sidecar（含 quarantine/）
     context/                   上下文缓存
     experience/                跨任务经验库
@@ -311,14 +315,14 @@ Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（
 src/
   index.js        createKernel() 组合根
   core/
-    runtime/      agent-runtime · lifecycle · cost-budget
+    runtime/      agent-runtime · lifecycle · cost-budget · request-budget
     execution/    executor-loop · repair-executor · tool-call-adapter · tool-result-router
     verification/ verifier · repair-loop · repair-decision · repair-prompt · verification-policy
     protocol/     agent-turn · agent-step · tool-call · tool-result · approval-request · artifact
     planning/     classifier · keywords
     approval/     paused-turn-store
-    recovery/     项目锁 · 收件箱 · 暂停持久化 · 事务日志 · 恢复服务
-    orchestration/ router · planner · worker · reviewer · merge · iso · experience 接线
+    recovery/     项目锁 · 收件箱 · 暂停持久化 · task 暂停持久化 · 事务日志 · 恢复服务
+    orchestration/ router · planner · worker · reviewer · merge · iso · task 委派 · experience 接线
     memory/       experience-* · risk-rules
   deepseek/       model-gateway · model-router · json-mode · streaming · fim-client · usage-tracker · tool-call-repair · prompt-assembler · api-errors
   tools/          registry · schema · executor · builtin/* · permissions/*
@@ -341,8 +345,9 @@ tests/            单元 / 集成 / e2e
 
 ## 11. 已知限制
 
-- 持久化恢复默认关闭；未开启时会话 / 变更 / 分支无跨进程文件锁，勿在同一项目目录并发运行多个写状态实例。
-- repair executor 目前是单轮修复执行器。
+- 持久化恢复默认关闭；未开启时会话 / 变更 / 分支无跨进程文件锁，勿在同一项目目录并发运行多个写状态实例。开启后仅保证在已落盘的审批暂停检查点与事务日志边界精确恢复，不承诺任意网络或进程崩溃点的分布式 `exactly-once`。
+- `repair-executor` 每轮验证修复执行单批次工具调用（支持 `maxToolCallRepairs` 有界语法纠正）；`task` 子任务委派深度固定上限 `depth=1`，不支持孙任务递归。
+- 运行护栏与编排总预算（`model_calls` / `tokens` / `unknownUsageTokens`）是配额控制与防失控机制，不等同于云端供应商精确账单。
 - MCP 取消不能撤销服务端已完成的副作用；TUI 服务管理操作不支持 Esc 取消。MRTR 人工输入与 Modern 列表订阅默认关闭；输入仅支持有界平面 schema，表单不跨进程恢复，不实现 URL-mode、Sampling/Roots/Logging 或单个资源更新订阅。OAuth 真实外部 IdP 尚未验证，以本地 HTTP mock 验收；凭据加密密钥与密文同存于用户目录，不是操作系统密钥链。
 - GUI 用量统计在离线或未接入真实模型调用时可能显示零值。
 - 产品版本以 `package.json` 为发布真源，`package-lock.json` 与 CLI/TUI/GUI 的 VERSION 常量由一致性测试约束。
@@ -407,6 +412,8 @@ kernel.send(message) → task-router
 | `orchestrator` | 组装 + 成本闸 + `orchestration:*` 事件 + `maxSubtasks` 截断 |
 
 两级审核：关卡1 = Worker 内置 `verifyAndMaybeRepair`；关卡2 = 独立 Reviewer（只读）。成本闸常开（`config.orchestration`）：`maxSubtasks` / `maxWorkerAttempts` / `budget`，命中后部分完成，不抛不崩。
+
+自 v1.18.0 起，`routedSend` 通过 [`request-budget.js`](../src/core/runtime/request-budget.js) 的 `RequestScope` + `RequestBudget` 对编排泳道实施**请求级全角色聚合记账与全树取消**：覆盖 `router`（模型档分流）、`planner`、`worker`（含内部 verify/repair 与 `task` 子委派）、`reviewer`、`replan`、`synthesizer` 与后台 `experience` 蒸馏；出站前原子预留配额，物理重试按次计费，缺失/非法 usage 计入 `unknownUsageAttempts` 与 `unknownUsageTokens` 保底占额；预算耗尽时 `synthesizer` 自动降级为确定性摘要、后台经验蒸馏主动跳过；`agent.interrupt()` 与 `kernel.dispose()` 沿作用域树中止全部在途请求并阻断隔离工作区迟到合并。普通 `single` 泳道不挂载编排总预算。
 
 意图分类词表集中在 `core/planning/keywords.js`（v1.1.0），中文 edit/diagnostic/query 与全角问号不再误入 `general`。
 

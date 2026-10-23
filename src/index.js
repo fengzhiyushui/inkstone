@@ -39,12 +39,15 @@ import { createExperienceStore } from "./core/memory/experience-store.js";
 import { createConsolidator } from "./core/memory/experience-consolidator.js";
 import { query as experienceQuery } from "./core/memory/experience-retrieval.js";
 import { createCostBudget } from "./core/runtime/cost-budget.js";
+import { createRequestBudget, createRequestScope } from "./core/runtime/request-budget.js";
 import { normalizeOrchestration } from "./config.js";
 import { toBatches } from "./core/orchestration/batch-planner.js";
 import { createIsoWorkerRunner } from "./core/orchestration/iso-worker-runner.js";
 import { mergeSubtask } from "./core/orchestration/merge-back.js";
 import { removeIso, sweepOrphans } from "./core/orchestration/iso-workspace.js";
 import { filterToolSchemas } from "./core/orchestration/tool-profiles.js";
+import { createTaskPausedPersistence } from "./core/recovery/task-paused-persistence.js";
+import { createTaskDelegationService } from "./core/orchestration/task-delegation-service.js";
 
 export async function createKernel(root, options = {}) {
   const eventBus = options.eventBus || createEventBus();
@@ -85,6 +88,9 @@ export async function createKernel(root, options = {}) {
   const sharedPausedTurnStore = recoveryEnabled ? createPausedTurnStore() : null;
   const orchPersistence = recoveryEnabled
     ? createOrchestrationPersistence({ root, projectId, faults: options.recovery?.faults || options.recoveryFaults })
+    : null;
+  const taskPausedPersistence = recoveryEnabled
+    ? createTaskPausedPersistence({ root, projectId, faults: options.recovery?.faults || options.recoveryFaults })
     : null;
   let kernelDisposed = false;
 
@@ -208,7 +214,8 @@ export async function createKernel(root, options = {}) {
       trustStore: options.trustStore || { rules: [] }, projectRules: mergeProjectRules() })
   });
   if (options.autoInitMcp !== false && mcpHub.serverConfigs.size > 0) {
-    await mcpHub.initAll().catch(() => {});
+    const trustedScopes = options.trustedWorkspace === true ? null : ["user", "session"];
+    await mcpHub.initAll({ trustedScopes }).catch(() => {});
   }
   const contextEngine = options.contextEngine || createContextEngine({
     root,
@@ -219,6 +226,7 @@ export async function createKernel(root, options = {}) {
     await contextEngine.scan();
   }
 
+  let taskDelegationService = null;
   const runtimeConfig = {
     eventBus,
     sessionId,
@@ -247,6 +255,13 @@ export async function createKernel(root, options = {}) {
       context.turnId = executionOptions.turnId;
       context.toolCall = executionOptions.toolCall;
       context.phase = executionOptions.phase;
+      context.sessionId = executionOptions.sessionId || sessionId;
+      context.taskDelegationService = taskDelegationService;
+      if (executionOptions.parentToolNames) context.parentToolNames = executionOptions.parentToolNames;
+      if (executionOptions.parentBudget) context.parentBudget = executionOptions.parentBudget;
+      if (executionOptions.parentOptions) context.parentOptions = executionOptions.parentOptions;
+      if (executionOptions.scope) context.scope = executionOptions.scope;
+      if (executionOptions.taskDelegationResume) context.taskDelegationResume = executionOptions.taskDelegationResume;
       return context;
     },
     verifyMode: options.verifyMode || "auto",
@@ -257,6 +272,12 @@ export async function createKernel(root, options = {}) {
     maxModelCalls: options.limits?.maxModelCalls ?? null,
     modelTimeoutMs: options.limits?.modelTimeoutMs ?? null,
     maxToolCallRepairs: options.limits?.maxToolCallRepairs ?? 0,
+    taskDelegationHooks: {
+      onParentPaused: (approvalId) => taskDelegationService?.markParentPausePersisted?.(approvalId),
+      onParentDenied: (approvalId) => taskDelegationService?.denyTask?.(approvalId),
+      onParentCompleted: (approvalId) => taskDelegationService?.completeParentTaskPause?.(approvalId),
+      onInterrupt: () => taskDelegationService?.interruptAll?.()
+    },
     grantApprovalForToolCall: async (toolCall, approvalContext = {}) => {
       const securedCall = toolRegistry.secureToolCall(toolCall);
       const permissionContext = approvalContext.permission_context || approvalContext.options?.permission_context || null;
@@ -281,12 +302,33 @@ export async function createKernel(root, options = {}) {
   // Worker/Reviewer sub-agents reuse the same runtime config with a filtered tool
   // set + scoped context — agent-runtime itself is unchanged.
   const createRuntime = (overrides = {}) => createAgentRuntime({ ...runtimeConfig, ...overrides });
+  taskDelegationService = createTaskDelegationService({
+    createRuntime,
+    toolRegistry,
+    toolExecutor,
+    modelGateway,
+    eventBus,
+    sessionId,
+    projectId,
+    projectRoot: root,
+    taskPausedPersistence,
+    grantApprovalForToolCall: runtimeConfig.grantApprovalForToolCall
+  });
 
   const orch = normalizeOrchestration(options.orchestration);
   // C-Router: model-assisted tier for the ambiguous band (purpose = configured channel, short timeout).
-  const routerCallModel = async (prompt, { timeoutMs } = {}) => {
+  const routerCallModel = async (prompt, { timeoutMs, signal, scope } = {}) => {
     if (!modelGateway?.invoke) return "";
-    const res = await modelGateway.invoke([{ role: "user", content: prompt }], { purpose: orch.router.model.channel, timeoutMs });
+    const effectiveGateway = (scope?.bindGateway && !modelGateway._isDeepSeekGateway)
+      ? scope.bindGateway(modelGateway, { role: "router" })
+      : modelGateway;
+    const res = await effectiveGateway.invoke([{ role: "user", content: prompt }], {
+      purpose: orch.router.model.channel,
+      timeoutMs,
+      signal,
+      scope,
+      role: "router"
+    });
     return res?.content || "";
   };
   const taskRouter = createTaskRouter({ ...orch.router, model: { ...orch.router.model, callModel: routerCallModel } });
@@ -300,9 +342,18 @@ export async function createKernel(root, options = {}) {
     webFetch: options.webFetch || {},
     defaultToolTimeoutMs: options.limits?.toolTimeoutMs ?? null
   };
-  const callModel = async (prompt) => {
+  const callModel = async (prompt, callOptions = {}) => {
     if (!modelGateway?.invoke) return "";
-    const res = await modelGateway.invoke([{ role: "user", content: prompt }], { purpose: "plan" });
+    const effectiveGateway = (callOptions.scope?.bindGateway && !modelGateway._isDeepSeekGateway)
+      ? callOptions.scope.bindGateway(modelGateway, { role: callOptions.role || "planner" })
+      : modelGateway;
+    const res = await effectiveGateway.invoke([{ role: "user", content: prompt }], {
+      purpose: callOptions.purpose || "plan",
+      ...callOptions,
+      scope: callOptions.scope,
+      role: callOptions.role || "planner",
+      signal: callOptions.signal
+    });
     return res?.content || "";
   };
   // C4 cross-task experience memory (opt-in; "off" => fully inert: no dir, no retrieval,
@@ -322,14 +373,16 @@ export async function createKernel(root, options = {}) {
   }
   const orchestrator = createOrchestrator({
     planner: createPlanner({ callModel }),
-    makeWorkerFactory: () => createWorkerFactory({
+    makeWorkerFactory: (scope) => createWorkerFactory({
       createRuntime,
       baseToolSchemas: () => toolRegistry.toDeepSeekTools(),
-      makeContextSnapshot: (input) => contextEngine.snapshot(input)
+      makeContextSnapshot: (input) => contextEngine.snapshot(input),
+      modelGateway,
+      scope
     }),
-    makeReviewerFor: (workerFactory) => createReviewer({ runtime: workerFactory.reviewerRuntime() }),
+    makeReviewerFor: (workerFactory, scope) => createReviewer({ runtime: workerFactory.reviewerRuntime() }),
     synthesizer: createSynthesizer({ callModel }),
-    makeBudget: () => createCostBudget({ maxTokens: orch.budget.maxTokens, maxModelCalls: orch.budget.maxModelCalls }),
+    makeBudget: () => createRequestBudget({ maxTokens: orch.budget.maxTokens, maxModelCalls: orch.budget.maxModelCalls }),
     maxSubtasks: orch.maxSubtasks,
     maxWorkerAttempts: orch.maxWorkerAttempts,
     eventBus,
@@ -342,16 +395,19 @@ export async function createKernel(root, options = {}) {
       buildToolPlane,
       createRuntime,
       makeContextSnapshot: (input) => contextEngine.snapshot(input),
-      makeReviewer: (isoRoot) => {
+      makeReviewer: (isoRoot, scope) => {
         const plane = buildToolPlane(isoRoot, isoPlaneDeps);
+        const scopedGateway = (scope && modelGateway) ? scope.bindGateway(modelGateway, { role: "reviewer" }) : modelGateway;
         return createReviewer({ runtime: createRuntime({
           projectRoot: isoRoot,
           executeTool: plane.execute,
-          toolSchemas: () => filterToolSchemas(plane.toolRegistry.toDeepSeekTools(), "readonly")
+          toolSchemas: () => filterToolSchemas(plane.toolRegistry.toDeepSeekTools(), "readonly"),
+          modelGateway: scopedGateway
         }) });
       },
       maxCopyFiles: orch.parallel.maxCopyFiles,
-      planeDeps: isoPlaneDeps
+      planeDeps: isoPlaneDeps,
+      modelGateway
     }),
     mergeSubtask: (r) => mergeSubtask({ editService, mainRoot: root, isoRoot: r.isoRoot, baseManifest: r.baseManifest, actual: r.actual }),
     removeIso: (dir) => removeIso(dir),
@@ -361,23 +417,67 @@ export async function createKernel(root, options = {}) {
     experienceConsolidator,
     now: experienceNow,
     orchPersistence,
-    makeResumedBudget: (s) => createCostBudget({ maxTokens: s.maxTokens, maxModelCalls: s.maxModelCalls, initialTokens: s.initialTokens, initialModelCalls: s.initialModelCalls }),
+    makeResumedBudget: (s) => createRequestBudget({
+      maxTokens: s.maxTokens,
+      maxModelCalls: s.maxModelCalls,
+      initialTokens: s.initialTokens,
+      initialModelCalls: s.initialModelCalls,
+      initialUnknownUsageAttempts: s.initialUnknownUsageAttempts,
+      initialUnknownUsageTokens: s.initialUnknownUsageTokens,
+      fallbackTokensPerUnknown: s.fallbackTokensPerUnknown,
+      initialSettledAttempts: s.initialSettledAttempts,
+      initialByRole: s.initialByRole || {},
+      executionId: s.executionId || null
+    }),
     env: { root, orchestrationConfig: orch },
     pausedTurnStore: sharedPausedTurnStore || undefined,
     pausedTurnPersistence
   });
   // Unified entry: the router decides single (today's path, zero new events) vs orchestrate.
+  const activeScopes = new Set();
   async function routedSend(message, sendOptions = {}) {
-    const decision = await taskRouter.route(message, sendOptions);
-    if (decision.tier === "model" || decision.tier === "fallback") {
-      eventBus.publish("orchestration:route_resolved", {
-        band: decision.band, score: decision.score, features: decision.features,
-        finalLane: decision.lane, tier: decision.tier, reason: decision.reason
+    const parentSignal = sendOptions.signal;
+    const executionId = sendOptions.executionId || (sendOptions.scope?.executionId) || makeId("exec");
+    let rootBudget = null;
+    if (sendOptions.scope?.budget) {
+      rootBudget = sendOptions.scope.budget;
+    } else if (orch.budget) {
+      rootBudget = createRequestBudget({
+        maxTokens: orch.budget.maxTokens,
+        maxModelCalls: orch.budget.maxModelCalls,
+        executionId
       });
     }
-    if (decision.lane === "single") return runtime.send(message, sendOptions);
-    eventBus.publish("orchestration:routed", { lane: decision.lane, reason: decision.reason, signals: decision.signals });
-    return orchestrator.run({ message, options: sendOptions, routing: decision });
+    const baseScope = sendOptions.scope || createRequestScope({
+      signal: parentSignal,
+      budget: rootBudget,
+      executionId
+    });
+    activeScopes.add(baseScope);
+    try {
+      const routingOptions = { ...sendOptions, scope: baseScope, signal: baseScope.signal };
+      const decision = await taskRouter.route(message, routingOptions);
+      if (decision.tier === "model" || decision.tier === "fallback") {
+        eventBus.publish("orchestration:route_resolved", {
+          band: decision.band, score: decision.score, features: decision.features,
+          finalLane: decision.lane, tier: decision.tier, reason: decision.reason
+        });
+      }
+      if (decision.lane === "single") {
+        const singleScope = sendOptions.scope || createRequestScope({
+          signal: baseScope.signal,
+          executionId
+        });
+        const singleOptions = { ...sendOptions, scope: singleScope, signal: singleScope.signal };
+        return await runtime.send(message, singleOptions);
+      }
+      eventBus.publish("orchestration:routed", { lane: decision.lane, reason: decision.reason, signals: decision.signals });
+
+      const scopedOptions = { ...sendOptions, scope: baseScope, signal: baseScope.signal };
+      return await orchestrator.run({ message, options: scopedOptions, routing: decision, scope: baseScope });
+    } finally {
+      activeScopes.delete(baseScope);
+    }
   }
 
   const branches = branchStore ? {
@@ -478,6 +578,12 @@ export async function createKernel(root, options = {}) {
       policyContext.turnId = executionOptions.turnId;
       policyContext.signal = executionOptions.signal;
       policyContext.toolTimeoutMs = executionOptions.toolTimeoutMs ?? executionOptions.timeoutMs;
+      policyContext.sessionId = executionOptions.sessionId || sessionId;
+      policyContext.taskDelegationService = taskDelegationService;
+      if (executionOptions.parentToolNames) policyContext.parentToolNames = executionOptions.parentToolNames;
+      if (executionOptions.parentBudget) policyContext.parentBudget = executionOptions.parentBudget;
+      if (executionOptions.parentOptions) policyContext.parentOptions = executionOptions.parentOptions;
+      if (executionOptions.scope) policyContext.scope = executionOptions.scope;
       return toolExecutor.execute(toolCall, policyContext);
     }
   };
@@ -494,7 +600,10 @@ export async function createKernel(root, options = {}) {
         options,
         transactionJournal,
         orchPersistence,
-        resumeOrchestration: (approvalId, decision) => orchestrator.resumeDurable(approvalId, decision)
+        resumeOrchestration: (approvalId, decision) => orchestrator.resumeDurable(approvalId, decision),
+        sharedPausedTurnStore,
+        taskPausedPersistence,
+        rehydrateTaskDelegation: (info) => taskDelegationService?.rehydrateTaskDelegation?.(info)
       })
     : disabledRecoveryFacade();
 
@@ -502,6 +611,7 @@ export async function createKernel(root, options = {}) {
     root,
     eventBus,
     runtime,
+    createRuntime,
     agent: {
       send: routedSend,
       approve: async (id, decision, opts = {}) => {
@@ -509,7 +619,14 @@ export async function createKernel(root, options = {}) {
         if (recoveryEnabled && await orchestrator.hasDurablePaused(id)) return orchestrator.resumeDurable(id, decision);
         return runtime.approve(id, decision, opts);
       },
-      interrupt: runtime.interrupt,
+      interrupt: (...args) => {
+        for (const scope of activeScopes) {
+          try { scope.abort("turn was interrupted"); } catch {}
+        }
+        try { orchestrator.interrupt?.(); } catch {}
+        try { taskDelegationService?.interruptAll?.(); } catch {}
+        return runtime.interrupt(...args);
+      },
       listPaused: runtime.listPaused,
       cancelPaused: runtime.cancelPaused
     },
@@ -535,6 +652,11 @@ export async function createKernel(root, options = {}) {
     async dispose() {
       if (kernelDisposed) return;
       kernelDisposed = true;
+      for (const scope of activeScopes) {
+        try { scope.abort("kernel disposed"); } catch {}
+      }
+      try { orchestrator.interrupt?.(); } catch {}
+      try { taskDelegationService?.abortActive?.(); } catch {}
       mcpTrials.dispose();
       mcpHub.inputBroker.dispose();
       try { await orchestrator.flushExperience?.(); } catch { /* best-effort */ }
@@ -542,6 +664,7 @@ export async function createKernel(root, options = {}) {
       unmountMcpCapabilities();
       try { await mcpHub?.stopAll?.(); } catch { /* best-effort */ }
       for (const unsubscribe of mcpSubscriptions) unsubscribe();
+      try { await sessionManager.flush?.(); } catch { /* best-effort */ }
       try { sessionManager.dispose?.(); } catch { /* best-effort */ }
       try { await projectLock?.release?.(); } catch { /* best-effort */ }
     },
@@ -634,14 +757,20 @@ async function createRecoveryServiceFacade({
   options,
   transactionJournal,
   orchPersistence = null,
-  resumeOrchestration = null
+  resumeOrchestration = null,
+  sharedPausedTurnStore = null,
+  taskPausedPersistence = null,
+  rehydrateTaskDelegation = null
 }) {
   const recoveryService = createRecoveryService({
     projectId,
     lock: projectLock || { assertOwner: async () => {}, epoch: 0 },
     paused: pausedTurnPersistence,
     pausedTurnStore: {
-      restore: runtime.restorePaused,
+      restore: (rec) => {
+        sharedPausedTurnStore?.restore?.(rec);
+        return runtime.restorePaused(rec);
+      },
       list: runtime.listPaused
     },
     inbox: recoveryInbox,
@@ -653,7 +782,9 @@ async function createRecoveryServiceFacade({
     cancelPaused: async (approvalId) => runtime.cancelPaused(approvalId),
     transactionJournal,
     orchPersistence,
-    resumeOrchestration
+    resumeOrchestration,
+    taskPausedPersistence,
+    rehydrateTaskDelegation
   });
 
   if (!options.recovery?.skipStartupRecovery) {

@@ -100,13 +100,29 @@ test("memory tool maps categories by action and persists project memory", async 
   assert.equal(read.content[0].text, "Use ESM");
 });
 
-test("task tool caps delegated tools to five", async () => {
-  const result = await createTaskTool().execute({
+test("task tool validates tools strictly and rejects unconfigured delegation instead of faking queued success", async () => {
+  const tool = createTaskTool();
+
+  const overLimit = await tool.execute({
     prompt: "inspect files",
     tools: ["read", "grep", "glob", "ls", "git", "shell"]
   }, {});
+  assert.equal(overLimit.status, "error");
+  assert.equal(overLimit.metadata.code, "TASK_TOOLS_LIMIT_EXCEEDED");
 
-  assert.deepEqual(result.metadata.delegated_tools, ["read", "grep", "glob", "ls", "git"]);
+  const forbidden = await tool.execute({
+    prompt: "recurse",
+    tools: ["read", "task"]
+  }, {});
+  assert.equal(forbidden.status, "error");
+  assert.equal(forbidden.metadata.code, "TASK_FORBIDDEN_TOOL");
+
+  const unconfigured = await tool.execute({
+    prompt: "inspect files",
+    tools: ["read", "grep", "read"]
+  }, {});
+  assert.equal(unconfigured.status, "error");
+  assert.equal(unconfigured.metadata.code, "TASK_DELEGATION_UNAVAILABLE");
 });
 
 test("ask_user creates an approval-style pending result", async () => {

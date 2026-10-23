@@ -129,6 +129,8 @@ orchestrator 注入 worker `send` options → 经 `executor-loop` 落 `resume_st
 **CST-8 边界⑤预算续扣。** 编排 sidecar 存原配额 + 已花计数；恢复时 `budget` 重建为「配额 − 已花」继续扣（`createCostBudget` 的 `initialTokens` / `initialModelCalls` 种子），绝不重置。
 
 > 实现注（防误读）：当前编排聚合 `state.budget` 只被 `.exceeded()` 读、其 `recordModelResult` 尚未被编排层调用（worker/planner 各持自己的 agent-runtime 预算），故真实「已花」现为 0。本片只负责忠实序列化 + 续扣重建（spentTokens/spentCalls 从 `budget.snapshot()` 取、恢复时 reseed）；续抽数学由 M0/M2 单测用显式 `recordModelResult` 打点验证。M8 e2e 只断言 sidecar 携带 quota+spent 字段，不依赖非零 spend。将来若把聚合记账接上，续扣自动生效。
+>
+> **后续版本解决索引（v1.18.0）**：上述编排总预算全角色真实记账（router / planner / worker / reviewer / replan / synthesizer / task / experience）及未知 usage 负债跨进程恢复，已于 **v1.18.0**（R18-01，见 [`2026-10-07-v1.18-r18-01-aggregate-budget-contract.md`](../../specs/backend/2026-10-07-v1.18-r18-01-aggregate-budget-contract.md) 与 [`2026-10-23-v1.18.0-runtime-closure.md`](2026-10-23-v1.18.0-runtime-closure.md)）完整闭环落地；上方历史背景保留供追溯。
 
 **CST-9 对等清理。** 完成/取消 → 删编排 sidecar（consume 墓碑）+ worker sidecar 由 agent-runtime `approve` 置 consumed；启动扫描 consumed/孤儿沿用既有隔离机制。
 

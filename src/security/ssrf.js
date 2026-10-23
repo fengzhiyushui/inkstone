@@ -92,9 +92,12 @@ export async function resolveFetchTarget(rawUrl, { lookup = dnsLookup, allowlist
   // 允许任意一个解析结果命中 allowlist 即可,但其余结果仍必须"要么干净、要么也被放行",
   // 否则 DNS 多记录可被用来绕过(一条合法 + 一条内网)。
   const hostAllowed = isAllowedByList(url.hostname, allowlist);
-  const resolvedAllowed = hostAllowed || addresses.some((a) => isAllowedByList(a, allowlist));
-  if (!resolvedAllowed) {
-    for (const address of addresses) validateResolvedAddress(address, url.hostname);
+  if (!hostAllowed) {
+    for (const address of addresses) {
+      if (!isAllowedByList(address, allowlist)) {
+        validateResolvedAddress(address, url.hostname, { allowlist });
+      }
+    }
   }
   // 网络层必须直连这个已验证地址,避免 fetch 再次 DNS 解析产生 rebinding/TOCTOU。
   return { url, address: addresses[0] };

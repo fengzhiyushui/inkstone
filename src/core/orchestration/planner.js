@@ -1,12 +1,30 @@
 import { validatePlan, hasCycle, validateReplan } from "./subtask-schema.js";
 
 export function createPlanner({ callModel, maxPlanRepairs = 2 }) {
-  async function plan({ message, context, experiences }) {
+  async function plan({ message, context, experiences, signal = null, scope = null }) {
     let feedback = null;
     for (let attempt = 0; attempt <= maxPlanRepairs; attempt += 1) {
+      if (signal?.aborted) {
+        const err = new Error("turn was interrupted");
+        err.name = "AbortError";
+        err.code = "ABORT";
+        throw err;
+      }
+      if (scope?.budget?.exceeded()) {
+        const over = scope.budget.exceeded();
+        const err = new Error(`cost budget exceeded: ${over.reason}`);
+        err.code = "BUDGET_EXCEEDED";
+        err.details = over;
+        throw err;
+      }
       let raw;
-      try { raw = await callModel(plannerPrompt(message, context, feedback, experiences)); }
-      catch (e) { feedback = `model error: ${e.message}`; continue; }
+      try {
+        raw = await callModel(plannerPrompt(message, context, feedback, experiences), { signal, scope, role: "planner" });
+      } catch (e) {
+        if (isBudgetOrAbort(e)) throw e;
+        feedback = `model error: ${e.message}`;
+        continue;
+      }
       const obj = extractJson(raw);
       if (!obj) { feedback = "output was not valid JSON; reply with ONLY the JSON plan"; continue; }
       const v = validatePlan(obj);
@@ -20,12 +38,30 @@ export function createPlanner({ callModel, maxPlanRepairs = 2 }) {
     return degradeToSingle(message);
   }
 
-  async function replan({ message, done_when, completed, failed, seenSubtaskIds, completedIds, failedIds }) {
+  async function replan({ message, done_when, completed, failed, seenSubtaskIds, completedIds, failedIds, signal = null, scope = null }) {
     let feedback = null;
     for (let attempt = 0; attempt <= maxPlanRepairs; attempt += 1) {
+      if (signal?.aborted) {
+        const err = new Error("turn was interrupted");
+        err.name = "AbortError";
+        err.code = "ABORT";
+        throw err;
+      }
+      if (scope?.budget?.exceeded()) {
+        const over = scope.budget.exceeded();
+        const err = new Error(`cost budget exceeded: ${over.reason}`);
+        err.code = "BUDGET_EXCEEDED";
+        err.details = over;
+        throw err;
+      }
       let raw;
-      try { raw = await callModel(replanPrompt(message, done_when, completed, failed, feedback)); }
-      catch (e) { feedback = `model error: ${e.message}`; continue; }
+      try {
+        raw = await callModel(replanPrompt(message, done_when, completed, failed, feedback), { signal, scope, role: "replan" });
+      } catch (e) {
+        if (isBudgetOrAbort(e)) throw e;
+        feedback = `model error: ${e.message}`;
+        continue;
+      }
       const obj = extractJson(raw);
       if (!obj || typeof obj.done !== "boolean" || !Array.isArray(obj.subtasks)) { feedback = 'reply ONLY {"done":bool,"subtasks":[...]}'; continue; }
       if (obj.done || obj.subtasks.length === 0) return { done: true, subtasks: [] };
@@ -85,3 +121,9 @@ function extractJson(text) {
   if (start < 0 || end <= start) return null;
   try { return JSON.parse(s.slice(start, end + 1)); } catch { return null; }
 }
+
+function isBudgetOrAbort(e) {
+  if (!e) return false;
+  return e.code === "BUDGET_EXCEEDED" || e.code === "INTERRUPTED" || e.name === "AbortError" || e.name === "InterruptedError";
+}
+

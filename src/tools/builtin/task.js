@@ -1,4 +1,9 @@
-export function createTaskTool() {
+import {
+  resolveTaskToolCategory,
+  validateTaskParams
+} from "../../core/orchestration/task-delegation-contract.js";
+
+export function createTaskTool(options = {}) {
   return {
     name: "task",
     description: "Delegate a bounded subtask with constrained tools",
@@ -11,12 +16,31 @@ export function createTaskTool() {
       prompt: { type: "string" },
       tools: { type: "array", required: false }
     },
-    execute: async (params) => {
-      const delegatedTools = (params.tools || ["read", "grep", "glob"]).slice(0, 5);
-      return {
-        content: [{ type: "text", text: `Subtask queued: ${params.prompt}` }],
-        metadata: { status: "delegated", delegated_tools: delegatedTools }
-      };
+    resolveCategory: (params) => resolveTaskToolCategory(params),
+    execute: async (params = {}, context = {}) => {
+      const check = validateTaskParams(params);
+      if (!check.ok) {
+        return {
+          status: "error",
+          content: [{ type: "error", text: check.error }],
+          metadata: { status: "error", code: check.code }
+        };
+      }
+      const service = typeof options.getDelegationService === "function"
+        ? options.getDelegationService()
+        : (options.delegationService || context.taskDelegationService || null);
+      if (!service || typeof service.runTask !== "function") {
+        return {
+          status: "error",
+          content: [{ type: "error", text: "Task delegation service is not configured" }],
+          metadata: {
+            status: "unavailable",
+            code: "TASK_DELEGATION_UNAVAILABLE",
+            delegated_tools: check.tools
+          }
+        };
+      }
+      return service.runTask(params, context);
     }
   };
 }

@@ -22,7 +22,10 @@ export function createBuiltinTools(options = {}) {
     createGitTool(),
     createWebFetchTool(options.webFetch || {}),
     createMemoryTool(),
-    createTaskTool(),
+    createTaskTool(options.task || {
+      delegationService: options.taskDelegationService || null,
+      getDelegationService: options.getTaskDelegationService || null
+    }),
     createAskUserTool(),
     ...createDeferredEditTools({ editService: options.editService || null })
   ];
