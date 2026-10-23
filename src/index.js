@@ -209,7 +209,8 @@ export async function createKernel(root, options = {}) {
       trustStore: options.trustStore || { rules: [] }, projectRules: mergeProjectRules() })
   });
   if (options.autoInitMcp !== false && mcpHub.serverConfigs.size > 0) {
-    await mcpHub.initAll().catch(() => {});
+    const trustedScopes = options.trustedWorkspace === true ? null : ["user", "session"];
+    await mcpHub.initAll({ trustedScopes }).catch(() => {});
   }
   const contextEngine = options.contextEngine || createContextEngine({
     root,

@@ -231,15 +231,32 @@ export class McpHub extends EventEmitter {
     this.toolRegistry = registry;
   }
 
-  async initAll() {
+  async initAll({ trustedScopes = null } = {}) {
     const entries = [...this.serverConfigs.entries()].filter(
-      ([, cfg]) => !cfg.disabled
+      ([serverId, cfg]) => {
+        if (cfg.disabled) return false;
+        if (Array.isArray(trustedScopes)) {
+          const src = this.configSources?.[serverId];
+          if (src && !trustedScopes.includes(src)) return false;
+        }
+        return true;
+      }
     );
     const disabled = [...this.serverConfigs.entries()]
       .filter(([, cfg]) => cfg.disabled)
       .map(([serverId]) => ({ serverId, status: "DISABLED" }));
+    const untrusted = [...this.serverConfigs.entries()]
+      .filter(([serverId, cfg]) => {
+        if (cfg.disabled) return false;
+        if (Array.isArray(trustedScopes)) {
+          const src = this.configSources?.[serverId];
+          return Boolean(src && !trustedScopes.includes(src));
+        }
+        return false;
+      })
+      .map(([serverId]) => ({ serverId, status: "UNTRUSTED" }));
 
-    const results = [...disabled];
+    const results = [...disabled, ...untrusted];
     const queue = entries.slice();
 
     const workers = Array.from(

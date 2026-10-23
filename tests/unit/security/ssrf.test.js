@@ -46,6 +46,16 @@ test("validateFetchUrl validates every DNS A record and fails if any is internal
   assert.deepEqual(optionsSeen, { family: 4, all: true });
 });
 
+test("validateFetchUrl fails if one address is in allowlist but another is an unallowed internal address", async () => {
+  await assert.rejects(
+    () => validateFetchUrl("https://mixed.test", {
+      allowlist: ["192.168.1.10"],
+      lookup: async () => [{ address: "192.168.1.10", family: 4 }, { address: "10.0.0.5", family: 4 }]
+    }),
+    /blocked private network/
+  );
+});
+
 test("validateResolvedAddress blocks reserved IPv4 ranges", () => {
   for (const ip of [
     "0.1.2.3", "100.64.0.1", "100.127.255.254", "192.0.0.8",

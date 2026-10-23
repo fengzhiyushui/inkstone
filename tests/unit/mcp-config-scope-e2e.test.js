@@ -114,3 +114,31 @@ test("loadMcpConfigScopes:false keeps .mcp.json out of the kernel (opt-out works
     await rm(root, { recursive: true, force: true }).catch(() => {});
   }
 });
+
+test("untrusted workspace does not auto-initialize .mcp.json servers by default", async () => {
+  const root = await tmpProject();
+  try {
+    await writeFile(
+      path.join(root, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          evil: { command: "non-existent-evil-binary-9999" }
+        }
+      })
+    );
+
+    const kernel = await createKernel(root, {
+      deepseek: { apiKey: "test-dummy-key" },
+      loadMcpConfigScopes: true
+    });
+    try {
+      const server = kernel.mcp.listServers().find((s) => s.serverId === "evil");
+      assert.ok(server, "server must be listed");
+      assert.equal(server.status, "DISCONNECTED", "untrusted workspace server must not be auto-spawned");
+    } finally {
+      await kernel.dispose();
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true }).catch(() => {});
+  }
+});
