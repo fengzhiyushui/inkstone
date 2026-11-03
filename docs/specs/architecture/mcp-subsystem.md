@@ -97,7 +97,7 @@ MCP 现行版本为 **`2026-07-28`（Modern）**，与 **`2025-11-25` 及更早�
 
 ```text
                           三端展示 (GUI McpView / TUI /mcp / CLI inkstone mcp)
-                                     │  mcp:* IPC / 内核 facade
+                                     │  mcp:* IPC / 内核 facade (src/tools/mcp/mcp-facade.js)
 ┌───────────────────────────────────▼───────────────────────────────────┐
 │                         McpHost (宿主编排层)                           │
 │  · 配置合并（session > project > user）+ 密钥 resolve                 │
@@ -308,7 +308,7 @@ Server 结果映射为 Inkstone 文本内容：
 - `mcp/capability-cache.js` 仅在当前客户端内缓存，最多 **64 项 / 2 MiB / 5 分钟**；没有正数 `ttlMs` 不缓存，`cacheScope:none/request` 不缓存，其余提示也不扩大到跨服务器、凭据或进程共享。断开、身份变化、`list_changed` 清缓存与游标；在途旧响应不能重新写入失效缓存。列表缓存与游标都不落盘。
 - `mcp/capability-tools.js` 按已连接且有对应能力的服务动态挂载 `mcp_resources` / `mcp_prompts`，使用现有 read 类权限及参数校验，是**模型上下文桥**。资源、提示词均作为带来源说明的普通 tool 文本送入模型，返回数据中的 `role:system` 不会变成系统消息。URI 只提交给配置中的 MCP 服务，客户端不会直接抓取该 URI。界面「放入对话」只填入引用草稿，由用户发送。
 - `mcp/security/mcp-content.js` 是 CLI、GUI、内容工具与 Hub 共享的展示脱敏边界：清理已配置的密钥值、敏感字段与对象键，省略 binary，并限制深度 / 节点。输出结构保留普通 `data` 字段；脱敏后重名不会静默覆盖已有字段。RPC 错误也必须经过相同脱敏边界。
-- `mcp/output-schema.js` 是**有界 JSON Schema 2020-12 子集**，不是完整实现：支持类型 / 枚举 / const、数值和字符串边界、对象字段 / required / additionalProperties / dependentRequired / dependentSchemas、数组 / prefixItems / contains / uniqueItems、组合 / 条件及本地 JSON Pointer `$ref`。不支持远程引用、锚点、`format`、`unevaluated*` 或任意正则；未知断言、复杂正则、超出预算、缺少或不匹配的 structuredContent 都明确返回校验错误，不静默通过。校验发生在原始 structuredContent 上，随后脱敏进入 metadata。
+- `mcp/output-schema.js` 是**有界 JSON Schema 2020-12 子集**（v1.19.2 起 JSON 遍历、类型断言与安全 pattern 统一复用 `src/tools/schema.js` 公共内核），不是完整实现：支持类型 / 枚举 / const、数值和字符串边界、对象字段 / required / additionalProperties / dependentRequired / dependentSchemas、数组 / prefixItems / contains / uniqueItems、组合 / 条件及本地 JSON Pointer `$ref`。不支持远程引用、锚点、`format`、`unevaluated*` 或任意正则；未知断言、复杂正则、超出预算、缺少或不匹配的 structuredContent 都明确返回校验错误，不静默通过。校验发生在原始 structuredContent 上，随后脱敏进入 metadata。
 - 挂载的 MCP 工具返回标准 `{status,content,metadata}`，修复文本返回值在 ToolExecutor 中丢失的问题；`isError`、校验失败与尚未支持的 `input_required` 均呈 error。`kernel.mcp.callTool` 兼容原有字符串返回。
 - CLI/GUI 默认浏览预算为 **1 页 / 50 项 / 64 KiB**，按需连接目标服务，失败不拖住其它服务器。资源/提示词的强制刷新可用 API `forceRefresh:true`；v1.14 的取消检查仅覆盖请求前与分页间，v1.16 已将 signal 透传到在途 JSON-RPC 与 HTTP 请求。OAuth、诊断事件收口、MRTR 不在 v1.14 当时的范围内。
 

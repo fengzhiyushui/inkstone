@@ -274,7 +274,7 @@ Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（
 - `shell` 只接受结构化 argv，以 `shell:false` 执行（[`security/shell-policy.js`](../src/security/shell-policy.js)）。
 - `web_fetch` 阻断 localhost / 私网 / link-local / CGNAT / 保留与组播网段，以及 IPv4-mapped IPv6；校验全部 DNS A 记录，每跳 redirect 重新校验；默认网络层固定到已验证 IP 直连（原 hostname 作 Host/SNI），避免 DNS rebinding/TOCTOU（[`security/ssrf.js`](../src/security/ssrf.js)）。
 - 输出密钥脱敏（[`security/redactor.js`](../src/security/redactor.js)）：Bearer / 常见 key/token/secret/password 赋值、AWS/GitHub/sk- 前缀、多行私钥块；不做易误伤的通用高熵猜测。
-- GUI：`nodeIntegration:false` + `contextIsolation:true` + `sandbox:true` + IPC 白名单强制生效（`IPC_CHANNELS` 唯一权威清单，未登记 channel 的 handle 注册即抛错）。
+- GUI：`nodeIntegration:false` + `contextIsolation:true` + `sandbox:true` + IPC 白名单强制生效（`IPC_CHANNELS` 唯一权威清单，未登记 channel 的 handle 注册即抛错）。v1.19.3 起全部 69 个 IPC 通道统一经 `IPC_ROUTES` 声明式路由表驱动分发，消除显式 `handle()` 注册散落，并在启动阶段执行白名单 69 ↔ 注册 69 双向互锁自检。
 - 敏感文件写入前独立风险提醒（见 [§4](#4-编辑与回滚)），任何自治档位都不能跳过。
 
 ---
@@ -327,7 +327,7 @@ src/
     orchestration/ router · planner · worker · reviewer · merge · iso · task 委派 · experience 接线
     memory/       experience-* · risk-rules
   deepseek/       model-gateway（含 testDeepSeekConnection 连接测试）· model-router · json-mode · streaming · fim-client · usage-tracker · tool-call-repair · prompt-assembler · api-errors
-  tools/          registry · schema（JSON Schema 子集校验与字段提取公共内核）· executor · builtin/*（grep 内含 searchWorkspace、git 内含 showDiff）· permissions/*
+  tools/          registry · schema（JSON Schema 子集校验与字段提取公共内核）· executor · builtin/*（grep 内含 searchWorkspace、git 内含 showDiff）· permissions/* · mcp/*（含 mcp-facade）
   edits/          diff-parser（unified diff 解析与应用）· change-store（变更台账）· rollback-service · edit-transaction · edit-service · sensitive-notice
   sessions/       event-types · event-log · branch-store · checkpoint-index · rewind-* · session-manager
   context/        context-* · token-budget · workspace-indexer · project-index · semantic/*
@@ -338,7 +338,7 @@ src/
   (顶层入口)      index.js · cli.js · config.js · theme.js
 gui/              Electron main/preload/kernel-host + React/Vite 渲染层（v1.8 三列壳）
 docs/             specs（7 篇 Living Spec）· plans（现役计划 + 历史归档）· CHANGELOG · README · project-overview · DEPLOYMENT_AND_USAGE
-tests/            单元 / 集成 / e2e
+tests/            单元（14 个扁平领域文件，91 例）· 集成（2 个端到端闭环文件，8 例）· e2e（CLI/TUI/GUI 冒烟，4 例），共 103 项高内聚用例
 ```
 
 顶层只保留 4 个入口文件：`index.js`（`createKernel()` 组合根）、`cli.js`（CLI 命令分发）、`config.js`（配置加载与归一）、`theme.js`（品牌 / 版本 / 终端配色）。v1.19.0 起原顶层的 `provider.js` / `context.js` / `search.js` / `git.js` / `tui.js` / `patch.js` / `changes.js` 全部内聚到所属域（见 [CHANGELOG v1.19.0](CHANGELOG.md)），V1 并存内核（`src/kernel/*`、`agent.js`、`chat.js`、`ui.js`）更早已删除。
@@ -360,8 +360,8 @@ tests/            单元 / 集成 / e2e
 ## 12. 开发与文档维护
 
 ```bash
-npm test            # node --test：tests/ 全部用例
-npm run check       # node --check 语法校验
+npm test            # node --test：tests/ 全部用例（103 项高内聚测试全绿）
+npm run check       # node --check 语法校验（297 个 JS 文件）
 git diff --check
 ```
 

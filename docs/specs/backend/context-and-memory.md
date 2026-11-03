@@ -28,7 +28,7 @@
 src/context/
   context-unit.js · workspace-indexer.js · token-budget.js
   context-selector.js · context-snapshot.js · context-manifest.js
-  context-cache.js · index.js · semantic/
+  context-cache.js · project-index.js · index.js · semantic/
 ```
 
 入口 `createContextEngine({ root, eventBus, options })`：`scan` / `snapshot` / `pin` / `unpin` / `warm` / `invalidate` / `getStats`。
@@ -45,7 +45,7 @@ src/context/
 
 ### 1.3 索引与跳过规则
 
-`workspace-indexer` 用 `walkWorkspaceFiles` / `readWorkspaceTextFile`。默认 `maxFiles: 1000`、`maxFileBytes: 64*1024`、`maxSnippetBytes: 4000`。跳过原因（计入 stats）：
+`workspace-indexer` 用 `walkWorkspaceFiles` / `readWorkspaceTextFile`（遍历忽略规则在 v1.19.0 起统一由 `src/workspace/path-safety.js` 作为单一真源维护）。默认 `maxFiles: 1000`、`maxFileBytes: 64*1024`、`maxSnippetBytes: 4000`。跳过原因（计入 stats）：
 
 | 原因 | 规则 |
 |---|---|

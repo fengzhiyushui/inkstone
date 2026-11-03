@@ -232,7 +232,7 @@ preview → begin snapshot → rollback 循环 → createBranch → activateBran
   mcp-logs/
 ```
 
-模块：`src/core/recovery/atomic-file.js`、`recovery-faults.js`、`project-lock.js`、`paused-turn-persistence.js`、`transaction-journal.js`、`recovery-inbox.js`、`recovery-service.js`、`recovery-errors.js`、`orchestration-persistence.js`、`task-paused-persistence.js`。
+模块：`src/core/recovery/atomic-file.js`、`recovery-faults.js`、`project-lock.js`、`sidecar-store.js`（v1.19.2 通用持久化底座，承载 `paused-turn-persistence.js`、`orchestration-persistence.js` 与 `task-paused-persistence.js` 三套侧车存储）、`transaction-journal.js`、`recovery-inbox.js`、`recovery-service.js`、`recovery-errors.js`。
 
 `paused/`、`journal/`、`recovered/`、`orchestration-paused/`、`task-paused/` 是私有恢复载荷，排除遥测与 UI 原文展示，`.gitignore` 覆盖。
 

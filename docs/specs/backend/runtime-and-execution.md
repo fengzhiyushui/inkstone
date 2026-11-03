@@ -42,7 +42,7 @@ user input → classify → cache-aware context → plan → approval gate
 
 一轮 turn = 一次用户请求及其全部模型调用、工具调用、审批、编辑、验证、修复、产物与最终答复。生命周期状态以 `src/core/runtime/lifecycle.js` 的 `RUNTIME_STATES` 为唯一权威：`idle` / `classify` / `plan` / `awaiting_approval` / `execute` / `review` / `verify` / `repair` / `complete` / `failed` / `interrupted`。
 
-`agent-runtime.js` 是单 agent 单轮引擎，编排场景复用为 Worker / Reviewer 实例（见[编排](orchestration.md)）。入口 `createAgentRuntime(...)`；`send` 主路径与 `approve` 续跑路径共用 `verifyAndMaybeRepair`。
+`agent-runtime.js` 是单 agent 单轮引擎，编排场景复用为 Worker / Reviewer 实例（见[编排](orchestration.md)）。入口 `createAgentRuntime(...)`；`send` 主路径与 `approve` 续跑路径共用 `verifyAndMaybeRepair`。v1.19.2 起，`executor-loop.js` 与 `repair-executor.js` 共用的模型调用、整批预校验、有界语法重试与工具执行循环收敛至 [`src/core/execution/execution-cycle.js`](../../src/core/execution/execution-cycle.js)；普通执行暂停、主验证器暂停、修复期暂停与 `task` 子任务暂停四路续跑逻辑收敛至 [`src/core/runtime/resume-coordinator.js`](../../src/core/runtime/resume-coordinator.js)，大幅解耦了 `agent-runtime.js` 的状态编排样板。
 
 ### 1.2 固定执行路径
 
@@ -468,7 +468,7 @@ B01 模型 router 在同一 scope 内开始记账；B02 plan/worker/reviewer/rep
 `destructive` 仍硬编码 deny，`read_secret` 仍 ask。
 - **移除的旁路**：chat 单发分支与 `sendChatMessage` 直调 `askDeepSeek`；`.deepseek-code/chat.json` 读写；界面到 `provider.askDeepSeek` 的一切路径。会话连续性来自 kernel session。
 - **git 加固**：`runProcess` 从 `src/tools/builtin/shell.js` 移到 `src/security/shell-policy.js`，shell 与 git 共用。`git.js` 经 `resolveWorkspacePath` 后直接 `runProcess`，不再构造 shell 工具。元数据 `side_effect: "process"`、`category: "read"`（四只读操作：status/diff/log/show）。
-- **死代码与边界测试**：删除 `src/tui.js` 无用的 `./agent.js` 导入；删除 `src/cli.js` 的 `detectTestCommand`（活路径在 `tools/builtin/test.js`）。扩展 `tests/integration/v2-interface-boundary.test.js`：cli/tui 不含 `provider`/`askDeepSeek`/`./agent.js`；chat 路径构造 kernel 而非 legacy chat 命令。
+- **死代码与边界测试**：删除 `src/tui.js` 无用的 `./agent.js` 导入；删除 `src/cli.js` 的 `detectTestCommand`（活路径在 `tools/builtin/test.js`）。边界测试（现收敛至 `tests/unit/apps-cli-and-tui.test.js` 与 `tests/integration/kernel-and-mcp.test.js`）钉住：cli/tui 不含 `provider`/`askDeepSeek`/`./agent.js`；chat 路径构造 kernel 而非 legacy chat 命令。
 - 不变量：界面不得触达 `provider.askDeepSeek`；`read-only` 为增量矩阵行，破坏性仍硬 deny；git 读操作无审批。
 
 ---
@@ -509,7 +509,7 @@ B01 模型 router 在同一 scope 内开始记账；B02 plan/worker/reviewer/rep
 
 ### 9.3 `agent-runtime` 可维护性（v1.6.3）
 
-**阶段 1：行为刻画测试**（`tests/unit/core/runtime/agent-runtime-characterization.test.js`，7 条）：
+**阶段 1：行为刻画测试**（现收敛至 `tests/unit/agent-runtime.test.js`，包含 7 条核心刻画用例）：
 
 | 刻画点 | 锁定内容 |
 |---|---|

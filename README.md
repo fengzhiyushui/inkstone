@@ -4,13 +4,6 @@
 
 **简体中文** · [English](./README.en.md)
 
-[![version](https://img.shields.io/badge/version-v1.19.3-blue.svg)](./package.json)
-[![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
-[![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org/)
-[![deps](https://img.shields.io/badge/core%20runtime%20deps-0-success.svg)](./package.json)
-[![tests](https://img.shields.io/badge/tests-1842%20passed-brightgreen.svg)](./tests/)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/fengzhiyushui/inkstone/pulls)
-
 **面向 DeepSeek 模型的高性能本地 AI 编程智能体 (Coding Agent)**  
 *CLI · TUI · 现代化桌面 GUI —— 一套内核，三端体验*
 
@@ -292,7 +285,7 @@ inkstone/
 我们非常欢迎社区贡献！为了保证内核的绝对稳定，Inkstone 实行严格的**五项准入测试闸门（Five Gates）**：
 
 ```bash
-# 1. 运行全部单元与集成测试套件（当前 1842 项测试全绿）
+# 1. 运行全部单元与集成测试套件（当前 103 项高内聚测试全绿，18 个领域测试文件）
 npm test
 
 # 2. 源码语法校验

@@ -75,7 +75,7 @@
 - **10 套主题 id**：`sumi`(墨) / `slate`(玄) / `vesper`(烬) / `nord`(峡) / `ash`(灰) / `snow`(霜) / `sand`(沙) / `lotus`(荷) / `latte`(瓷) / `paper`(宣)。旧 id 经 `LEGACY_THEME_MAP` 静默迁移（`night→sumi`、`day→latte`、`dawn→lotus`、`mocha→sumi`、`moon→slate`、`forest→ash`、`clay→vesper`、`rose→sumi`）。
 - **v1.8.0 四段带**：dark L 25–51（3 套）/ dim L 55–89（2 套）/ tint L 165–235（2 套）/ light L 236–251（3 套）。对比度 ≥7:1 决定底色亮度有物理死区（L 90–164 之间白字与墨字都做不到 7:1），过渡主题只能从两侧向死区边缘延伸。
 - **v1.8.1 C 变体**：结构槽 10 个（`bg-base/panel/element/inset`、`text/mut/faint`、`border/border-strong`、`code-bg`）走明暗两档，两档逐字节相同；10 主题各定义 `accent/hover/soft/text` 与 `ok/warn/err/info`。见 `gui/src/styles/tokens.css`。`themes.js` 保留 `tier` 与 `group`，`isLightTheme()` 语义不变；四档只是展示分组，代码明暗判定仍二元（`dark|dim → dark`，`tint|light → light`）。
-- **对比度闸门常驻单测**：`scripts/check-theme-contrast.mjs` + `tests/unit/gui/theme-contrast.test.js`，亮度实现单源 `gui/src/state/contrast.js`。阈值：正文/画布与正文/面板 `[7, 19.5]`；次级 ≥4.5；弱化/强调/语义 ≥3；按钮文字 ≥4.5；描边 ≥1.5。v1.8.1 闸门口径为结构 2×7 + accent 10×4 = 54 项。设置 › 外观按四段分组，ThemeHub 展示五色块 + hex + 实测对比度详情。
+- **对比度闸门常驻单测**：`scripts/check-theme-contrast.mjs` + `tests/unit/gui-workbench.test.js`，亮度实现单源 `gui/src/state/contrast.js`。阈值：正文/画布与正文/面板 `[7, 19.5]`；次级 ≥4.5；弱化/强调/语义 ≥3；按钮文字 ≥4.5；描边 ≥1.5。v1.8.1 闸门口径为结构 2×7 + accent 10×4 = 54 项。设置 › 外观按四段分组，ThemeHub 展示五色块 + hex + 实测对比度详情。
 - 舒适性：正文对比上限 19.5；字阶不出现 <11px；卡片圆角 10–14px；柔光只在 `focus-within` 与 hover；玻璃态只给浮层，`blur ≤ 12px`（偏好 `glass`）；动效 ≤ .25s 且尊重 `prefers-reduced-motion`。
 - 冻结清单：`<html theme="id">`、18 槽位名、10 个 `[theme]` 块、smoke 选择器、`.rail-fn` 顺序、`.cz-meta` 5 形态、`.shell.shell-settings`、30px 标题栏、`.sn-backdrop`。
 
@@ -88,7 +88,7 @@
 ## 3. 数据接入与安全边界
 
 - GUI **只经 `gui/kernel-host.js`**（主进程）+ `gui/preload.js`（`window.deepseek` bridge）触达内核；renderer 不直接依赖 Node runtime，不裸 `fs`。
-- **`IPC_CHANNELS` 是唯一权威清单**（`gui/main.js`）：`registerIpcHandlers` 里任何未登记 channel 的 `handle` 注册会在**启动即抛错**（`IPC channel "..." is not in the IPC_CHANNELS allowlist`），防止新增通道漏登记；渲染层仅能调用 preload 暴露的子集。IPC 不暴露任意 kernel 方法。
+- **`IPC_CHANNELS` 权威清单与 100% 表驱动注册**（`gui/main.js`）：全部 69 个通道均通过 `IPC_ROUTES` 表驱动注册并走通用 `forward()` 管道（v1.19.3 彻底消除了遗留的 23 处显式 `handle()` 胶水代码）。启动时执行白名单 69 ↔ 注册 69 双向自检，任何未登记通道注册或白名单通道未注册均在启动时抛错。渲染层仅能调用 preload 暴露的子集，不暴露任意 kernel 方法。
 - `nodeIntegration: false` + `contextIsolation: true` + `sandbox: true`。
 - **API Key 绝不回渲染层明文**：`getSettings()` 对任何 apiKey 只回 `hasKey` / 掩码（如 `sk-…abcd`）；Key 明文只落 `.deepseek-code/`。GUI IPC、日志、会话事件都不含密钥。
 - v1.18.0 起 `will-navigate` 与 `setWindowOpenHandler` 拦截非本地应用入口的外部跳转，防渲染层被诱导导航至外部不可信 URL。

@@ -324,7 +324,7 @@ Worker turn sidecar 由既有 `pausedTurnPersistence` 写（`agent-runtime` 不�
 
 ### 13.4 契约与边界
 
-契约函数在 `src/core/orchestration/orchestration-recovery-contract.js`（`ORCH_RECOVERY_SCHEMA_VERSION`、`ORCH_FINGERPRINTS`、`validateOrchestrationSidecar`、`ownershipOk`、`serializeOrchestrationState` 等）；存储见 `src/core/recovery/orchestration-persistence.js`。
+契约函数在 `src/core/orchestration/orchestration-recovery-contract.js`（`ORCH_RECOVERY_SCHEMA_VERSION`、`ORCH_FINGERPRINTS`、`validateOrchestrationSidecar`、`ownershipOk`、`serializeOrchestrationState` 等）；存储见 `src/core/recovery/orchestration-persistence.js`（基于 `sidecar-store.js` 通用底座）。
 
 1. `agent-runtime.js` 不改。
 2. `recovery.enabled = false` 时行为与 C5 逐字节一致。

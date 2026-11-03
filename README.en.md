@@ -4,13 +4,6 @@
 
 [简体中文](./README.md) · **English**
 
-[![version](https://img.shields.io/badge/version-v1.19.3-blue.svg)](./package.json)
-[![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
-[![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org/)
-[![deps](https://img.shields.io/badge/core%20runtime%20deps-0-success.svg)](./package.json)
-[![tests](https://img.shields.io/badge/tests-1842%20passed-brightgreen.svg)](./tests/)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/fengzhiyushui/inkstone/pulls)
-
 **High-Performance Local AI Coding Agent for DeepSeek Models**  
 *CLI · TUI · Modern Desktop GUI — One Unified Kernel, Three Experiences*
 
@@ -292,7 +285,7 @@ Security is central to local agent design:
 Contributions are welcome! To safeguard stability, Inkstone enforces strict **Five Quality Gates**:
 
 ```bash
-# 1. Run full unit and integration test suite (1842 tests all green)
+# 1. Run full unit and integration test suite (103 high-cohesion tests across 18 domain files, all green)
 npm test
 
 # 2. Syntax and type check across all source files
