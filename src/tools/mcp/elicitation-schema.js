@@ -1,4 +1,7 @@
 import { isIP } from "node:net";
+// 公共内核 + 场景钩子：JSON 安全走查复用 src/tools/schema.js 的上限与计费口径，
+// 本模块只保留平面标量/枚举/格式校验与大小限制（MCP_INPUT_INVALID、64 KiB、16 KiB、64 字段）。
+import { hasOwn, inspectJson, isJsonObject, JSON_SAFE_COST, JSON_SAFE_LIMITS } from "../schema.js";
 import { validateOutputSchema } from "./output-schema.js";
 
 const MAX_BYTES = 65_536;
@@ -7,8 +10,6 @@ const MAX_FIELDS = 64;
 const FORM_KEYS = new Set(["$schema", "type", "properties", "required"]);
 const ANNOTATIONS = ["type", "title", "description", "default"];
 const FORMATS = new Set(["email", "uri", "date", "date-time"]);
-const own = (value, key) => Object.hasOwn(value, key);
-const object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 
 function invalid() {
   const error = new Error("MCP input does not match the supported form schema");
@@ -18,9 +19,10 @@ function invalid() {
 
 // Inspect before cloning: reject accessors, cycles, exotic prototypes, non-JSON
 // values and excessive depth/nodes without invoking JSON serialization hooks.
+// 与 output-schema 共享走查上限/计费口径与检查时点；任何违规原因都归约为 MCP_INPUT_INVALID。
 function detachedJson(value) {
   try {
-    if (!validateOutputSchema(true, value).valid) invalid();
+    inspectJson(value, { limits: JSON_SAFE_LIMITS, cost: JSON_SAFE_COST, fail: invalid, prototypeFirst: true, checkBytesOnEntry: false, checkBytesAfterChild: true });
     const clone = structuredClone(value);
     if (Buffer.byteLength(JSON.stringify(clone), "utf8") > MAX_BYTES) invalid();
     return clone;
@@ -28,7 +30,7 @@ function detachedJson(value) {
 }
 
 function onlyKeys(value, keys) {
-  if (!object(value) || Object.keys(value).some((key) => !keys.has(key))) invalid();
+  if (!isJsonObject(value) || Object.keys(value).some((key) => !keys.has(key))) invalid();
 }
 
 function strings(value, { unique = false, nonempty = false } = {}) {
@@ -39,9 +41,9 @@ function strings(value, { unique = false, nonempty = false } = {}) {
 
 function bounds(schema, minimum, maximum, integer = false) {
   for (const name of [minimum, maximum]) {
-    if (own(schema, name) && (typeof schema[name] !== "number" || !Number.isFinite(schema[name]) || (integer && (!Number.isSafeInteger(schema[name]) || schema[name] < 0)))) invalid();
+    if (hasOwn(schema, name) && (typeof schema[name] !== "number" || !Number.isFinite(schema[name]) || (integer && (!Number.isSafeInteger(schema[name]) || schema[name] < 0)))) invalid();
   }
-  if (own(schema, minimum) && own(schema, maximum) && schema[minimum] > schema[maximum]) invalid();
+  if (hasOwn(schema, minimum) && hasOwn(schema, maximum) && schema[minimum] > schema[maximum]) invalid();
 }
 
 function options(value) {
@@ -56,23 +58,23 @@ function options(value) {
 }
 
 function fieldSchema(field) {
-  if (!object(field)) invalid();
-  for (const key of ["title", "description"]) if (own(field, key) && typeof field[key] !== "string") invalid();
+  if (!isJsonObject(field)) invalid();
+  for (const key of ["title", "description"]) if (hasOwn(field, key) && typeof field[key] !== "string") invalid();
   if (field.type === "string") {
-    if (own(field, "enum")) {
+    if (hasOwn(field, "enum")) {
       onlyKeys(field, new Set([...ANNOTATIONS, "enum", "enumNames"]));
       strings(field.enum, { unique: true, nonempty: true });
-      if (own(field, "enumNames")) {
+      if (hasOwn(field, "enumNames")) {
         strings(field.enumNames);
         if (field.enumNames.length !== field.enum.length) invalid();
       }
-    } else if (own(field, "oneOf")) {
+    } else if (hasOwn(field, "oneOf")) {
       onlyKeys(field, new Set([...ANNOTATIONS, "oneOf"]));
       options(field.oneOf);
     } else {
       onlyKeys(field, new Set([...ANNOTATIONS, "minLength", "maxLength", "format"]));
       bounds(field, "minLength", "maxLength", true);
-      if (own(field, "format") && !FORMATS.has(field.format)) invalid();
+      if (hasOwn(field, "format") && !FORMATS.has(field.format)) invalid();
     }
   } else if (field.type === "number" || field.type === "integer") {
     onlyKeys(field, new Set([...ANNOTATIONS, "minimum", "maximum"]));
@@ -82,8 +84,8 @@ function fieldSchema(field) {
   } else if (field.type === "array") {
     onlyKeys(field, new Set([...ANNOTATIONS, "minItems", "maxItems", "items"]));
     bounds(field, "minItems", "maxItems", true);
-    if (!object(field.items)) invalid();
-    if (own(field.items, "enum")) {
+    if (!isJsonObject(field.items)) invalid();
+    if (hasOwn(field.items, "enum")) {
       onlyKeys(field.items, new Set(["type", "enum"]));
       if (field.items.type !== "string") invalid();
       strings(field.items.enum, { unique: true, nonempty: true });
@@ -92,7 +94,7 @@ function fieldSchema(field) {
       options(field.items.anyOf);
     }
   } else invalid();
-  if (own(field, "default")) validateField(field, field.default);
+  if (hasOwn(field, "default")) validateField(field, field.default);
 }
 
 function genericField(field) {
@@ -160,12 +162,12 @@ export function validateElicitationSchema(schema) {
   try {
     const normalized = detachedJson(schema);
     onlyKeys(normalized, FORM_KEYS);
-    if (normalized.type !== "object" || !object(normalized.properties)) invalid();
-    if (own(normalized, "$schema") && normalized.$schema !== "https://json-schema.org/draft/2020-12/schema") invalid();
+    if (normalized.type !== "object" || !isJsonObject(normalized.properties)) invalid();
+    if (hasOwn(normalized, "$schema") && normalized.$schema !== "https://json-schema.org/draft/2020-12/schema") invalid();
     if (Object.keys(normalized.properties).length > MAX_FIELDS) invalid();
-    if (own(normalized, "required")) {
+    if (hasOwn(normalized, "required")) {
       strings(normalized.required, { unique: true });
-      if (normalized.required.some((name) => !own(normalized.properties, name))) invalid();
+      if (normalized.required.some((name) => !hasOwn(normalized.properties, name))) invalid();
     }
     for (const field of Object.values(normalized.properties)) fieldSchema(field);
     return normalized;
@@ -177,7 +179,7 @@ export function validateElicitationResponse(schema, content) {
   try {
     const normalized = validateElicitationSchema(schema);
     const result = detachedJson(content);
-    if (!object(result)) invalid();
+    if (!isJsonObject(result)) invalid();
     const generic = {
       ...normalized,
       properties: Object.fromEntries(Object.entries(normalized.properties).map(([name, field]) => [name, genericField(field)])),

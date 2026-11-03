@@ -153,14 +153,14 @@ Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（
 - **v1.14 接线修复**：持久授权进入正常 runtime 的 permission context 及公开 `tools.execute`，重建 kernel 后仍生效；tools 配置统一归一化并保留 risk；动态 add 保留 headers/allowlist/trust/tools；公开 kernel 增 add/remove，GUI 添加失败会呈现错误。
 - **资源与提示词**：Client、Hub、`kernel.mcp` 提供资源 list/templates/read、提示词 list/get；缺少 capability 不发业务 RPC，只含内容能力的服务可独立连接。Hub 支持内容调用按需连接目标服务。列表分页默认 5 页 / 200 项 / 1 MiB，内容默认 64 KiB；同客户端缓存最多 64 项 / 2 MiB / 5 分钟。边界与游标有效期见 [规格 §4.1.1](specs/architecture/mcp-subsystem.md)。
 - **模型上下文桥**（[`capability-tools.js`](../src/tools/mcp/capability-tools.js)）：按连接状态动态挂载 `mcp_resources` / `mcp_prompts`，走现有 read 权限与参数校验；外部内容以 tool 消息引用，不能将返回的 system 角色提升成模型系统指令。已知密钥、错误及 binary 经共享 [`security/mcp-content.js`](../src/security/mcp-content.js) 处理。
-- **输出契约**（[`output-schema.js`](../src/tools/mcp/output-schema.js)）：有界 JSON Schema 2020-12 子集检查原始 structuredContent，未知关键词/远程引用/超预算明确报错；随后脱敏进 metadata。挂载工具返回标准 `{status,content,metadata}`，修复 ToolExecutor 丢文本；`isError` / 校验失败均为 error。公开 `kernel.mcp.callTool` 保持字符串兼容。
+- **输出契约**（[`output-schema.js`](../src/tools/mcp/output-schema.js)）：有界 JSON Schema 2020-12 子集检查原始 structuredContent，未知关键词/远程引用/超预算明确报错；随后脱敏进 metadata。挂载工具返回标准 `{status,content,metadata}`，修复 ToolExecutor 丢文本；`isError` / 校验失败均为 error。公开 `kernel.mcp.callTool` 保持字符串兼容。v1.19.2 起其 JSON 安全走查、类型判定、canonical 序列化与安全 pattern 编译统一复用 [`tools/schema.js`](../src/tools/schema.js) 的零依赖公共内核（keyword 白名单、`$ref` 解析与 `MCP_OUTPUT_SCHEMA_*` 错误码仍留在本模块），与 elicitation、schema-converter 脱敏走查及 GUI 试跑校验同源。
 - **三端**：GUI `McpView`（接入方式选择、风险徽章、信任开关、密钥面板）加资源树、URI 模板、提示词参数浏览；结果只填入对话草稿，不自动发送。CLI 增 `inkstone mcp resources|prompts`，与 GUI 默认均为 1 页 / 50 项 / 64 KiB；命令见 [部署与使用](DEPLOYMENT_AND_USAGE.md)。v1.16 TUI 增 `/mcp` 管理与日志，GUI 增日志/试跑，CLI 增历史诊断读取；管理命令不调用模型。
 - **OAuth（v1.15）**：`auth/` 负责 PR/AS 与 401 challenge 发现、CIDM/预注册公共客户端、DCR 兼容、S256 PKCE、state/iss 校验及加密凭据。凭据按 server/issuer/resource/client/scopes 隔离；并发刷新合并、401 最多一次重试，失败重新登录。OAuth HTTP 请求不跟随重定向，仍走 DNS 固定与 SSRF。GUI 主进程打开浏览器，CLI `mcp auth` 提供登录/状态/注销；成功后 Hub 自动重连，注销/禁用/移除阻止旧请求重新挂载工具。`mcp:auth_required` / `mcp:auth_status` 进入统一会话事件。完整边界见 [规格 §3.4.1](specs/architecture/mcp-subsystem.md#341-v115-实际契约2026-10-06)。
 - **诊断（v1.16）**：[`diagnostics.js`](../src/tools/mcp/diagnostics.js) 每进程最多 500 条 / 1 MiB，100 ms 合并写入 `.deepseek-code/mcp-logs/`，停止 flush，保留最近 8 个运行文件。仅保存结构摘要/请求 ID/耗时/分类，不含参数、结果正文、OAuth 交换、HTTP 头或原始 stderr；采集与读取时动态脱敏。`getLogs` 默认 100、最多 4000 条；CLI/TUI 默认 50、最多 500 条。CLI `autoInitMcp:false`，新进程可查询已移除服务历史；存储问题显示 `storageError`。
 - **工具试跑（v1.16）**：[`tool-trials.js`](../src/tools/mcp/tool-trials.js) 复用 ToolExecutor、权限引擎与原始 inputSchema 子集校验，固定 supervised，destructive 拒绝。GUI 可填写字段或 JSON，按需连接指定服务；审批绑定单个 runId 和固定参数，仅本次有效。32 个待处理上限、5 分钟批准期限，参数/显示结果 64 KiB 上限；重复批准、过期与连接/配置身份变化不能重放旧调用。
 - **取消与事件（v1.16）**：工具、资源/提示词 signal 贯通 JSON-RPC 与 HTTP，请求级取消及时清除 pending，HTTP 中止对应请求，迟到响应丢弃，其它服务与并行请求不受影响。17 类 MCP 事件统一登记/schema/fixtures/三端描述符；普通诊断不刷对话流，warn/error 显示。TUI 模型回合 Esc 中断保留；restart/enable/disable 等管理操作等待结束，明确提示不支持取消。详见 [规格 §6.1](specs/architecture/mcp-subsystem.md#61-v116-实际契约2026-10-06)。
 - **MRTR 人工输入（v1.17）**：[`input-broker.js`](../src/tools/mcp/input-broker.js) 为显式启用 `elicitation.enabled:true` 的 Modern 服务提供 tools/call、resources/read、prompts/get 多轮表单；最多 4 轮、每轮 8 份、32 份待处理。确认后以新请求 ID 回送本轮 state，只有 state 的继续请求也需确认。CLI/TUI 在模型等待期间服务独立表单，隐藏输入且不进入聊天历史；GUI 全局弹窗需勾选确认，非交互 CLI 立即拒绝。默认 120 秒表单期限可配 1000–300000 ms，外围工具超时仍优先；重启/禁用/移除/注销/工具定义变更使旧请求失效，内核关闭同步取消所有待处理表单。
-- **表单与隐私（v1.17）**：[`elicitation-schema.js`](../src/tools/mcp/elicitation-schema.js) 严格接受 MCP 平面标量、单选与枚举数组 schema，最多 64 字段、schema/输入各 64 KiB UTF-8、字符串 16 KiB；校验 email/uri/date/date-time，不填 default，未知/嵌套约束和额外字段拒绝。表单、输入和 requestState 只留内存，输入事件不含正文；已提交内容及 opaque state 加入动态脱敏集合，避免远端回显泄漏。`input_required`、`input_resolved`、`subscription_status` 连同既有事件共 19 类 MCP 契约完整登记。
+- **表单与隐私（v1.17）**：[`elicitation-schema.js`](../src/tools/mcp/elicitation-schema.js) 严格接受 MCP 平面标量、单选与枚举数组 schema，最多 64 字段、schema/输入各 64 KiB UTF-8、字符串 16 KiB；校验 email/uri/date/date-time，不填 default，未知/嵌套约束和额外字段拒绝。表单、输入和 requestState 只留内存，输入事件不含正文；已提交内容及 opaque state 加入动态脱敏集合，避免远端回显泄漏。`input_required`、`input_resolved`、`subscription_status` 连同既有事件共 19 类 MCP 契约完整登记。v1.19.2 起其 JSON 安全走查（上限/计费/检查时点）与 output-schema 共用 [`tools/schema.js`](../src/tools/schema.js) 内核，平面 schema 校验与大小限制仍留在本模块。
 - **列表订阅（v1.17）**：[`subscriptions.js`](../src/tools/mcp/subscriptions.js) 在 `subscriptions.enabled:true` 时，仅订阅 Modern 服务声明 `listChanged:true` 的 tools/prompts/resources 列表；10 秒确认，严格关联 subscriptionId 和服务接受的过滤项。HTTP 采用单帧 64 KiB 的有界 SSE 解析，断流不自动重试；状态进入服务卡与诊断，用户重启服务可重新订阅。两项能力均默认关闭，Legacy 不宣告 elicitation；不包含 URL-mode、Sampling、Roots、Logging，详见 [规格 §6.2](specs/architecture/mcp-subsystem.md#62-v117-mrtr人工表单与订阅2026-10-06)。
 
 ---
@@ -254,7 +254,7 @@ Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（
 | `maxModelCalls` | `null`（关） | 单 turn 模型调用次数上限 |
 | `maxToolCallRepairs` | `null`（关） | 畸形 tool-call 有界重试次数 |
 
-`maxTurnTokens` / `maxModelCalls` 计数含 repair 阶段与 `task` 子委派。`maxToolCallRepairs` 同时覆盖主执行循环（`executor-loop`）与验证修复执行器（`repair-executor`，v1.18.0 补齐：整批工具语法预校验通过前不执行任何工具副作用，仅对 JSON/结构畸形做有界纠正，跨审批暂停与恢复保持计数）。取值语义（`toLimit`）：省略取默认；`null` / `≤0` / 非法关闭；否则取整。
+`maxTurnTokens` / `maxModelCalls` 计数含 repair 阶段与 `task` 子委派。`maxToolCallRepairs` 同时覆盖主执行循环（`executor-loop`）与验证修复执行器（`repair-executor`，v1.18.0 补齐：整批工具语法预校验通过前不执行任何工具副作用，仅对 JSON/结构畸形做有界纠正，跨审批暂停与恢复保持计数）。取值语义（`toLimit`）：省略取默认；`null` / `≤0` / 非法关闭；否则取整。v1.19.2 起两者的执行循环骨架（模型调用 → 预算检查 → 事件发射 → 整批预校验与有界重试 → 顺序执行与审批挂起）收敛到 [`execution/execution-cycle.js`](../src/core/execution/execution-cycle.js)，场景差异（purpose 命名、预算检查条件、`BUDGET_EXCEEDED` 特判、修复消息文本、`assistantToolCallMessage` 容错映射、`resume_state` 字段）以钩子注入逐字保留。
 
 覆盖方式：`config.json` 的 `limits`，或环境变量 `DEEPSEEK_TOOL_TIMEOUT_MS` / `DEEPSEEK_MODEL_TIMEOUT_MS`。`loadConfig` 对用户 `limits` 做 per-field 深合并。
 
@@ -317,17 +317,17 @@ Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（
 src/
   index.js        createKernel() 组合根
   core/
-    runtime/      agent-runtime · lifecycle · cost-budget · request-budget
-    execution/    executor-loop · repair-executor · tool-call-adapter · tool-result-router
+    runtime/      agent-runtime · resume-coordinator · lifecycle · cost-budget · request-budget
+    execution/    executor-loop · repair-executor · execution-cycle · tool-call-adapter · tool-result-router
     verification/ verifier · repair-loop · repair-decision · repair-prompt · verification-policy
     protocol/     agent-turn · agent-step · tool-call · tool-result · approval-request · artifact
     planning/     classifier · keywords
     approval/     paused-turn-store
-    recovery/     项目锁 · 收件箱 · 暂停持久化 · task 暂停持久化 · 事务日志 · 恢复服务
+    recovery/     项目锁 · 收件箱 · sidecar-store · 暂停持久化 · task 暂停持久化 · 事务日志 · 恢复服务
     orchestration/ router · planner · worker · reviewer · merge · iso · task 委派 · experience 接线
     memory/       experience-* · risk-rules
   deepseek/       model-gateway（含 testDeepSeekConnection 连接测试）· model-router · json-mode · streaming · fim-client · usage-tracker · tool-call-repair · prompt-assembler · api-errors
-  tools/          registry · schema · executor · builtin/*（grep 内含 searchWorkspace、git 内含 showDiff）· permissions/*
+  tools/          registry · schema（JSON Schema 子集校验与字段提取公共内核）· executor · builtin/*（grep 内含 searchWorkspace、git 内含 showDiff）· permissions/*
   edits/          diff-parser（unified diff 解析与应用）· change-store（变更台账）· rollback-service · edit-transaction · edit-service · sensitive-notice
   sessions/       event-types · event-log · branch-store · checkpoint-index · rewind-* · session-manager
   context/        context-* · token-budget · workspace-indexer · project-index · semantic/*
@@ -399,7 +399,7 @@ kernel.send(message) → task-router
                             Planner → Worker → 两级审核 → Synthesizer
 ```
 
-不变量：`agent-runtime.js` 不因编排改语义。Worker / Reviewer 都是 `createAgentRuntime` 实例（注入工具子集 + 作用域上下文），编排层只在 `send()` 之上组合。
+不变量：`agent-runtime.js` 不因编排改语义。Worker / Reviewer 都是 `createAgentRuntime` 实例（注入工具子集 + 作用域上下文），编排层只在 `send()` 之上组合。v1.19.2 起审批通过后的四条恢复路径（普通执行暂停、修复期暂停、`task` 子委派暂停、跨进程验证器续跑）的恢复/结算/验证衔接抽离至 [`runtime/resume-coordinator.js`](../src/core/runtime/resume-coordinator.js)（依赖注入，无循环 import）；`agent-runtime.js` 只保留入口/deny/中断语义与权限上下文归一化，事件顺序、错误码、预算续扣与 State 5 幂等检查点行为不变。
 
 | 单元 | 职责 |
 |------|------|

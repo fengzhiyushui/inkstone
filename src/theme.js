@@ -1,5 +1,5 @@
 export const BRAND = "Inkstone";
-export const VERSION = "1.19.1";
+export const VERSION = "1.19.2";
 
 const supportsColor = process.stdout.isTTY && process.env.NO_COLOR === undefined;
 

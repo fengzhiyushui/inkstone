@@ -1,18 +1,30 @@
-import { adaptDeepSeekToolCalls, isToolCallSyntaxError } from "./tool-call-adapter.js";
-import { toolResultsToMessages } from "./tool-result-router.js";
 import { redactSecrets } from "../../security/redactor.js";
+import { toolResultsToMessages } from "./tool-result-router.js";
+import {
+  runToolCallCycle,
+  runToolCallsInOrder,
+  toolCallRepairPrompt
+} from "./execution-cycle.js";
 
+// v1.19.2 补丁版(纯重构):执行循环骨架(模型调用/预算检查/事件发射/整批预校验与
+// maxToolCallRepairs 有界重试/顺序执行工具与审批挂起)收敛到 execution-cycle.js。
+// 本文件只保留 repair 场景差异:
+//   - purpose 恒 "repair"(request/response/invoke 三处);
+//   - 预算检查仅 syntaxAttempt > 0 时生效并回退 options?.scope?.budget,stopped
+//     返回带 messages/toolCallRepairs 且 toolResults 恒为 [];
+//   - invoke 的 BUDGET_EXCEEDED 错误特判(仅 syntaxAttempt > 0 时转 stopped);
+//   - 重试循环无界:有界性只由 maxToolCallRepairs 决定;
+//   - model:tool_call_repair 载荷多 purpose 且 reason 经脱敏截断
+//     (sanitizeSyntaxRepairReason),重试消息追加 "Allowed tools: ..." 提示;
+//   - repair 版 assistantToolCallMessage(缺失 id/name/arguments 的容错映射:
+//     call_repair_${idx} / "unknown_tool" / 2000 字符截断),与 executor 版行为
+//     不同,必须原样保留;
+//   - 工具循环每个工具前查 signal 中止,策略阶段为 "repair";
+//   - repair 字段的 resume_state(iteration 恒 0、budget_spent 仅快照非空时附)。
+
+const REPAIR_ABORT_MESSAGE = "Repair operation was aborted";
 const MAX_REPAIR_REASON_CHARS = 240;
 const MAX_RAW_ARGUMENTS_ECHO_CHARS = 2000;
-
-function abortFromSignal(signal) {
-  const reason = signal?.reason;
-  if (reason instanceof Error) return reason;
-  const err = new Error(typeof reason === "string" && reason ? reason : "Repair operation was aborted");
-  err.name = "AbortError";
-  err.code = "ABORT";
-  return err;
-}
 
 function sanitizeSyntaxRepairReason(message) {
   const redacted = redactSecrets(String(message || "invalid tool call syntax"));
@@ -50,195 +62,156 @@ export async function runRepairExecutor({
     0,
     Math.trunc(Number(maxToolCallRepairs ?? options?.maxToolCallRepairs ?? 0) || 0)
   );
-  let toolCallRepairs = Math.max(
+  const initialRepairs = Math.max(
     0,
     Math.trunc(Number(initialToolCallRepairs ?? options?.initialToolCallRepairs ?? 0) || 0)
   );
-  let currentMessages = [...messages];
-  let modelResult = null;
-  let rawToolCalls = [];
-  let toolCalls = [];
 
-  for (let syntaxAttempt = 0; ; syntaxAttempt += 1) {
-    if (signal?.aborted) {
-      throw abortFromSignal(signal);
-    }
-    const over = syntaxAttempt > 0
+  return runToolCallCycle({
+    turnId,
+    messages: [...messages],
+    modelGateway,
+    eventBus,
+    budget,
+    signal,
+    abortMessage: REPAIR_ABORT_MESSAGE,
+    sessionId: effectiveSessionId,
+    maxToolCallRepairs: effectiveMaxToolCallRepairs,
+    initialToolCallRepairs: initialRepairs,
+    // repair 的重试循环无界,有界性只由 maxToolCallRepairs 决定。
+    maxIterations: null,
+    requestPurpose: "repair",
+    responsePurpose: "repair",
+    // 预算检查:首次调用(syntaxAttempt === 0)只查本地 budget,重试轮起同时
+    // 回退查 options?.scope?.budget(聚合 RequestBudget)。
+    checkBudget: ({ iteration }) => (iteration > 0
       ? (budget?.exceeded?.() || options?.scope?.budget?.exceeded?.())
-      : budget?.exceeded?.();
-    if (over) {
-      return {
-        status: "stopped",
-        reason: over,
-        content: `Stopped: cost budget exceeded (${over.reason}).`,
-        toolResults: [],
-        messages: currentMessages,
-        toolCallRepairs
-      };
-    }
-
-    eventBus?.publish?.("model:request", { turn_id: turnId, purpose: "repair", iteration: syntaxAttempt });
-    try {
-      modelResult = await modelGateway.invoke(currentMessages, {
-        ...options,
-        purpose: "repair",
-        tools: toolSchemas,
-        toolChoice: "auto",
-        timeoutMs: modelTimeoutMs ?? options.timeoutMs,
-        signal
-      });
-    } catch (error) {
-      if (error?.code === "BUDGET_EXCEEDED" && syntaxAttempt > 0) {
+      : budget?.exceeded?.()),
+    onBudgetExceeded: (over, ctx) => ({
+      status: "stopped",
+      reason: over,
+      content: `Stopped: cost budget exceeded (${over.reason}).`,
+      toolResults: [],
+      messages: ctx.messages,
+      toolCallRepairs: ctx.toolCallRepairs
+    }),
+    buildInvokeOptions: () => ({
+      ...options,
+      purpose: "repair",
+      tools: toolSchemas,
+      toolChoice: "auto",
+      timeoutMs: modelTimeoutMs ?? options.timeoutMs,
+      signal
+    }),
+    onInvokeError: (error, ctx) => {
+      // BUDGET_EXCEEDED 仅在重试轮(syntaxAttempt > 0)转 stopped,首轮原样抛出。
+      if (error?.code === "BUDGET_EXCEEDED" && ctx.iteration > 0) {
         const overReason = error.details || budget?.exceeded?.() || options?.scope?.budget?.exceeded?.() || { reason: "budget_exceeded" };
         return {
           status: "stopped",
           reason: overReason,
           content: `Stopped: cost budget exceeded (${overReason.reason || "budget_exceeded"}).`,
           toolResults: [],
-          messages: currentMessages,
-          toolCallRepairs
+          messages: ctx.messages,
+          toolCallRepairs: ctx.toolCallRepairs
         };
       }
-      throw error;
-    }
-    // repair 期的模型调用同样计入每回合预算(budget 为 null 时行为与此前一致)。
-    if (budget) budget.recordModelResult(modelResult);
-    if (signal?.aborted) {
-      throw abortFromSignal(signal);
-    }
-    eventBus?.publish?.("model:response", {
-      turn_id: turnId,
-      purpose: "repair",
-      iteration: syntaxAttempt,
+      return null;
+    },
+    onComplete: (ctx, modelResult) => ({
+      status: "complete",
       content: modelResult.content || "",
-      tool_call_count: modelResult.tool_calls?.length || 0,
-      usage: modelResult.usage || null,
-      model: modelResult.model,
-      channel: modelResult.channel,
-      ...repairResponseExtras(modelResult, effectiveSessionId)
-    });
-
-    rawToolCalls = modelResult.tool_calls || [];
-    if (!rawToolCalls.length) {
-      return {
-        status: "complete",
-        content: modelResult.content || "",
-        toolResults: [],
-        messages: currentMessages,
-        toolCallRepairs
-      };
-    }
-
-    // 整批预校验:全部工具通过语法与结构校验之前,绝不执行任何一个工具(P04)。
-    try {
-      toolCalls = adaptDeepSeekToolCalls(rawToolCalls, { requestedByStepId: `repair:${turnId}:${syntaxAttempt}` });
-      break;
-    } catch (error) {
-      if (!isToolCallSyntaxError(error) || toolCallRepairs >= effectiveMaxToolCallRepairs) {
-        throw error;
-      }
-      toolCallRepairs += 1;
+      toolResults: [],
+      messages: ctx.messages,
+      toolCallRepairs: ctx.toolCallRepairs
+    }),
+    requestedByStepId: ({ iteration }) => `repair:${turnId}:${iteration}`,
+    onToolCallRepair: (ctx, error) => {
       const conciseReason = sanitizeSyntaxRepairReason(error.message);
-      eventBus?.publish?.("model:tool_call_repair", {
-        turn_id: turnId,
-        purpose: "repair",
-        iteration: syntaxAttempt,
-        attempt: toolCallRepairs,
-        reason: conciseReason
-      });
       const allowedNames = (toolSchemas || [])
         .map((s) => s?.function?.name)
         .filter(Boolean);
       const schemaHint = allowedNames.length ? ` Allowed tools: ${allowedNames.join(", ")}.` : "";
-      currentMessages = [
-        ...currentMessages,
-        assistantToolCallMessage(modelResult, rawToolCalls),
-        {
-          role: "user",
-          content: `Your previous tool call had invalid arguments (${conciseReason}). Re-issue the tool call with valid JSON arguments.${schemaHint}`
-        }
-      ];
-    }
-  }
-
-  const toolResults = [];
-  for (let index = 0; index < toolCalls.length; index += 1) {
-    if (signal?.aborted) {
-      throw abortFromSignal(signal);
-    }
-    const toolCall = toolCalls[index];
-    const result = await executeTool(toolCall, createPolicyContext({ turnId, toolCall, phase: "repair" }));
-    toolResults.push(result);
-    if (result.status === "approval_required") {
-      const budgetSnap = budget?.snapshot?.() || null;
       return {
-        status: "awaiting_approval",
-        content: result.content?.[0]?.text || "Approval required",
-        approval: result.metadata?.approval || null,
-        toolResults,
-        toolCallRepairs,
-        resume_state: {
+        event: {
           turn_id: turnId,
-          message: options.message || "repair",
-          classification: options.classification || { task_type: "edit" },
-          messages: currentMessages,
-          model_result: modelResult,
-          raw_tool_calls: rawToolCalls,
-          pending_tool_call: toolCall,
-          remaining_tool_calls: toolCalls.slice(index + 1),
-          iteration: 0,
-          tool_results: toolResults.slice(0, -1),
-          tool_schemas: toolSchemas,
-          max_iterations: options.maxToolIterations || 5,
-          tool_call_repairs: toolCallRepairs,
-          max_tool_call_repairs: effectiveMaxToolCallRepairs,
-          ...(budgetSnap ? { budget_spent: { tokens: budgetSnap.tokens, model_calls: budgetSnap.model_calls } } : {}),
-          options: {
-            ...options,
-            purpose: "repair",
-            maxToolCallRepairs: effectiveMaxToolCallRepairs
-          },
-          context: options.context || null,
-          permission_context: permissionContext
+          purpose: "repair",
+          iteration: ctx.iteration,
+          attempt: ctx.attempt,
+          reason: conciseReason
+        },
+        message: toolCallRepairPrompt(conciseReason, schemaHint)
+      };
+    },
+    buildAssistantMessage: assistantToolCallMessage,
+    onToolCallsReady: async (ctx, modelResult, rawToolCalls, toolCalls) => {
+      // 顺序执行工具(阶段 "repair",每个工具前查中止);approval_required 时构造
+      // repair 字段的 resume_state 并挂起(budget_spent 仅快照非空时附)。
+      const next = await runToolCallsInOrder({
+        toolCalls,
+        turnId,
+        executeTool,
+        createPolicyContext,
+        phase: "repair",
+        signal,
+        abortMessage: REPAIR_ABORT_MESSAGE,
+        abortBeforeEachTool: true,
+        onApproval: ({ result, toolCall, index, results }) => {
+          const budgetSnap = budget?.snapshot?.() || null;
+          return {
+            status: "awaiting_approval",
+            content: result.content?.[0]?.text || "Approval required",
+            approval: result.metadata?.approval || null,
+            toolResults: results,
+            toolCallRepairs: ctx.toolCallRepairs,
+            resume_state: {
+              turn_id: turnId,
+              message: options.message || "repair",
+              classification: options.classification || { task_type: "edit" },
+              messages: ctx.messages,
+              model_result: modelResult,
+              raw_tool_calls: rawToolCalls,
+              pending_tool_call: toolCall,
+              remaining_tool_calls: toolCalls.slice(index + 1),
+              iteration: 0,
+              tool_results: results.slice(0, -1),
+              tool_schemas: toolSchemas,
+              max_iterations: options.maxToolIterations || 5,
+              tool_call_repairs: ctx.toolCallRepairs,
+              max_tool_call_repairs: effectiveMaxToolCallRepairs,
+              ...(budgetSnap ? { budget_spent: { tokens: budgetSnap.tokens, model_calls: budgetSnap.model_calls } } : {}),
+              options: {
+                ...options,
+                purpose: "repair",
+                maxToolCallRepairs: effectiveMaxToolCallRepairs
+              },
+              context: options.context || null,
+              permission_context: permissionContext
+            }
+          };
+        }
+      });
+      if (next.status === "awaiting_approval") {
+        return { kind: "result", result: next };
+      }
+      // 全部工具执行完毕:repair 回合完成,回传含 assistant 工具消息与工具结果
+      // 的完整 messages,供调用方拼回后续请求。
+      return {
+        kind: "result",
+        result: {
+          status: "complete",
+          content: modelResult.content || "Repair tools executed.",
+          toolResults: next.results,
+          toolCallRepairs: ctx.toolCallRepairs,
+          messages: [
+            ...ctx.messages,
+            assistantToolCallMessage(modelResult, rawToolCalls),
+            ...toolResultsToMessages(next.results)
+          ]
         }
       };
     }
-  }
-
-  return {
-    status: "complete",
-    content: modelResult.content || "Repair tools executed.",
-    toolResults,
-    toolCallRepairs,
-    messages: [...currentMessages, assistantToolCallMessage(modelResult, rawToolCalls), ...toolResultsToMessages(toolResults)]
-  };
-}
-
-// 与 executor-loop.js 的 modelResponseExtras 等价——v1.9.0 M1 明确本文件保留
-// 重复实现、不抽共享模块。model:response 四个新键一律「仅非 null 时附键」:
-//   reasoning  : reasoning_content 截断 500 字符(超长结尾补「…」);
-//   tps        : completion_tokens / (latency_ms/1000),1 位小数,缺项即不附;
-//   session_id : sessionId 非空才附;
-//   latency_ms : latency_ms 为有限数才附。
-// cache hit/miss 与 reasoning tokens 不加顶层键,继续走 usage 子对象。
-function repairResponseExtras(modelResult, sessionId) {
-  const extras = {};
-  const reasoning = modelResult?.reasoning_content;
-  if (typeof reasoning === "string" && reasoning.length > 0) {
-    extras.reasoning = reasoning.length > 500 ? `${reasoning.slice(0, 500)}…` : reasoning;
-  }
-  const completionTokens = modelResult?.usage?.completion_tokens;
-  const latencyMs = modelResult?.latency_ms;
-  if (Number.isFinite(completionTokens) && Number.isFinite(latencyMs) && latencyMs > 0) {
-    extras.tps = Math.round((completionTokens / (latencyMs / 1000)) * 10) / 10;
-  }
-  if (typeof sessionId === "string" && sessionId.length > 0) {
-    extras.session_id = sessionId;
-  }
-  if (Number.isFinite(latencyMs)) {
-    extras.latency_ms = latencyMs;
-  }
-  return extras;
+  });
 }
 
 function assistantToolCallMessage(modelResult, rawToolCalls) {
