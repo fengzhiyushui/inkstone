@@ -14,6 +14,74 @@
 
 ---
 
+## v1.19.3 — 2026-11-03 · 测试套件极致浓缩与 IPC 注册彻底表驱动（patch）
+
+> 纯工程效能版本：不增减任何功能面，外部契约、安全不变量与运行时行为 100% 保持不变。
+
+- **测试套件极致浓缩（62 个文件 / 1,842 个微断言 → 18 个领域文件 / 103 个高内聚用例，减少 94.4%）**：
+  - 彻底消除了 v1.19.1 机械包装的 299 个 `describe` 动态 import 隔离层，重构为 18 个无嵌套、高内聚、端到端视角的标准领域测试文件：
+    - **E2E 冒烟（2 个文件，4 个用例）**：`tests/e2e/cli-tui-smoke.test.js`、`tests/e2e/gui-smoke.test.js`。
+    - **核心单元测试（14 个文件，91 个用例）**：`infrastructure-guards`（3）、`config-and-options`（4）、`context-engine`（5）、`semantic-context`（5）、`deepseek-gateway`（6）、`tools-and-security`（8）、`edits-and-sessions`（8）、`recovery-and-locks`（6）、`agent-runtime`（8）、`orchestration-and-memory`（8）、`mcp-protocol-and-hub`（8）、`mcp-governance-and-auth`（8）、`apps-cli-and-tui`（7）、`gui-workbench`（7）。彻底清除了 `tests/unit/` 下的所有子目录层级（`core/`、`mcp/`、`gui/`、`apps/`、`context/`、`tools/`、`security/`、`sessions/`、`shared/` 全部清零）。
+    - **集成测试（2 个文件，8 个用例）**：`tests/integration/kernel-and-mcp.test.js`（4）、`tests/integration/orchestration-and-closure.test.js`（4）。
+  - **临时目录与安全防泄漏守卫**：所有临时目录依然严格统一经过 `tests/helpers/tmp.js`，`tmp-hygiene-guard` 守卫保持 100% 验证通过。
+- **IPC 注册彻底表驱动化**：
+  - 随着断言源码文本中 `handle("ch"` 字面量的历史测试被彻底废弃，`gui/main.js` 中最后 23 处 explicit `handle()` 注册（包括 18 个 MCP 转发通道以及 `sessions:delete` 等）全部无死角合流进 `IPC_ROUTES` 路由表与统一的 `forward()` 转发管道中，仅保留窗口和原生对话框等真实本地调用。
+- **验证**：全量 `npm test` **103 通过、0 失败、0 取消、0 跳过**（18 个测试文件，0 describe 套件）；`npm run check` 检查 **297 个 JS 文件**、0 失败；`npm run build:gui` 通过；`DEEPSEEK_CODE_GUI_SMOKE=1 node --test tests/e2e/gui-smoke.test.js` 通过；`git diff --check` 无输出。四处版本号同步为 `1.19.3`。
+
+---
+
+## v1.19.2 — 2026-11-03 · 深层同构重复逻辑合并：Schema 校验内核、Sidecar 存储与审批恢复管线收敛（patch）
+
+> 纯重构版本：不增减任何功能面，对外 API、事件发射顺序、错误码语义与磁盘持久化格式 100% 不变。v1.19 三阶段计划的第三阶段（收官），计划见 [`plans/architecture/2026-11-03-v1.19-streamlining-plan.md`](plans/architecture/2026-11-03-v1.19-streamlining-plan.md)。
+
+- **Task 3.1 · 统一全仓 JSON Schema 子集校验器**：[`src/tools/schema.js`](../src/tools/schema.js) 提炼零依赖公共内核（Node 内核与 Vite GUI 包共用，无任何 `node:` 导入）：JSON 安全走查 `inspectJson` / `mapJson`（拒绝环/访问器/非 JSON/超限，上限、计费口径与字节复查时机可配置）、精确类型判定 `matchesJsonType` / `isJsonObject`、`canonicalJson` 指纹、`compileSafePattern` 安全正则、`objectSchemaFields` 字段提取与 `hasOwn`。四个重复实现改为「公共内核 + 场景钩子」：[`output-schema.js`](../src/tools/mcp/output-schema.js) 保留 2020-12 keyword 白名单、`$ref` 解析、比较/评估/正则预算与 `MCP_OUTPUT_SCHEMA_*` 错误码；[`elicitation-schema.js`](../src/tools/mcp/elicitation-schema.js) 保留平面标量/枚举/格式校验与 64 KiB / 16 KiB / 64 字段限制（`MCP_INPUT_INVALID`）；[`schema-converter.js`](../src/tools/mcp/schema-converter.js) 的脱敏走查保留敏感键短路替换与各自的错误消息；[`gui/src/state/mcp-diagnostics.js`](../gui/src/state/mcp-diagnostics.js) 保留宽松类型校验与 `JSON.stringify` 枚举比较。原有走查在「先查原型还是先查环」「字节预算何时复查」上的场景差异以显式配置逐字保留。
+- **Task 3.2 · 合并恢复子系统 3 套 Sidecar 持久化存储**：新建 [`src/core/recovery/sidecar-store.js`](../src/core/recovery/sidecar-store.js) 通用 store（目录推导、`safeRecoverySegment` 路径、原子写、tombstone consume 回退链、quarantine、损坏隔离、扫描排序、200 字符 reason 脱敏、`writeRawForTest`）。三个模块退化为纯声明：`paused-turn-persistence.js`（244 → 133 行）、`orchestration-persistence.js`（110 → 41 行）、`task-paused-persistence.js`（184 → 57 行，`updateState` 亦收进通用 store）仅声明目录名（`paused` / `orchestration-paused` / `task-paused`）、id 字段（`approval_id` / `approvalId`）、`schemaVersion` 与 `prepareSave` / `prepareLoad` / `classifyScan` 三个校验钩子。导出函数签名、返回对象键集合、磁盘 JSON 结构与全部错误消息逐字节不变。
+- **Task 3.3a · 收敛执行循环**：新建 [`src/core/execution/execution-cycle.js`](../src/core/execution/execution-cycle.js)，把 `executor-loop.js` 与 `repair-executor.js` 真正同构的骨架收敛为一处：`abortFromSignal`（默认消息可配置）、`modelResponseExtras`（与原 `repairResponseExtras` 逐字节一致，v1.9.0 M1 四新键契约不变）、`runToolCallCycle`（模型调用 → 预算检查 → `model:request`/`model:response` 事件 → 整批 `adaptDeepSeekToolCalls` 预校验与 `maxToolCallRepairs` 有界重试 → 顺序执行与审批挂起编排）、`runToolCallsInOrder`、`withBudgetSpent`、`toolCallRepairPrompt`。两个执行器（409 → 360 / 273 → 246 行）只保留场景差异钩子：purpose 命名、预算检查条件与 `options?.scope?.budget` 回退、`BUDGET_EXCEEDED` 特判、修复事件载荷与「Allowed tools」提示、repair 版 `assistantToolCallMessage` 容错映射、各自的 `resume_state` 字段与 `budget_spent` 附键时机。事件名/载荷/发射顺序、预算记账精度与重试语义不变。
+- **Task 3.3b · 解耦 `agent-runtime.js` 恢复样板**：新建 [`src/core/runtime/resume-coordinator.js`](../src/core/runtime/resume-coordinator.js)（803 行），把普通执行暂停、修复期暂停、`task` 子委派暂停、跨进程验证器续跑四路重复的恢复/结算/验证衔接样板收敛为一处（`resumeApproved` 总入口 + `resumeRuntimeVerifierApproval` / `resumeRepairVerifierApproval` + 暂停记录持久化衔接 `savePausedRecord` / `rollbackReplacementPause` / `preserveRepairContextOnRePause` / `clearConsumedPausedRecord` / `runAfterClearingConsumedPause` 等），以依赖注入把 `verifyAndMaybeRepair` 等闭包传入而非互相 import，无循环依赖。`agent-runtime.js` **1394 → 684 行**（-51%），只保留入口/deny/中断语义与权限上下文归一化。`APPROVAL_NOT_FOUND` / `AWAITING_APPROVAL` 错误码、64+ 类会话事件发射顺序与 `flushEvents` 调用点、`RequestBudget`/`CostBudget` 续扣记账（`initialTokens` / `initialModelCalls` 与 `budget_spent`）以及 State 5 幂等检查点（`recovery:blocked`、`RECOVERY_FAULT` 不清除）行为逐字保留。
+- **验证**：全量 `npm test` **1842 通过、0 失败、0 取消、0 跳过**（299 个 describe 套件，与 v1.19.1 基线一致）；`npm run check` 检查 **341 个 JS 文件**、0 失败；`npm run build:gui` 通过（`gui/renderer-dist` 3.59 MB / 38 文件，GUI 引入公共内核后与重构前同树构建体积一致）；`DEEPSEEK_CODE_GUI_SMOKE=1 node --test tests/e2e/gui-smoke.test.js` 通过；`git diff --check` 无输出。行为等价性另以机器比对验证：Schema 走查 HEAD vs 重构并列差分 **10,387 项逐字节一致**（含 1 MiB 键长边界、环 + 非普通原型、访问器 + 超限、敏感键短路等对抗用例）；恢复协调器迁出区段 710 行与 git HEAD 原文逐行多重集比对一致；三个持久化模块的 tombstone 键序、归一化字段集、截断、排序、ENOENT 路径与双 consumed 标记经磁盘字节级断言。四处代码版本（`package.json` / `package-lock.json` / `src/theme.js` / `gui/src/App.jsx`）同步为 `1.19.2`。
+- **边界**：合并后的公共内核携带配置与文档开销，被合并的 11 个模块合计 3,484 → 2,532 行（-27.3%），新增 3 个公共模块 1,318 行，仓库 JS 总量 75,221 → 75,587 行（+0.5%）——本阶段度量的是「重复实现份数」而非总行数：4 份 JSON 走查 → 1 份、3 套 sidecar 存储 → 1 套、2 条执行循环骨架 → 1 条、4 路恢复样板 → 1 个协调器。
+
+---
+
+## v1.19.1 — 2026-11-03 · 测试套件深度精简与 GUI 打包/胶水收敛（patch）
+
+> 纯工程效率版本：不增减任何功能面，对外契约与运行时行为不变。v1.19 三阶段计划的第二阶段，计划见 [`plans/architecture/2026-11-03-v1.19-streamlining-plan.md`](plans/architecture/2026-11-03-v1.19-streamlining-plan.md)。
+
+- **Task 2.1 · 测试套件深度精简（311 个文件 → 62 个领域文件，减少 80%）**：消除 `tests/core/` vs `tests/unit/core/`、`tests/context/` vs `tests/unit/context/`、`tests/tools/` vs `tests/unit/tools/` 的双轨目录分裂，按 10 大领域映射表把 299 个按历史任务单拆分的微测试文件归并为 53 个领域测试文件（`node --test` 子上下文启动开销与重复 Mock 样板随之下降），空的顶层 `tests/core/`、`tests/context/`、`tests/tools/` 目录一并移除：
+  - **配置与门面选项** → `tests/unit/config.test.js`、`tests/unit/apps/kernel-options.test.js`；**上下文与语义引擎** → `tests/unit/context/` 下 `context-engine` / `semantic-engine` / `semantic-js-ts` / `semantic-python` 四 file；**多智能体编排与经验记忆** → `tests/unit/core/memory/experience-memory.test.js` 与 `tests/unit/core/orchestration/` 下 `task-router` / `planner` / `dispatch-and-isolation` / `orchestrator` / `orchestration-recovery` 五 file；**核心运行时、执行与验证** → `tests/unit/core/` 下 `agent-runtime` / `executor-loop` / `repair-and-verification` / `cost-and-approval-store` / `protocol-and-lifecycle` 五 file。
+  - **持久化崩溃恢复** → `tests/unit/core/recovery/` 下 `recovery-persistence` / `recovery-service`（`project-lock` 原样保留）；**MCP 外部工具生态** → `tests/unit/mcp/` 下 `mcp-protocol-and-transport` / `mcp-client-and-capabilities` / `mcp-hub-and-registry` / `mcp-config-and-policy` / `mcp-auth-and-inputs` / `mcp-diagnostics-and-cli` 六 file；**GUI 桌面工作台** → `tests/unit/gui/` 下 `workbench-state` / `layout-and-panels` / `themes-and-styles` / `kernel-host` / `mcp-gui` / `cards-and-inspector` / `settings-and-i18n` 七 file，同时移除 `no-dsh-imports` / `shell-class-migration` / `shell-styles-restored` 三个已完成历史迁移使命的一次性静态扫描。
+  - **CLI / TUI / 事件契约** → `tests/unit/apps/` 下 `event-contract-and-replay` / `cli-runner` / `project-and-session-index` / `tui-app` / `tui-render-and-state` / `tui-mcp` 六 file（`helpers.js` 随 TUI 测试一同迁入）；**DeepSeek / 工具 / 编辑 / 会话 / 安全 / 基础守卫** → 各域 1–2 个领域 file；**集成与端到端** → `tests/integration/` 下 `kernel-runtime` / `kernel-recovery-journal` / `kernel-context-and-edits` / `mcp-integration` / `orchestration-aggregate-budget`，`v1-18-r18-02/03/04` 三个验收件与 `tests/e2e/` 四 file 原样保留。
+  - **隔离机制**：每个来源包裹在独立 `describe` 块中（异步回调 + 动态 `import`，来源间零共享顶层绑定，相对导入按目标位置重写），测试语义与拆分前完全一致；`tests/helpers/tmp.js` 的 `mkdtemp`/`mkdtempSync` 统一出口与 `tmp-hygiene-guard` 防泄漏闸门 100% 保留并通过（阈值随归并后规模调整）。
+- **Task 2.2 · 按需裁剪 Monaco 打包入口与 Worker**：[`gui/src/lib/monaco-setup.js`](../gui/src/lib/monaco-setup.js) 由全量 `monaco-editor`（`editor.all.js` + basic-languages 全量表 + 4 个语言 worker）改为 `monaco-editor/esm/vs/editor/editor.api` 最小内核 + 只读代码/Diff 视图确实生效的 18 个核心控件 + 33 个主流语言 Monarch 高亮；`getWorker` 仅保留 `editor.worker`（移除 `ts.worker`/`css.worker`/`html.worker`/`json.worker`）。`gui/renderer-dist` 产物 **12.17 MB → 3.36 MB，减少 72.40%**（JSON 高亮随之退回 plaintext 兜底：其分词器位于 `language/json` 语言服务、必须配 `json.worker`，与「仅保留 editor.worker」的裁剪目标取舍后保留可读性与 Diff 功能）。
+- **Task 2.3 · 声明式收敛宿主桥接与前端大文件/样式瘦身**：`src/index.js` 内联的 28 行 `mcp.*` 门面提取至新增的 [`src/tools/mcp/mcp-facade.js`](../src/tools/mcp/mcp-facade.js)（`createMcpFacade({ hub, trials })`，25 个方法逐条透传、`cancelServer` 前置调用原样保留）；`gui/main.js`、`gui/preload.js`、`gui/kernel-host.js` 的逐条 IPC 转发收敛为表驱动映射 + 通用注册循环（channel 名、参数、返回值与 preload API 形状不变）；[`gui/src/components/v4/SecondaryViews.jsx`](../gui/src/components/v4/SecondaryViews.jsx) 按职责拆出 `ProjectsView` / `ChangesView` / `RecoveryView` / `PluginsView` 四个组件文件（1054 → 277 行，原命名导出继续从 `SecondaryViews.jsx` 再导出）；`gui/src/styles/theme.css` 清理零引用孤儿规则。
+- **验证**：全量 `npm test` **1842 通过、0 失败、0 取消、0 跳过**（299 个 describe 套件）；`npm run check` 0 失败；`npm run build:gui` 通过；`DEEPSEEK_CODE_GUI_SMOKE=1 node --test tests/e2e/gui-smoke.test.js` 与 `tests/e2e/gui-build.test.js` 通过；`git diff --check` 无输出。四处代码版本（`package.json` / `package-lock.json` / `src/theme.js` / `gui/src/App.jsx`）同步为 `1.19.1`。
+- **边界**：归并后的领域测试文件在同一进程内顺序执行（来源间作用域隔离但共享模块注册表），个别依赖「每文件全新进程」的测试已在归并时逐一验证；JSON 文件 Diff 无语法高亮（plaintext 兜底）；GUI 冒烟截图产物（`gui/__screenshots__/`）加入 `.gitignore`，不入库。
+
+---
+
+## v1.19.0 — 2026-11-03 · 架构收敛与全栈精简：消除 V1 双轨遗留、内聚 `src/edits/`、文档体系 111 篇 → 15 篇（preview）
+
+> 纯重构版本：不增减任何功能面。一核三端、多智能体编排、事务回滚、跨进程恢复、完整 MCP v2 全部保留，对外契约不变。计划见 [`plans/architecture/2026-11-03-v1.19-streamlining-plan.md`](plans/architecture/2026-11-03-v1.19-streamlining-plan.md)。
+
+- **Task 1.1 · 工作区残余与原型遗留清理**：从 Git 移除 `gui/mockups/deepseek-code-ide-mockup.html`（v1.8.7 清理 `docs/prototypes/` 时漏删的静态原型）；删除本地未追踪的 `gui/mockups/`、`gui/__screenshots__/`、`gui/.deepseek-code/` 与多余的 `gui/src/package.json`；`.gitignore` 同步移除三条随目录消失而失效的 mockup / screenshot 忽略规则。
+- **Task 1.2 · `src/` 顶层 V1 双轨遗留清零**：顶层 11 个 JS 收敛为 `index.js` / `cli.js` / `config.js` / `theme.js` 四个入口，删除的 7 个模块全部内聚到所属域：
+  - **删 `provider.js`**：`askDeepSeek` / `readStreamingResponse` / `formatApiError` 均为无人调用的 V1 死代码；唯一在用的 `testDeepSeekConnection(config)` 迁入 [`src/deepseek/model-gateway.js`](../src/deepseek/model-gateway.js)，改走网关 `invoke`——同一套模型路由、`timeoutMs` 超时、指数退避重试与错误分类，少一份平行的 HTTP 实现。
+  - **删 `context.js`**：`resolveInsideRoot` 统一替换为 [`workspace/path-safety.js`](../src/workspace/path-safety.js) 的 `resolveWorkspacePath`（realpath 边界校验，阻断 symlink 逃逸）；`inkstone scan` 的 `buildProjectContext` 迁入新增的 [`src/context/project-index.js`](../src/context/project-index.js)，复用现有 `indexWorkspace` 索引器，文件清单与片段取舍口径不变。
+  - **删 `search.js`**：`inkstone search` 复用 [`tools/builtin/grep.js`](../src/tools/builtin/grep.js) 新抽出的 `searchWorkspace()`，与 agent 的 `grep` 工具共用同一套遍历 / 读取 / 超时 / 截断语义。
+  - **删 `git.js`**：`showDiff(root)` 合入 [`tools/builtin/git.js`](../src/tools/builtin/git.js)，与内置 `git` 工具共用 `GIT_READ_OPS.diff` 的 argv 定义（缓冲区仍走 10 MiB，不经 `runProcess` 的 32 KiB 截断）。
+  - **删 `tui.js`**：12 行 `runTui` 薄入口合入 [`src/apps/tui/tui-app.js`](../src/apps/tui/tui-app.js)，TUI 只剩一个入口文件。
+  - **内聚 `patch.js` / `changes.js` 到 `src/edits/`**：`patch.js` 合入 [`edits/diff-parser.js`](../src/edits/diff-parser.js)，`changes.js` 合入 [`edits/change-store.js`](../src/edits/change-store.js) 与 [`edits/rollback-service.js`](../src/edits/rollback-service.js)；**消除 `edit-transaction.js` 与 `changes.js` 之间重复的回滚截断守卫**，收敛为单一 `assertRollbackableRecord()`，且 `before_size`（capture 路径）与 `before_bytes`（enhance 路径）两个字段都参与判定。全仓 `src/` 与 `tests/` 导入路径同步更新，`gui/kernel-host.js` 的动态 import 改指 `model-gateway.js` 与 `diff-parser.js`。
+- **顺带收敛的重复实现**：`walkWorkspaceFiles` 只硬编码 `node_modules`/`.git`/`.deepseek-code` 三个忽略目录，而 `workspace-indexer.js` 另有一份 13 + 6 项的忽略表，同一项目的遍历口径不一致——`inkstone search` 会翻 `.claude/`、`dist/` 等本机助手状态与构建产物。现统一为 [`workspace/path-safety.js`](../src/workspace/path-safety.js) 的 `IGNORED_BUILD_SEGMENTS` / `HIDDEN_TOOL_DIR_SEGMENTS` 单一来源，`ls`/`glob`/`read`/`grep` 工具与 `inkstone search` 同口径；显式指定起点路径时仍不受限。
+- **Task 1.3 · 文档体系整合（111 篇 → 15 篇）**：
+  - `docs/plans/{roadmap,backend,frontend,architecture}/` 下 **63 篇**历史过程计划浓缩为单篇 [`HISTORICAL_PLANS_ARCHIVE.md`](plans/HISTORICAL_PLANS_ARCHIVE.md)（八张索引表：计划 / 日期 / 目标 / 结果 / 关键决策 / 验证），原始逐步 checkbox 计划留存 git 历史（pre-v1.19 `main`）；新增 [`2026-11-03-v1.19-streamlining-plan.md`](plans/architecture/2026-11-03-v1.19-streamlining-plan.md) 记录三阶段精简计划。
+  - `docs/specs/` **44 篇**碎片化历史 spec 合并为 **7 篇领域 Living Spec**：[`architecture/system-architecture.md`](specs/architecture/system-architecture.md)、[`architecture/mcp-subsystem.md`](specs/architecture/mcp-subsystem.md)、[`backend/runtime-and-execution.md`](specs/backend/runtime-and-execution.md)、[`backend/context-and-memory.md`](specs/backend/context-and-memory.md)、[`backend/orchestration.md`](specs/backend/orchestration.md)、[`backend/edits-sessions-recovery.md`](specs/backend/edits-sessions-recovery.md)、[`frontend/workbench-and-surfaces.md`](specs/frontend/workbench-and-surfaces.md)。每篇末尾「来源」表保留 lineage；`project-overview.md` 依赖的四个 MCP 锚点（§3.4.1 / §4.1.1 / §6.1 / §6.2）原样保留，57 处失效交叉引用全部重映射。
+  - [`docs/README.md`](README.md) 索引与目录结构重写，[`docs/project-overview.md`](project-overview.md) 目录地图与 spec 引用同步；[`docs/CHANGELOG.md`](CHANGELOG.md) 历史 minor/patch 流水压缩为紧凑表；根 `README.md` / `README.en.md` 徽章、测试计数与路线图同步至 v1.19.0。
+- **测试**：[`tests/integration/kernel-runtime.test.js`](../tests/integration/kernel-runtime.test.js) 新增两条边界守卫——7 个已删模块必须不存在、`src/` 顶层仅剩 4 个入口；[`tests/unit/security/security-policies.test.js`](../tests/unit/security/security-policies.test.js) 锁定遍历忽略表与「显式起点不受限」语义；[`tests/unit/context/context-engine.test.js`](../tests/unit/context/context-engine.test.js) 改为断言隐藏工具目录在遍历层即被排除。
+- **验证**：全量 `npm test` **1845 通过、0 失败、0 取消、0 跳过**；`npm run check` 检查 **642 个 JS 文件**、0 失败；`npm run build:gui` 通过；`git diff --check` 无输出。四处代码版本（`package.json` / `package-lock.json` / `src/theme.js` / `gui/src/App.jsx`）同步为 `1.19.0`。
+- **边界**：`inkstone search` 的匹配语义由「ripgrep 优先、大小写不敏感子串兜底」改为与内置 `grep` 工具一致的 JavaScript 正则（大小写敏感），跨平台行为更确定、与 agent 自带检索一致；`inkstone scan` 的文件清单改经 `indexWorkspace`，隐藏工具目录、构建产物与凭据类文件不再进入清单（与上下文引擎口径一致）。
+
+---
+
 ## v1.18.0 — 2026-10-23 · 运行能力闭环：编排总预算、真实 task 委派与修复期语法重试（preview）
 
 - **请求级编排总预算与全树取消 R18-01**：新增 [`request-budget.js`](../src/core/runtime/request-budget.js)（`createRequestBudget` / `createRequestScope`），在 `routedSend` 入口建立贯穿 `router`、`planner`、`worker`（含内部 verify/repair 与 `task` 子委派）、`reviewer`、`replan`、`synthesizer` 与后台 `experience` 蒸馏的统一请求账本与取消树。出站前原子预留调用与估算 token（`reserveCall`）、发起时锁定物理调用（`markStarted`）、完成后按 `attemptId` 幂等结算（`settle`）；缺失或非法负值 usage 计入 `unknownUsageAttempts` 与保守保底负债 `unknownUsageTokens`，跨进程恢复完整继承负债并阻断不完整旧记录。预算耗尽时 `synthesizer` 自动降级确定性摘要、后台经验蒸馏主动跳过；轮内与最终汇总期间触发 `interrupt()` / `dispose()` 统一返回 `cancelled` 并阻断隔离工作区迟到合并。普通 `single` 泳道不挂载编排总预算。
@@ -225,7 +293,7 @@
 
 ## v1.9.0 — 2026-09-24 · 契约冻结 + 多智能体可视化 + 模型适配
 
-> 小版本：事件契约三角锁死（schema/守卫/fixtures）、GUI Agent Inspector 与轨迹时间线、TUI 分支/回退对齐、FIM 双端落地，以及 DeepSeek 现网协议适配（默认模型 ID、reasoning_content 回传、thinking 参数、退避重试）。实施计划与 D1–D6 拍板见 [`plans/architecture/2026-09-23-v1.9.0-contract-freeze-and-visualization.md`](plans/architecture/2026-09-23-v1.9.0-contract-freeze-and-visualization.md)。
+> 小版本：事件契约三角锁死（schema/守卫/fixtures）、GUI Agent Inspector 与轨迹时间线、TUI 分支/回退对齐、FIM 双端落地，以及 DeepSeek 现网协议适配（默认模型 ID、reasoning_content 回传、thinking 参数、退避重试）。实施计划与 D1–D6 拍板见 [`HISTORICAL_PLANS_ARCHIVE.md`](plans/HISTORICAL_PLANS_ARCHIVE.md) 中 v1.9.0 一条。
 
 **契约冻结（M1）**：新增 `src/sessions/event-schemas.js`——64 类登记事件全覆盖的零依赖 schema 注册表（required 只收恒定发射键、`validateEvent` 永不抛错、未知键放行）；覆盖率守卫 14 项（登记表↔schema 双向锁死 + `describeEvent` 非静默回落 + QUIET_TYPES 白名单，**双向变异验证实际执行**）；回放 fixtures 68 样本 ↔ schema ↔ 展示契约 ↔ GUI 派生四向锚定。`model:response` 顶层键集一次定稿：+`reasoning`（500 字截断）/`tps`/`session_id`/`latency_ms`（三处生产点 + 描述符同步，cache/reasoning token 继续走 `usage` 不占顶层键）。fixtures 守卫发现 4 个 `experience:*` 事件有生产者却未登记，已补登记闭环。运行期可选严格模式（`events.strictSchema` 默认关、只告警不阻断落盘）。
 
@@ -243,349 +311,74 @@
 
 ---
 
-## v1.8.7 — 2026-09-23 · 文档全量重写与原型存档清理
-
-> 补丁：对照当前代码重写 `docs/` 全部 Markdown，压缩历史实施计划，删除 `docs/prototypes/`；版本号四处对齐 1.8.7。不改功能面。
-
-- **docs 全量重写**（约 2.7MB → 0.58MB）：顶层 `README` / `DEPLOYMENT_AND_USAGE` / `project-overview` / 本文件结构与事实校准；`specs/**` 40 篇统一元信息头与「问题/决策/设计/边界/验收」骨架；`plans/**` 历史计划收成「目标/结果/关键决策/验证」摘要。配置默认值、15 个内置工具、约 65 类会话事件对齐 `src/`。
-- **去 AI 腔与压缩**：清理翻案腔、空转冒号、起手式等；历史 plan 去掉逐步 checkbox 流水。
-- **清理 `docs/prototypes/`**：删除 v1.4 设计稿、v1.8 截图基线、`DeepSeekCodeIDE.jsx`、`preview-deepseek-code/`（含依赖残留）；文档引用改为「已清理」。
-- **删除过时计划**：`future-gui-deepseek-code-ide-redesign`、`gui-frontend-optimization-plan`（被 v1.8 现役壳层取代）。
-- **版本四处同步**：`package.json` / `package-lock.json` / `src/theme.js` / `gui/src/App.jsx` → `1.8.7`。
-
----
-
-## v1.8.6 — 2026-09-23 · 侧栏收放体验修复与对话框系统功能归位
-
-> 补丁: 彻底修复侧栏收起态菜单穿透与逐字折行排版错位，完善双向展开交互；输入对话框底部剥离全局系统级控件，归位至左侧栏底座。
-
-- **左侧栏收放体验修复 (Rail Collapse & Expand Polish)**：
-  - 为新会话弹层（`newwrap`）挂载 `mousedown` 点击外部区域与 `Escape` 键自动关闭监听，并在侧栏收起时自动重置 `newMenu` 为 `false`。
-  - 样式层强化 `.collapsed` 状态下隐藏未关闭菜单及次级文本，并为弹层增加 `min-width: 220px` 保护，彻底根除 56px 收起态下文字垂直挤压覆盖底部的严重排版错位。
-  - 侧栏顶部收起态保留 Logo 与展开按钮（`PanelLeftOpen`），配合底座展开按钮实现顶部与底部双向畅通展开。
-- **对话框系统功能剥离与纯粹化 (Composer Layout Refactor)**：
-  - `MetricsLine` 引入 `inComposer` 模式，在输入框卡片内彻底过滤「形态切换（`T 文字`）」、「主题切换（`Palette`）」与「语言切换（`Languages`）」，并不重复渲染上方操作区已有模型与分支 Pill。
-  - 输入框底部仅保留纯粹的工作区指标与运行状态（检查点数、连接就绪状态、上下文容量占比与缓存命中率），恢复清爽聚焦的输入体验。
-  - 严格校验 `statusDisplay.position` 配置，仅在允许在 Composer 展示时渲染该行。
-- **系统级功能归位至侧栏底座 (Rail Footer Controls)**：
-  - 将主题快速切换（`Palette`）与语言切换（`Languages`）入口标准化归位至左侧栏底部（Rail Footer），展开态（横排）与收起态（竖排）均可一键直达切换，且保持 Settings 为最后一项。
-- **文档名实对齐与部署指南完善**：
-  - 更新中英文 README、DEPLOYMENT_AND_USAGE 与架构文档，名实对齐 v1.8.6 最新架构。
-
----
-
-## v1.8.5 — 2026-09-23 · GUI 架构缺陷闭环与烟雾测试 (缺陷报告修复 G1-G9)
-
-> 补丁: 彻底修复评估报告指出的所有 GUI 架构缺陷，打通 Diff 查看、工具卡配对、Plan 计划面板集成与全链路自动化烟雾测试。
-
-- **G1 Diff 变更比对完整闭环**：`ChangesPanel.jsx` 正确挂载 `ChangeDiffView`，修复原本在变更列表中点击文件无法展示 Diff 视图的严重阻断。
-- **G2 工具卡严格配对 (Tool Call Pairing)**：`agent-cards.js` 重构为严格按 `call.id` ↔ `result.call_id` 字典配对，彻底根除跨轮次工具卡乱序错配缺陷。
-- **G3 Dock 计划面板打通集成 (Plan Panel Route)**：`DOCK_TABS` 与 `GUI_DOCK_TABS` 注册 `"plan"`，创建专属 `PlanPanel.jsx` / `PlanPanel.module.css` 选项卡，恢复计划面板可达性。
-- **G4 工具执行结果兼容与耗时遥测**：工具卡状态全面兼容 `ok` 与 `success`，并准确提取 `duration_ms` 耗时遥测指标。
-- **G5 跨项目切换重置闭包状态**：项目切换时清空历史活动流、消息列表与卡片集合，防止残留前一项目数据。
-- **G6 编排事件注册白名单**：`event-contract.js` 将 `orchestration:*` 事件规范注册进 `SESSION_EVENT_TYPES` 与 `GUI_RECEIVE_CHANNELS`。
-- **G7/G8 分支标识与国际化补齐**：`strings.js` 补齐 `dock.branch` 与 Composer 所需的 12 项 i18n 键值，消灭未定义占位。
-- **G9 Electron 全链路真实拉起冒烟测试**：`tests/e2e/gui-smoke.test.js` 真实拉起 Electron 实例，自动覆盖并验证 Plan 面板、Diff 预览、工具卡渲染与项目切换等核心路径。
-
----
-
-## v1.8.4 — 2026-09-23 · 内核与数据完整性保障 (缺陷报告修复 K1-K14)
-
-> 补丁: 彻底修复评估报告指出的所有 P0/P1/P2 级内核缺陷，涵盖事务日志、符号链接、补丁保真、进程超时、缓冲安全与防篡改校验。
-
-- **K1 事务半提交补偿回滚 (Transaction Journal)**：`transaction-journal.js` 在 `commit()` 失败时自动执行快照补偿回滚，避免留下半提交损坏数据。
-- **K2/K11 符号链接与目录联接保全 (Symlink Preservation)**：恢复原子写入改为 `lstat` 判断并直接重连符号链接/联接点，严禁将软链接毁损为常规文件。
-- **K3/K4 补丁尾换行与 CRLF 换行符字节保真 (Patch EOL Fidelity)**：修复 `patch.js` 的 `joinLines` 拼接条件与 CRLF 字节保真，跨平台应用补丁不增删多余尾换行。
-- **K5 子进程超时真正取消 (Process Cancellation)**：`runWithTimeout` 引入 `AbortController` / `AbortSignal`，超时触发时立即强制终止底层子进程树，防止僵尸进程。
-- **K6 Shell 标准流缓冲溢出防御 (Stream Buffer Safety)**：Shell 执行器收流时设置 `maxBuffer=64000` 截断，防止大体积命令输出耗尽进程内存 (OOM)。
-- **K7 编排器依赖失败跳过 (Orchestration Dependency Guard)**：编排调度循环在子任务失败后，自动将标记为依赖该失败任务的下游子任务标记为跳过，不再盲目派发。
-- **K8/K9 路径穿越精准检测 (Path Safety)**：路径安全性检测改为标准路径段解析，杜绝将含 `..` 的合法目录名（如 `test..dir`）误判为目录穿越。
-- **K10 事务回滚清理空目录**：在回滚删除新增文件后，递归自底向上清理因回滚产生的孤儿空目录。
-- **K12 快照前值回滚允许**：只要存在合法的 `before` 快照，无条件允许执行原子回滚。
-- **K13 事件日志 64-hex SHA-256 全量哈希与链式防篡改校验**：全量升级为标准 64 字符 SHA-256 哈希，并通过 `verifyEventLog` 严格校验哈希链。
-- **K14 空权限规则拒绝放行**：权限引擎中空模式规则一律拒绝放行，杜绝意外越权。
-
----
-
-## v1.8.3 — 2026-09-22 · 前端审查修复(生成物一致性 / 样式迁回补完 / 死代码清理)
-
-> 补丁:逐条修复 v1.8.1–v1.8.2 的 code review 问题清单;内核零改动(八目录 diff 为空)。刻意偏离原方案的三处理由见对应条目。
-
-- **生成物一致性**:`src/apps/tui/theme-palette.js` 与 `tokens.css` 失同步——v1.8.2 把 `paper --warn` 改回 `#ad8301` 却未重跑生成器,TUI 仍显示旧色号 214。生成逻辑抽为纯函数 `buildPalette` / `buildPaletteBody`,新增守卫断言**生成物与源逐字节一致**;重生成后为 136。
-- **闸门自证**:`check-theme-contrast.mjs` 的 `EXTRA_GATE` 此前导出后从未被引用(死代码,注释理由亦与 v1.8.0 不符)。重构出通用 `checkPairs`,附加两对改由单测守护(20/20);新增「`GATE` 恒为 11 对」用例锁定 110 项口径。`110/110 PASS` 契约不变。
-- **样式迁回补完**:v1.8.2 的人工 `REQUIRED` 清单漏掉 `.cz-meta.compact`(**compact 偏好因此整体失效**,含窄窗隐藏规则)、`.api-item .ai-ic`、`.f-in.short`、`.f-in.mid`。改用**自动守卫**(从当前 JSX 反推类名,ALLOW 须给理由),漏项全部迁回;刻意不迁回已无引用的 `.api-item.off .ai-ic` 与恒被内联 style 覆盖的 `.seg.acc`。
-- **`undefined` 类名**:`ChatView` 的 `css.mode` 在 `ChatView.module.css` 中不存在 → className 会渲染出字面量 `undefined`。删除 `css.mode` 与失效的 `acc`(外观由内联 style 不变);新增 CSS Module 成员守卫。
-- **守卫有效性**:迁移守卫取代人工清单,W1/W2 迁回结果钉为防回退断言;`no-dsh-imports.test.js` 扩展覆盖 `main.js` / `preload.js` / `kernel-host.js`;`dom-contract.test.js` 记录 `.shell` / `.rail-off` 为「无样式结构钩子」。
-- **symlink 用例平台门控**:实测本机 junction 可创建但 `realpath`/`stat`/`scandir` 全抛 `UNKNOWN`,测试前提无法建立 → 按仓库既有惯例(无 Electron / 无 node-pty 则 skip)加能力门控,**断言本身未削弱**;`npm test` 由 2 失败转为 0 失败(2 环境性跳过)。
-- **死状态清理**:`railMode` / `railView` / `contextCollapsed` 与三个对应 action、`RAIL_MODES` / `RAIL_VIEWS` / `GUI_RAIL_MODES` 仅存在于状态层、零组件引用,随 v1.8.1 三列壳层一并退役;旧偏好文件中的残留键被归一丢弃。
-- **文档**:修复 `docs/README.md` 版本行被截断(行首 `当前版本 **v1` 丢失、残留 `.8.2**(...)`);当前版本 → v1.8.3;恢复 `[Unreleased]` 小节。另修 `contrast.js` 残留注释、`theme.js` EOF 换行、本文件 `ode` → `node` 错别字。
-- 全量回归 **1139 单测**(0 失败 / 2 环境性跳过)+ `npm run check` + renderer build + gui-smoke(`GUI_SMOKE_READY`)通过。
-
----
-
-## v1.8.2 — 2026-09-20 · 前端缺陷修复(样式迁回 / 按键 / 溢出)
-
-> 补丁:修复 v1.8.1 code review 问题清单中的前端样式、按键与溢出缺陷;内核零改动。对比度闸门恢复 **110/110**(node scripts/check-theme-contrast.mjs);色值权威为 v1.8.0 plan 附录 A。
-
-- **P0 闸门与列宽**:对比度脚本恢复 11 对 × 10 套 = 110 项;paper 的 warn 按附录 A 改回 #ad8301;clampWidth 在 max < min 时保下限;右栏拖拽/持久化加上限 RIGHTBAR_MAX=1600 与 clampRightbarWidth。
-- **P1 样式迁回**:补回 B4 删 shell.css 后丢失的敏感模态 .sn-*、侧栏 .sec-body.closed/.proj-b 收放、项目/会话省略号、.new-menu、.s-body/.s-in、改动双栏、.th-detail、首页问候渐变;守卫测试 shell-styles-restored.test.js。
-- **P2 按键交互**:事件卡去掉嵌套 button(操作钮外置);全局快捷键经 hotkeys.js 在输入态/设置/敏感模态下放行;分隔条可键盘微调;分区头/新会话菜单改 button;Composer Esc 失焦、附件钮不再误插 @;首页「改动」改开右栏 dock;VIEWS 与主区路由对齐。
-- **P3 溢出布局**:气泡/正文 overflow-wrap:anywhere;stream/composer 内容宽按 920+padding 校正;dock tab 条高度 40px;右栏列宽 <300 时不渲染 Dock;文件树缩进上限;消息流上限 200 条。
-
----
-
-## v1.8.1 — 2026-09-20 · 壳层重构(三列 dock + 设置模态 + 中性阶梯)
-
-> 小版本:换壳层布局与视觉语言,信息架构保留;内核零改动(八目录 diff 为空)。计划见 [`plans/frontend/2026-09-20-v1.8.1-dsh-shell-plan.md`](plans/frontend/2026-09-20-v1.8.1-dsh-shell-plan.md),设计见 [`specs/frontend/2026-09-20-v1.8.1-dsh-shell-design.md`](specs/frontend/2026-09-20-v1.8.1-dsh-shell-design.md)。**合入 main、打 tag 由维护者完成。**
-
-- **B0 壳层骨架**:三列可拖拽 grid(`columns.js` 纯函数 + `AppFrame`/`DragHandle`)+ 40px 原生 `titleBarOverlay` + 首帧防闪(`?boot=` + `--boot-bg`)+ 零 DSH 引用守卫(`no-dsh-imports.test.js`);偏好新增 `sidebarWidth`/`rightbarWidth`/`rightbarOpen`/`dockTab`。
-- **B1 token 重铺(C 变体)**:结构槽明/暗两档中性阶梯(明 `#ffffff` / 暗 `#151517` 等 10 槽);10 主题 id 保留,只贡献 accent/语义色;对比度闸门改为 structure 2×7 + accent 10×4 = **54 项**;`theme.css` 增加派生量(`--hover`/`--border-l*`/`--shadow-*`/`--bubble`)与 `data-dark` 覆盖。
-- **B2 侧栏 + 会话页**:Rail/Chat/Composer CSS Modules 数值对齐;会话头 `SessionHeader`(tab 对话|轨迹,轨迹空态占位);滚动条 `scrollbar.css` 双路径;`.cz-meta` 决策①不动。**上下文圆环未做**(计划允许跳过;`STATUS_FORMS` 仍为 5)。
-- **B3 右栏 dock**:`Dock` + 文件树/改动/恢复三面板(`treeFromPaths` + `tree_dir_toggled`);侧栏「改动/恢复」改为开右栏;`Ctrl/⌘+J` 正式化;主区 `view===changes|recovery` 路由删除。
-- **B4 设置模态 + 收口**:设置从全窗改模态(`settingsOpen` + `settings_toggled`,`Ctrl/⌘+,`);删除自绘 `TitleBar.jsx` 与 `shell.css`(样式迁入 `theme.css`);`ThemeHub.jsx` 并入 `Appearance`;`window:*` IPC 删除;dom-contract/smoke 门重做(AppFrame 8 选择器);版本四处 → `1.8.1`。
-- 全量回归通过;`settings.back` 等 TitleBar 专用文案键保留字典(双语 parity),运行时不再引用。
-
----
-
-## v1.8.0 — 2026-09-20 · 工学换肤(Electron 壳层 v1.8 γ)
-
-> 小版本:**换视觉语言,不换信息架构**。内核零改动(`src/core src/deepseek src/tools src/edits src/sessions src/context src/security src/workspace` 八目录 diff 为空)。计划见 [`plans/frontend/2026-09-17-v1.8.0-ergo-restyle-plan.md`](plans/frontend/2026-09-17-v1.8.0-ergo-restyle-plan.md),设计见 [`specs/frontend/2026-09-17-v1.8.0-ergo-restyle-design.md`](specs/frontend/2026-09-17-v1.8.0-ergo-restyle-design.md)。
-
-- **10 主题重编为四段带**:暗 3(`sumi`/`slate`/`vesper`)· 柔暗 2(`nord`/`ash`)· 柔明 2(`snow`/`sand`)· 明 3(`lotus`/`latte`/`paper`);保留 `sumi`/`nord`/`latte`/`paper` 四套原值,新增 6 套,退役 6 套(`dawn`/`mocha`/`moon`/`forest`/`clay`/`rose`,旧 id 静默迁移)。
-- **对比度闸门常驻**:`scripts/check-theme-contrast.mjs` 的 11 对 × 10 套 = 110 项升级为单测(`110/110 PASS`);亮度/对比度实现单一来源 `gui/src/state/contrast.js`,GUI 设置›外观的运行时实测同源复用。
-- **三端主题 id 单源**:GUI `themes.js`(新增 `TIERS`/`themesByTier`)、reducer、`kernel-host` 偏好归一(`lastDark`/`lastLight`/`glass` 三键)、TUI `theme-palette.js`(由 `scripts/gen-tui-theme.js` 从 tokens 生成)、i18n 字典全部对齐;新增 `theme-pins.test.js` + `dom-contract.test.js` 冻结 DOM/类名契约。
-- **壳层视觉层(P1)**:新增主题中枢 `theme-hub.js`(同组轮换 / 跨模式切换 / 退役 id 归一);标题栏去硬编码色(4 处 `#8884` → `color-mix`、关闭键 → `--err`、下拉阴影令牌化);composer 聚焦柔光;浮层玻璃态(`glass` 偏好 + `[glass="on"]`,冒烟经 `?smoke=1` 强制关);`.sn-*` 模糊 2px → 6px 并补通用模态壳。
-- **卡片两段式与推理摘要卡(P2)**:卡片头由 `div` 改 `<button type="button">`(a11y 欠账);工具卡显示真实耗时(`event-contract` 的 `tool-result` 新增 `durationMs`);审批卡按决策染色(`data-decision`);新增推理摘要卡(`model:response` → quiet 的 `thought` 描述符,门控:仅 `purpose`/`reasoningTokens` 存在时出卡)。
-- **设置 › 外观 ThemeHub(P2)**:四段分组网格 + 选中卡下方运行时实测色板(5 槽 hex、点击复制、正文对比度)+ 玻璃开关。
-- **收口(P3)**:冒烟截图基线曾入库 `docs/prototypes/v1.8.0-ergo-restyle/screenshots/`(`sumi-*` / `paper-*` 各 9 张；现已清理);版本同步为 `1.8.0`;死钩子清扫(`.seg.click`、`.c-src.man`、`.mv-card .demo .t/.cs`、`settings.theme.night|day`、冒烟中设置页静默失败的 Rail 点击)。
-- 全量回归 **1107 单测** + `npm run check` + renderer build + gui-smoke(`GUI_SMOKE_READY`)通过。
-
----
-
-## v1.7.2 — 2026-09-19 · GUI 三处现有缺陷 + 敏感模态截图欠账
-
-> 纯 GUI 补丁,内核零改动;是 v1.8.0 换肤(P2 卡片重排)的硬前置。
-
-- **agent 回复从不进消息流**:`workbench-state` 的 `event_received` 不处理 `agent:final`,`messages` 只在用户发送时写入,`ChatView` 的 `.a-msg` 分支自 v1.4.6 起从未渲染过。现 `agent:final` 追加 `{ role:"assistant", text }`(空 content 不追加;stopped 也入流)。
-- **状态行数据首屏一次永不刷新**:`getUsage` / `listCheckpoints` 只在挂载时拉一次。现新增纯函数 `refreshLoadsFor(eventType)`,在 `agent:final / agent:error / turn:cancelled / file:rollback_applied` 后重拉两项(不在 model:*/tool:* 上刷,避免每回合十几次 IPC)。
-- **敏感文件模态引用 7 个不存在的 CSS 变量**(v1.7.0 引入):`--bg/--bg-1/--bg-2/--bg-3/--fg-1/--mut/--bdr` 在任何样式表中均无定义,红色提醒模态在所有主题下底色透明、文字无色。按语义映射到 `tokens.css` 18 槽修正;新增 `css-vars.test.js` 通用守卫——`shell.css`/`theme.css` 里任何 `var(--x)` 引用未定义槽位即红。实测守卫列出 10 处 `var()` 引用(覆盖 8 个行号;719 行含 `--bdr/--bg-2/--fg-1` 三处),全部落在方案映射表内,无表外同类 bug。
-- **v1.7.0 承诺的模态冒烟截图补上**:smoke 链新增 `shell-sensitive-notice` 一景(主进程 push 构造事件,走与内核相同的 `kernel:event` 通道),截图曾入库 `docs/prototypes/v1.8.0-ergo-restyle/screenshots/`(现已清理)。
-- 版本同步为 `1.7.2`(四处);全量回归 **1089 单测** + `npm run check` + renderer build + gui-smoke 通过。
-
----
-
-## v1.7.1 — 2026-09-15 · changeRetention 生产接线 + D-G7 GUI 恢复中心 + #10 延后定案
-
-> 审阅后挂账清零:补上 v1.6.2 实现了却未接线的变更记录保留期;落地 D-G7 GUI Recovery Center;#10 重构按维护者决定延后到大版本。
-
-- **`changeRetention` 接线到内核生产路径(v1.6.2 遗留)**:此前 `finalizeChange` 已实现保留期清理,但 `createKernel` → `createEditService` 从未注入 `edits`,生产路径**永不 prune**。现:
-  - `DEFAULT_CONFIG.edits = { maxCaptureBytes: 1 MiB, changeRetention: { maxRecords: 200, maxAgeDays: 90 } }`,并经 `normalizeEdits` 深归一(部分字段补默认;`null` 显式关闭截断/清理);
-  - `loadConfig` / `normalizeConfig` / `buildKernelOptions` 透传 `config.edits`;
-  - `createKernel` / `buildToolPlane` 把 `options.edits` 注入 `createEditService` → `createChangeStore`。
-  - 覆盖:配置归一化 ×4、editService 直连清理、默认不清理、kernel-options 透传、`createKernel` 全链路清理;全量回归 **1083+**(含 D-G7 新增)。
-- **D-G7 GUI Recovery Center(收 V2-18 Task 13)**:`kernel-host` 暴露 list/report/resume/cancel/clear;IPC 白名单 + preload;侧栏「恢复」入口 + RecoveryView(列表/扫描摘要/动作);中英双语。计划见 [`plans/frontend/2026-09-15-d-g7-gui-recovery-center.md`](plans/frontend/2026-09-15-d-g7-gui-recovery-center.md)。kernel recovery 契约零改动。
-- **#10 `agent-runtime` 阶段 3–4 延后到大版本(维护者 2026-09-15 拍板)**:不以补丁/小版本做结构重构;阶段 1–2 成果(刻画测试 + 边界分析)继续作为护栏。台账与 design 状态行已同步。
-- 版本同步为 `1.7.1`(四处)。
-
----
-
-## v1.7.0 — 2026-08-09 · 敏感文件风险提醒 + 展示层脱敏(#9.3 收官)
-
-> #9.3(明文变更记录)的最后一片。后端卫生已在 v1.6.2 落地,本版补齐需要三端前端配合的两件事,**#9.3 至此完全闭环**,审计补账单 10 项全清。
-
-- **敏感文件独立风险提醒(三端)**:agent 改 `.env` / `*.pem` / `*.key` / `.npmrc` 等文件时,该文件的**完整原文**会被抄进 `.deepseek-code/changes/`(回滚必需,不可脱敏)。此前用户对此毫无感知,现在**在编辑真正发生之前**红色告知、由用户拍板;拒绝则该文件的改动不发生。
-  - **独立于所有权限档位之外**:权限矩阵管的是「agent 能不能做这个动作」,本提醒告知的是「这个动作会在磁盘留下一份你看不见的密钥副本」—— 属副作用告知,不是动作授权。走 `editService.apply` 预检的独立回调,**不经 `permission-engine`**、不进审批缓存。
-  - **所有档位一律提问,没有任何档位能跳过**(含 `full-auto`)。这与既有权限矩阵一致 —— `full-auto` 的 `read_secret` 与 `execute_dangerous` 本就是 `ask`,它从来不是「无人值守免打扰」档。策略由 `apps/sensitive-notice-contract.js` 统一,handler **在结构上就拿不到 autonomy**,从根上杜绝「按档位放行」(有测试锁住)。
-  - **不缓存选择**:走审批缓存等于把「独立于权限之外」又拉回权限体系;这类告知的价值就在于每次都让人看见。
-  - **判定收窄**:复用 `contextSkipReason` 但**只取 `secret-file` / `credential-file` 两类**。该函数对 `node_modules` / `dist` / `.vscode`(`ignored-directory` / `hidden-tool-dir`)也返回非 null,整个复用会让提醒在改 `dist/` 时也弹 —— 提醒一旦成噪音就等于没有。
-  - **三端各自呈现,均不复用审批卡片样式**:CLI 全红文本块 + 明写「this is NOT a permission prompt」;TUI 独立 `sensitiveNotice` 态(不复用 `approval` 态)+ 红色底部行 + y/n·Esc;GUI 红色全窗模态(`--err` token,十主题自适配),**拒绝按钮在前且为默认焦点** —— 危险操作不该是顺手可点的那个。
-  - **GUI 请求-应答桥**:内核在主进程,提问要到渲染层再回来。主进程 push 带 `request_id` 的事件、挂起 Promise,渲染层经新 IPC 通道 `sensitive:respond`(**已登记进 `IPC_CHANNELS` 白名单**)作答。未知 id 静默忽略(防伪造/重放挂死),`dispose` 把未决提问一律按拒绝收口。只有严格 `true` 才放行。
-- **展示层脱敏(三端)**:CLI `changes` / TUI 卡片经 `formatChange`、GUI 经 `changes:describe` 桥,显示前统一过 `redactor`。**存储保持原文** —— 回滚靠逐字节复原;有测试同时断言「显示已脱敏 + 磁盘仍是原文 + 回滚仍能精确复原」,防止有人图省事把 redactor 套到写盘路径上。这是密钥唯一能离开本机的路径(截图、贴 issue)。
-- 新增 **31 条测试**(判定层 8 / 共享契约 6 / CLI 6 / TUI 5 / GUI 桥 6 + reducer 5,含展示脱敏 4);`npm run check` 补上此前漏登记的两个新模块。
-- 版本同步为 `1.7.0`(四处);全量回归 **1075 单测** + `npm run check` + renderer build 通过。
-
----
-
-## v1.6.4 — 2026-08-09 · v1.6 收尾:文档漂移修复 + 前端片立项
-
-> 纯文档补丁,不改任何代码。清掉 v1.6 计划的收尾清单。
-
-- **文档漂移修复(又一次)**:`docs/README.md` 的「当前版本」停在 **v1.5.2**,落后三个补丁 —— 讽刺的是 v1.5.2 那一版修的正是这个漂移,v1.6.1–v1.6.3 三片又忘了同步。本版补上并改为 v1.6.4。
-- **补救 spec 状态行修正**:顶部仍写「#10 阶段 1–2 **待续**」,而 v1.6.3 已完成 —— 该行是在 v1.6.2 写的,v1.6.3 只更了 #10 条目本身、漏了顶部汇总。现改为「阶段 1–2 已在 v1.6.3 完成,阶段 3–4 定级待拍板」,并给 #9.3 前端片补上 plan 链接。
-- **新建前端片 plan**:[`plans/frontend/2026-08-09-sensitive-file-warning-and-display-redaction.md`](plans/frontend/2026-08-09-sensitive-file-warning-and-display-redaction.md)(目标 **v1.7.0**,minor)—— #9.3 剩余的两件事:
-  - **敏感文件独立红色提醒**:独立于所有权限档位之外(权限管「能不能做」,本提醒告知「会在磁盘留下一份你看不见的密钥副本」,混进权限档位会被 auto 一键放行);判定复用现成的 `contextSkipReason`;开工前需拍板 `full-auto` 无人值守行为(建议不阻塞、直接拒绝并上报)与「不缓存选择」。
-  - **展示层脱敏**:CLI/TUI/GUI 显示 change 详情前过 `redactor`,**存储保持原文供回滚**(须同时断言两侧)。
-- v1.6 计划的收尾清单已勾掉三项;剩「合入 main + 推送」与「#10 阶段 3–4 定级」两项待维护者决定。
-- 版本同步为 `1.6.4`(四处);全量回归 **1035 单测** + `npm run check` 通过(本版未改代码,基线不变)。
-
----
-
-## v1.6.3 — 2026-08-09 · agent-runtime 阶段 1–2(刻画测试 + 边界分析)
-
-> v1.6 挂账清零第三片。#10(agent-runtime 可维护性)的**阶段 1–2 only** —— 按维护者 2026-08-09 决定,**本轮不改任何实现**,只补行为刻画与边界分析,供定级再议。
-
-- **阶段 1 · 行为刻画测试(characterization)**:新增 [`tests/unit/core/runtime/agent-runtime-characterization.test.js`](../tests/unit/core/runtime/agent-runtime-characterization.test.js) 共 7 条,锁住:
-  - 完整回合的**精确事件发布顺序**(此前测试全是 `events.some(...)` 集合式断言,无顺序断言);
-  - 四条审批恢复分支(普通工具 / 主验证器 / 修复期工具 / 修复期验证器)各自的暂停-续跑事件序列与终态;
-  - 错误语义的**精确 `code` 与 `message`**(`APPROVAL_NOT_FOUND` / `AWAITING_APPROVAL`)。
-  - **变异验证已实际执行**(验收标准,非走过场):改错误码 → 错误语义用例红;交换两个事件发布顺序 → 5 条顺序用例全红。两次变异后均已还原。
-- **阶段 2 · 职责/依赖边界分析**:交付 [`specs/backend/2026-08-09-v1.6.3-agent-runtime-refactor-design.md`](specs/backend/2026-08-09-v1.6.3-agent-runtime-refactor-design.md) —— 当前 1160 行结构的功能分区表、四条恢复分支「暂停-保存-清理」样板的重复点(带行号)、纯函数 vs 副作用分离清单、阶段 3–4 候选方案与风险。
-- **定级再议**:阶段 3–4(真正的重构)未开工,是否立项、按补丁还是大版本、范围多大,由维护者在读完边界分析后决定。
-- 版本同步为 `1.6.3`(四处);全量回归 **1035 单测** + `npm run check` + renderer build 通过。
-
----
-
-## v1.6.2 — 2026-08-09 · 变更记录后端卫生(#9.3)
-
-> v1.6 挂账清零第二片。#9.3(明文变更记录)的后端部分:展示层脱敏与「敏感文件独立红色提醒」需三端前端配合,单独立前端片。本片只做纯后端卫生,**存储内容一个字节不改**(回滚是硬约束)。
-
-- **大小上限 + 回滚清空洞修补**:`captureChangePlan` / `finalizeChange` 接 `maxCaptureBytes`(默认 1 MiB,`null` 关闭)——超过只存 `sha256` + 原始大小并标 `truncated: true`,不存全文。**同时堵洞**:旧 `rollbackChange` / `applyRollbackRecord` 写 `file.before ?? ""`,截断记录若不拦会把用户文件**清空**;现两处回滚路径都对 `truncated` 记录抛 `ROLLBACK_TRUNCATED`(先全部校验再动手),绝不静默写空。
-- **保留期 / 数量上限(此前完全真空)**:`listChanges` 只读不删,全仓无任何清理。现 `finalizeChange` 写新记录后按 `changeRetention = { maxRecords, maxAgeDays }` 确定性清理(新在前排序,超出者删);只删 `.deepseek-code/changes/*.json`,不碰工作区文件。
-- **目录限权**:`changes/` 以 `0o700` 创建(Windows 上 `fs.chmod` 基本无效,此条仅在类 Unix 生效,文档已如实说明)。
-- 配置入口:`createEditService({ edits })` / `createChangeStore({ edits })` 可覆盖 `maxCaptureBytes` 与 `changeRetention`;未配置用默认值。**刻意不加入 `DEFAULT_CONFIG`** —— 当前内核不把任意 config 透传进 editService,先加是死配置(重蹈 #8 `languages` 空转),留待前端片或明确接线时再说。
-- 新增 7 条测试:截断(捕获/落库/两条回滚路径守卫各 1)+ 保留期(maxRecords / maxAgeDays / 工作区不受影响)。
-- 版本同步为 `1.6.2`(四处);全量回归 **1028 单测** + `npm run check` 通过。
-
----
-
-## v1.6.1 — 2026-08-09 · repair 阶段计入每回合预算
-
-> v1.6 挂账清零首片。本版由 v1.5.1 审查发现的「repair 阶段预算不计」修复产出,只改 runtime 护栏的**计数范围**,不改功能面。
-
-- **repair 阶段模型调用计入 `maxTurnTokens` / `maxModelCalls`(v1.5.1 审查遗留)**:`approve()` 四条分支中,此前只有「普通工具」那条持有预算对象;验证器审批与修复期审批走 `runRepairLoop`,而它参数表里根本没有 `budget` —— repair 期的模型调用(`repair-executor` 的 `modelGateway.invoke`)从不计入,`maxTurnTokens` 在最容易失控的路径上失效。现:
-  - `runRepairLoop` 接 `budget`,每轮 attempt 顶部查 `exceeded()` —— 命中优雅停止(`status:"stopped"`,reason 同工具循环),不抛错、不继续调模型;
-  - `repair-executor` 在 `invoke` 后 `recordModelResult`(与 executor-loop 同语义、同频次:调用后记、下一迭代顶截停);
-  - `verifyAndMaybeRepair` 把 `budget` 传给 send 与 approve 两条路径的 repair 入口;
-  - 验证器/修复期审批暂停时把 `budget.snapshot()` 写入 `resume_state.budget_spent`(与 executor-loop 的 `withBudgetSpent` 同形状),续跑按 spent 做种子,re-pause 链与 durable 恢复路径自动继承;
-  - `budget` 未注入时行为逐字节不变(不内置默认值)。
-  - 新增 3 条回归:runtime 层「repair 期调用计入预算、耗尽后不再调模型」+ repair-loop 直接层「不传 budget 照常、已耗尽预算先于模型调用停止」。
-- 版本同步为 `1.6.1`(`package.json` / `package-lock.json` / CLI-TUI banner / GUI App.jsx);全量回归 **1021 单测** + `npm run check` 通过。
-
----
-
-## v1.5.2 — 2026-08-09 · FIM 超时补齐 + 文档漂移修复 + release tag 补录
-
-> 本版由 v1.5.1 的提交审查产出:一处潜在挂起、三处文档/死代码遗留。不改功能面,属补丁级。
-
-- **`fimComplete` 补齐超时(v1.5.1 审查遗留)**:FIM 路径此前完全没有超时 —— `model-gateway.fimComplete` 只把 `options.signal` 透传给 `fim-client`,不接 `timeoutMs`,请求或 body 解析悬挂即永久挂起(该方法在 `src/` 内暂无调用点,故是潜在而非在线的洞)。现与 `invoke` / `stream` 同语义:`withTimeout` 包住整段并在 `finally` 解除,`timeout.signal` 传入 fim-client 的 fetch 故请求与 body 解析同受约束,超时抛 `MODEL_TIMEOUT`、调用方 abort 以 `ABORT_ERR` 传播;不传 `timeoutMs` 则行为逐字节不变(与 `invoke`/`stream` 一致,不内置默认值)。新增 4 条回归。
-- **文档漂移修复**:`docs/README.md` 的「当前版本」由 v1.2.0 更新为 v1.5.2 并补 tag 指引;补回 v1.4.8 发布时误删的 `[Unreleased]` 小节(维护规范仍引用它);补回 **v1.3.1 丢失的 CHANGELOG 标题**(其 5 条内容此前裸挂在 v1.3.2 小节下);`project-overview` §2 超时描述补 `fimComplete` 与「cleanup 在 body 读完之后」语义。
-- **补齐历史 release tag**:v1.0.0 / v1.1.0 / v1.2.0 / v1.3.1 / v1.3.2 / v1.4.8 / v1.5.1 七个带注解 tag,tagger 日期对齐各自提交 —— 此前项目严格走语义化版本却零 tag,回溯只能靠 commit message。
-- **GUI 死字符串清理(v1.5.1 遗留)**:`i18n/strings.js` 中英各删 4 个无引用的 `placeholder.*` 键(`badge`/`files`/`editor`/`terminal`)—— 属 v1.4.6 删除旧 IDE 组件后的残留,其中 `placeholder.terminal` 还写着「xterm 待接」。
-- **审查记录的既有缺口(本版未动,留档)**:`approve()` 的四条分支中仅「普通工具」持有预算对象,验证器审批与修复期审批走 `runRepairLoop`(不接 budget 参数),故 **repair 阶段的模型调用从不计入每回合预算** —— 属挂账 #10(`agent-runtime` 可维护性)辖区,需独立立项。
-- 版本同步为 `1.5.2`(`package.json` / `package-lock.json` / CLI-TUI banner / GUI App.jsx);全量回归 **1018 单测** + `npm run check` + renderer build 通过。
-
----
-
-## v1.5.1 — 2026-08-07 · 内核超时/预算修复 + GUI 死代码清理
-
-- **流式/响应超时真正生效(#深读核实)**:`model-gateway.stream` / `invoke` 原在 `fetch` resolve 后立刻 `timeout.cleanup()`(清定时器 + 摘 caller abort),但 SSE body 读取与 `response.json()` 都在其后——超时不再约束 body 读取、调用方 abort 也不传播。现把 cleanup 移到 body 读完后的最外层 `finally`:SSE 流读或 JSON 解析悬挂时按 `MODEL_TIMEOUT` 终止,调用方 abort 以 `ABORT_ERR` 传播;新增 4 条回归测试。
-- **每回合预算跨审批续扣(#深读核实)**:`agent-runtime.approve` 续跑时新建的 `createCostBudget` 不带 initial 值,暂停前已耗的 token/调用次数被清零(回合可实际超 `maxTurnTokens`),与 orchestrator 的 `makeResumedBudget` 续扣语义不一致。现 `executor-loop` 在暂停点把 `budget.snapshot()` 写入 `resume_state.budget_spent`,`approve` 续跑时按 spent 做 initial 种子;re-pause 链与 durable 恢复路径自动继承。新增回归测试;旧 sidecar 缺字段则退化为 0(兼容)。
-- **GUI 死代码清理**:
-  - **xterm/pty 死路径**:删除 `@xterm/xterm` + `@xterm/addon-fit` 依赖、`gui/pty-host.js`、preload `pty*` / `onPtyData` 与 `pty:*` IPC 处理器、`tests/unit/gui/pty-host.test.js`(渲染层从不 import xterm,终端从未接出);`node-pty` 保留供门控 TUI smoke。
-  - **遗留 `theme.css` 剪枝**:235→82 行,仅保留 v4 仍引用的标题栏/下拉菜单/按钮/Diff 视图/状态色与全局 reset(被 v1.4.6 删除组件的 Explorer/Editor/Agent/底部面板/modal 等遗留样式已清理);tokens 仍经其 `@import` 加载。
-  - **IPC 白名单强制生效**:`IPC_CHANNELS` 从文档常量改为唯一权威清单(补上此前漏登记的 `projects:*` / `sessions:list` / `projects:reveal` / `projects:pick`),`registerIpcHandlers` 内未登记 channel 的 `handle` 注册启动即抛错。
-- 版本同步为 `1.5.1`(`package.json` / `package-lock.json` / CLI-TUI banner / GUI App.jsx);全量回归 **1014 单测** + `npm run check` + renderer build + Electron/TUI smoke 通过。
-
----
-
-## v1.4.8 — 2026-08-07 · 前端重设计收官(feat/v1.4 → main)
-
-> v1.4 系列(前端重设计)v1.4.0–v1.4.7 八个提交一次合入 main。以下为各阶段交付内容与品牌改名。
-
-- **品牌改名**:产品名 **DeepSeek Code → Inkstone(砚)**。显示品牌全面替换(CLI/TUI banner、GUI 窗口与页面标题、system prompt 产品自称、User-Agent、README/docs/设计稿);结构层同步(package/bin 命令 `inkstone` + 保留 `dsc` 别名、gui 包名 `inkstone-gui`、conda 环境名)。**功能契约全部保留**:`.deepseek-code` 存储目录、`DEEPSEEK_*` 环境变量、`api.deepseek.com` 端点与 `deepseek-v4-*` 等模型 id 均不改。方案见 [`plans/architecture/2026-07-31-inkstone-rebrand.md`](plans/architecture/2026-07-31-inkstone-rebrand.md)。
-- **v1.4.6 设计稿细节还原(feat/v1.4 分支)**:在 P0–P4 基础上对照 v4 设计稿逐项补齐 ——
-  **图标规范**:GUI 全部改用 lucide-react 矢量图标(新增 `lucide-react` 依赖),移除残留的 emoji/几何字形(📎 ⚡ ◆ 等),删除十个旧版 IDE 组件(ActivityBar/AgentPanel/DiffView/EditorGroup/Explorer/Icons/Placeholder/RewindDialog/StatusBar/Terminal)与 `panels-derive` 死模块;
-  **七视图还原**:首页改为问候语+输入胶囊+四张快捷卡+最近会话、侧栏项目分区内挂日期分组会话(今天/昨天/本周/更早)+搜索过滤(新 `session-groups.js`)、会话视图补齐五类事件卡(计划带子任务清单/工具带参数/diff 带逐文件增删/审批卡接批准与拒绝/编排卡)、设置页对齐设计稿表单语言(s-nav/f-group/f-row/.sw/主题网格/5 形态卡);
-  **状态行还原**:`.cz-meta` 完整实现——分支/检查点/连接标签 + 5 形态比例指标(文字/数值/进度条/点阵/关闭,点按钮可轮换)+ 模型/主题/语言标签,由「状态显示」偏好驱动,空闲淡出;
-  **能力补齐**:「打开文件夹…」原生目录选择 IPC(`projects:pick`)、项目页「在文件管理器中显示」(shell.openPath)、会话枚举跨全部登记项目(侧栏每项目分区各自挂载);
-  **TUI 对齐**:启动首页菱形品牌行(版本/模型/档位/shell/主题 meta)+ 最近会话列表,状态行加 `th:` 主题标签。
-  全量回归 1006 单测 + e2e ×4 通过;GUI 冒烟截图随 smoke 落 `gui/__screenshots__/`。
-- **v1.4.7 前端收口(feat/v1.4 分支)**:侧栏可收放 —— Rail 272px⇄52px 图标轨,`Ctrl/⌘+B` 切换、偏好 `railCollapsed` 持久化,折叠态仅保留功能区图标与页脚「展开/设置」两钮;恢复 `DiffView.jsx` 修复 renderer 构建断裂;补齐 `Ctrl/⌘+N` 新建会话;修复 Rail 分区折叠、首页 busy 中断键、标题栏明暗主题图标(改按 `themes.js` group 判定)三处交互问题;设置页全窗化(不再与 Rail 并列,顶部新增「返回/关闭」按钮,返回原视图),窄窗口菜单栏消失修复(≤900px 时 Rail 改为强制 52px 图标轨而非隐藏);构建与测试加固(renderer-dist 门控、Electron 冒烟截图预算兜底),截图复核 8 视图全绿(修复 smoke 设置截图选错按钮、窄屏折叠偏好残留 52px 空列、改动时间原始 ISO 显示),全量回归 1012 单测 + `npm run check` + renderer build + Electron 冒烟通过。
-- **v1.4.0 前端界面重设计(已实现,`feat/v1.4` 分支)**:GUI/TUI 界面全部重做,按 [`plans/frontend/2026-07-31-v1.4.0-frontend-redesign-plan.md`](plans/frontend/2026-07-31-v1.4.0-frontend-redesign-plan.md) 的 P0–P4 落地。**设计定稿**(五轮 HTML 稿,终稿曾存 `prototypes/v1.4.0-redesign/v4/`,现已清理;结论见 [spec](specs/frontend/2026-07-28-v1.4.0-frontend-redesign-design.md)):**10 套主题**(3 浅 7 深,色值取自 Flexoki/Rosé Pine/Catppuccin/Kanagawa/Tokyo Night/Nord/Everforest/Gruvbox Material 官方定义源,WCAG 110 项校验全过,默认 `sumi` 墨)——GUI `tokens.css` 单源 + 设置页外观 10 主题网格,TUI 经 `gen-tui-theme` 生成 xterm-256 调色板 + `/theme`。**GUI 会话优先布局**:rail 功能区(主页/项目/改动/MCP/插件)+ 每项目独立分区(内挂该项目会话,新建会话继承项目目录)+ 独立对话;七视图路由;`.cz-meta` 指标 5 形态(文字/数值/进度条/点阵/关闭)+ 全中文「状态显示」设置组;全局项目 MRU + 会话枚举(kernel 零改动)。**TUI**:opencode 式启动首页(垂直居中/单行 meta/最近会话)+ `/theme` + `/shell`(pwsh/powershell/cmd/git-bash)。
-
-**已挂账(待立项,方案见 [`specs/backend/2026-07-12-agent-findings-remediation.md`](specs/backend/2026-07-12-agent-findings-remediation.md)):** 明文变更记录脱敏方案(#9.3,需独立 design)、`agent-runtime.js` 可维护性重构(#10)。
-
----
-
-## v1.3.2 — 2026-07-29 · 语义降级可观测 & GUI 休眠渲染层删除
-
-- **语义上下文降级可观测化(#8):** `semantic-engine.js` 在降级翻转处恰好发布一次 `context:semantic_degraded` 事件(含 error.message reason,~200 字符截断),经事件类型注册入会话时间线、`event-contract.js` 以非静默 warn kind 展示(CLI/TUI 默认行渲染即可读);粘性降级与文件级回退行为不变。
-- **删除 `context.semantic.languages` 空转配置(#8):** 从 `DEFAULT_CONFIG` 与 `normalizeContext` 移除从未被消费的 `languages` 键及 `normalizeLanguages` 函数;含旧键的用户配置静默消失(`normalizeContext` 固定键集重建)。同步删除从未被加载的 `tree-sitter-tsx.wasm`(2.4 MB 死重)及 `wasm-tree-sitter-provider.js` 中的 `tsx` 条目。
-- **删除 GUI 休眠渲染层(#9.6):** 整目录 `gui/renderer/`(app.js / event-adapter.js / workbench-state.js / index.html / style.css)已删除——消除问题 #5(事件→展示四份并行实现)的最后残留。`gui/main.js` 加载决策改为:dev URL → renderer-dist,两者皆无→`dialog.showErrorBox` + stderr 报错「请先运行 npm run build:renderer」+ 非零退出。删除 2 个对应单测;`npm run check` 移除了 `gui/renderer/*` 条目。
-- 版本同步为 `1.3.2`(`package.json` / `package-lock.json` / CLI-TUI banner);全量回归(978 项)与语法检查通过。
-- 本版范围说明:#7 命令策略已在 v1.3.1 发布;#9.3(明文变更记录)、#10(agent-runtime 重构)继续挂账。
-
----
-
-## v1.3.1 — 2026-07-28 · shell 命令级安全策略
-
-- `shell`/`git` 子进程执行在权限档位之外新增**命令级分类**([`src/security/command-policy.js`](../src/security/command-policy.js),清单硬编码):`classifyCommand(argv)` 将命令分为 safe / dangerous / forbidden 三类,经工具 `resolveCategory` 映射进权限引擎——**forbidden**(format / mkfs* / diskpart / bcdedit / dd)映射到 `destructive`,在所有自治档位一律拒绝且审批缓存不可放行;**dangerous**(rm/del 等删除类、shutdown/reg/taskkill 等系统类、curl/wget、npm publish、git push 强制推送、bash/cmd/powershell 等包装 shell、node -e / python -c 等解释器执行参数)映射到 `execute_dangerous`,在 supervised / gated / auto / **full-auto** 四档一律要求人工确认(read-only 档拒绝,与其余 execute 一致);safe 命令行为不变。命令名归一化覆盖 basename、大小写、`.exe`/`.cmd`/`.bat`/`.com` 扩展名及 Win32 尾部点号变体。
-- `runProcess` 兜底:spawn 前对 forbidden 命令直接拒绝(不经审批层),防止绕过工具定义的路径;dangerous 不在此层拦截,保证 `test` 工具的 cmd.exe 嵌套回路不受影响。
-- 审批体验:审批请求 summary 现在附带 argv 预览(120 字符截断);事件展示契约 `argHint` 修复为读取 `call.params`(此前读 `call.args`,tool:call 事件 argv 预览始终为空),`ARG_KEYS` 增加 `argv`。
-- 版本同步为 `1.3.1`(`package.json` / `package-lock.json` / CLI-TUI banner);全量回归(991 项)与语法检查通过。
-- 本版范围说明:对应设计中另两项(语义上下文降级可观测化 #8、GUI 休眠渲染层删除 #9.6)在 `feat/v1.3.0` 分支上继续开发,作为后续版本发布。
-
----
-
-## v1.2.0 — 2026-07-19 · 工具安全护栏与仓库卫生
-
-- `grep` 工具加超时闸:每文件(默认 2s)+ 总预算(默认 10s)协作式检查,病态正则不再拖死进程;超时不抛错,返回已得匹配并以 metadata(`timed_out` / `timed_out_scope` / `files_skipped_timeout` / `files_searched`)标注,非法 pattern 行为不变。
-- `shell` 子进程环境改为**白名单继承**:仅透传 PATH、Windows 系统变量、用户/临时目录与区域设置;`DEEPSEEK_*`、`*_API_KEY` / `*_TOKEN` / `*_SECRET`、代理(`HTTP(S)_PROXY` / `NO_PROXY` / `ALL_PROXY`)与 `NODE_OPTIONS` 默认不可见。`git` 工具子进程走同一 `runProcess`,同样受白名单约束(`GIT_*` 被剥离;只读 git 操作不受影响)。
-- 模型 id 可配置:config 顶层 `models.{act,think,fim}` 整体切换路由 CHANNELS 的模型,缺省与现网一致(`deepseek-v4-flash` / `deepseek-v4-pro`);gateway 与 FIM 路径同步透传,`explicitModel` 仍最高优先。
-- 仓库卫生:`test/` 并入 `tests/`(npm test 单 glob);删除 `src/index.js` 无引用的 `createPausedRecoveryFacade`(净 -101 行);根目录原型 `DeepSeekCodeIDE.jsx` 与 `preview-deepseek-code` 轻量源码迁入 `docs/prototypes/`(node_modules 与日志不随迁),`.gitignore` 清 stale 行;51 份历史 plan 头部标注「完成状态以 CHANGELOG 为准」,roadmap 补 pivot 注记。
-- 版本同步为 `1.2.0`(`package.json` / `package-lock.json` / CLI-TUI banner);全量回归通过、语法检查通过。
-- 本版明确未做(仍挂账):#8 语义降级可观测、#9.3 明文变更记录、#9.6 UMD 副本、#10 `agent-runtime` 重构、shell 命令白名单。
-
----
-
-## v1.1.0 — 2026-07-15 · 可靠性、安全与中文体验修复
-
-- 中文请求不再全落 `general`:classifier 新增中英共享词表(edit / diagnostic / query / 全角问号),复杂度路由共用同一词表来源。
-- GUI 删除分叉的 kernel-options 装配逻辑,动态复用 CLI/TUI 的共享实现;`orchestration` / `context.semantic` 配置与 override 语义三端一致。
-- TUI busy 态 Esc 与 CLI SIGINT 可中断当前回合;中断收口为可读状态,不退出整个会话,审批续跑链同样受保护。
-- `web_fetch` SSRF 加固:校验全部 DNS A 记录、补齐 CGNAT/0/8/benchmark/文档/组播等保留网段,默认网络路径固定到已验证 IP 直连(保留原 hostname 作 Host/SNI),消除校验后再次解析的 DNS rebinding/TOCTOU;网络层按 32KB 上限截断缓冲,重定向/非 2xx 丢弃 body。
-- 脱敏扩面:确定性覆盖 AWS/GitHub/sk- token、私钥块及常见 token/secret/password 赋值;不启用易误伤源码的通用高熵猜测。
-- 版本同步为 `1.1.0`(`package.json` / `package-lock.json` / CLI-TUI banner);受影响测试与全量回归通过。
+## 历史版本流水（v1.0.0 – v1.8.7）
+
+> v1.19.0 起，minor / patch 的逐步流水压缩为下表一行一版本；功能面细节以 [`docs/specs/`](specs/) 的 7 篇 Living Spec 与 [`docs/plans/HISTORICAL_PLANS_ARCHIVE.md`](plans/HISTORICAL_PLANS_ARCHIVE.md) 为准，逐条提交记录查 git 历史。v1.0.0 的 major 能力总结保留在表后。
+
+| 版本 | 日期 | 变更要点 |
+|:---|:---|:---|
+| v1.8.7 | 2026-09-23 | 文档全量重写（约 2.7MB → 0.58MB）与原型存档清理；版本四处对齐 |
+| v1.8.6 | 2026-09-23 | 侧栏收放体验修复（收起态菜单穿透、逐字折行排版错位）与对话框系统功能归位至侧栏底座 |
+| v1.8.5 | 2026-09-23 | GUI 架构缺陷闭环 G1–G9（Diff 查看、工具卡严格配对、Plan 面板打通）与全链路 Electron 冒烟测试 |
+| v1.8.4 | 2026-09-23 | 内核与数据完整性 K1–K14：事务半提交补偿回滚、symlink 保全、补丁 EOL 字节保真、子进程超时真正取消、缓冲溢出防御、事件日志哈希链防篡改 |
+| v1.8.3 | 2026-09-22 | 前端审查修复：生成物一致性守卫、样式迁回补完、`undefined` 类名与死状态清理；内核零改动 |
+| v1.8.2 | 2026-09-20 | 前端缺陷修复：对比度闸门恢复 110/110、样式迁回、按键交互、溢出布局 |
+| v1.8.1 | 2026-09-20 | 壳层重构：三列可拖拽 grid + 40px 原生标题栏 overlay + 右栏 dock（文件/改动/恢复）+ 设置模态；token 重铺为中性阶梯 |
+| v1.8.0 | 2026-09-20 | 工学换肤：10 主题重编为四段带、对比度闸门常驻单测、三端主题 id 单源、壳层视觉层与推理摘要卡 |
+| v1.7.2 | 2026-09-19 | GUI 三处缺陷（agent 回复从不进消息流、状态行首屏一次永不刷新、敏感模态引用 7 个未定义 CSS 变量）+ 冒烟截图补欠 |
+| v1.7.1 | 2026-09-15 | `changeRetention` 生产接线（此前内核从未注入 `edits`、生产路径永不 prune）+ D-G7 GUI 恢复中心 + #10 阶段 3–4 延后定案 |
+| v1.7.0 | 2026-08-09 | 敏感文件独立风险提醒（三端，结构上独立于所有权限档位、不缓存选择）+ 展示层脱敏，#9.3 收官 |
+| v1.6.4 | 2026-08-09 | v1.6 收尾：文档漂移修复 + 前端片 plan 立项 |
+| v1.6.3 | 2026-08-09 | `agent-runtime` 阶段 1–2：行为刻画测试（事件顺序 / 四条审批恢复分支 / 错误语义）+ 职责与依赖边界分析；阶段 3–4 延后 |
+| v1.6.2 | 2026-08-09 | 变更记录后端卫生 #9.3：`maxCaptureBytes` 大小上限 + 两条回滚路径的 `ROLLBACK_TRUNCATED` 守卫 + `changeRetention` 保留期 + `changes/` 目录限权 |
+| v1.6.1 | 2026-08-09 | repair 阶段模型调用计入每回合预算，跨审批暂停与 durable 恢复按 `budget_spent` 续扣 |
+| v1.5.2 | 2026-08-09 | FIM `fimComplete` 超时补齐 + 文档漂移修复 + 七个历史 release tag 补录 + GUI 死字符串清理 |
+| v1.5.1 | 2026-08-07 | 流式/响应超时真正生效（约束 SSE body 读取与 `response.json()`）+ 每回合预算跨审批续扣 + GUI 死代码清理（xterm/pty、`theme.css` 剪枝、IPC 白名单强制生效） |
+| v1.4.8 | 2026-08-07 | v1.4 前端重设计收官（`feat/v1.4` → main）：品牌改名 DeepSeek Code → Inkstone（砚），v1.4.6 设计稿细节还原、v1.4.7 侧栏收放收口 |
+| v1.3.2 | 2026-07-29 | 语义降级可观测化（`context:semantic_degraded`）+ 删除空转的 `semantic.languages` 配置与死重 wasm + 删除 GUI 休眠渲染层 |
+| v1.3.1 | 2026-07-28 | shell 命令级安全策略：`classifyCommand` safe/dangerous/forbidden 三分类映射权限引擎、`runProcess` spawn 前兜底、审批 summary 附 argv 预览 |
+| v1.2.0 | 2026-07-19 | 工具安全护栏与仓库卫生：`grep` 协作式超时闸、shell 子进程环境白名单继承、`models.{act,think,fim}` 可配置、`test/` 并入 `tests/` |
+| v1.1.0 | 2026-07-15 | 可靠性、安全与中文体验：中文意图分类词表、三端 `kernel-options` 统一、TUI busy 态 Esc 与 CLI SIGINT 中断、`web_fetch` SSRF 加固（全量 A 记录 + IP 直连）、脱敏扩面 |
 
 ---
 
 ## v1.0.0 — 2026-07-13 · 首个正式版本
 
-Inkstone 的首个正式发布,**整合此前全部内部迭代**(V1 原型 → V2 干净运行时 → V3 三支柱)为一个统一版本。面向 DeepSeek 的**本地 AI 编程 Agent**:在你的项目目录里读代码、改代码、跑测试,并把每一步模型调用、工具执行、文件改动与审批记录成可回放、可分支、可回退的会话时间线。**CLI · TUI · 桌面 GUI 三端共用同一内核**,核心运行时零依赖(仅可选 WASM tree-sitter),Node ≥ 20 + 一个 API Key 即可运行。
+Inkstone 的首个正式发布，**整合此前全部内部迭代**（V1 原型 → V2 干净运行时 → V3 三支柱）为一个统一版本。面向 DeepSeek 的**本地 AI 编程 Agent**：在你的项目目录里读代码、改代码、跑测试，并把每一步模型调用、工具执行、文件改动与审批记录成可回放、可分支、可回退的会话时间线。**CLI · TUI · 桌面 GUI 三端共用同一内核**，核心运行时零依赖（仅可选 WASM tree-sitter），Node ≥ 20 + 一个 API Key 即可运行。
 
 ### 统一内核与三端
-- **一个内核门面** `createKernel()`:一条 Agent runtime、一条工具执行路径、一套编辑/回滚服务、一条会话时间线;三端只做输入 / 展示 / 审批,不碰 agent 业务逻辑。
-- **回合生命周期**:意图分类 → 上下文快照 → 快答 / 工具循环 → 验证 → 按需修复,由 11 态生命周期状态机与事件总线记录(56 种规范会话事件,JSONL 追加 + sha256 哈希链)。
-- **五档自治 × 八类别权限矩阵**(read-only/supervised/gated/auto/full-auto);`ask` 判定使回合整体暂停并落盘 resume_state,`approve`/`deny` 从断点精确续跑;审批以参数指纹 + TTL 缓存。
-- **DeepSeek 原生适配**:按用途路由模型(reply/act/plan/review/repair/fim)、JSON mode guard、手写 SSE 流式、FIM 代码补全、tool-call 容错解析、用量遥测。
-- **三端共享事件展示契约**(`src/apps/event-contract.js`):内核事件 → 归一化展示描述符的唯一语义源,CLI / TUI / GUI 渲染器均为薄适配层,字段兼容逻辑收敛一处。
+- **一个内核门面** `createKernel()`：一条 Agent runtime、一条工具执行路径、一套编辑/回滚服务、一条会话时间线；三端只做输入 / 展示 / 审批，不碰 agent 业务逻辑。
+- **回合生命周期**：意图分类 → 上下文快照 → 快答 / 工具循环 → 验证 → 按需修复，由 11 态生命周期状态机与事件总线记录（56 种规范会话事件，JSONL 追加 + sha256 哈希链）。
+- **五档自治 × 八类别权限矩阵**（read-only/supervised/gated/auto/full-auto）；`ask` 判定使回合整体暂停并落盘 resume_state，`approve`/`deny` 从断点精确续跑；审批以参数指纹 + TTL 缓存。
+- **DeepSeek 原生适配**：按用途路由模型（reply/act/plan/review/repair/fim）、JSON mode guard、手写 SSE 流式、FIM 代码补全、tool-call 容错解析、用量遥测。
+- **三端共享事件展示契约**（`src/apps/event-contract.js`）：内核事件 → 归一化展示描述符的唯一语义源，CLI / TUI / GUI 渲染器均为薄适配层，字段兼容逻辑收敛一处。
 
-### 支柱① 语义级上下文(opt-in,默认关)
-- 文件级上下文引擎(默认):增量扫描 + manifest 缓存 + 路径优先级分层 + 按通道 token 预算贪心装填 + 快照缓存(KV 前缀命中提示)。
-- 语义级(`--semantic-context`):基于 web-tree-sitter(WASM,无原生构建)按符号(函数/类)检索,沿 import / 调用依赖图扩展;**支持 JS / TS / Python**;方法消歧 `--include-method-hints`(唯一同名 → probable)。关闭时与文件级逐字节一致。
+### 支柱① 语义级上下文（opt-in，默认关）
+- 文件级上下文引擎（默认）：增量扫描 + manifest 缓存 + 路径优先级分层 + 按通道 token 预算贪心装填 + 快照缓存（KV 前缀命中提示）。
+- 语义级（`--semantic-context`）：基于 web-tree-sitter（WASM，无原生构建）按符号（函数/类）检索，沿 import / 调用依赖图扩展；**支持 JS / TS / Python**；方法消歧 `--include-method-hints`（唯一同名 → probable）。关闭时与文件级逐字节一致。
 
-### 支柱② 多智能体调度(默认开,简单任务零开销)
-- **分层路由器**:明显档免费启发式直判,模糊中间档调一次便宜模型判复杂度(`router.model.enabled=false` 可退回纯启发式)。
-- **编排闭环**:Planner 拆子任务 → 串行 Worker 执行 → **两级独立审核**(子自审 + 只读 Reviewer)→ Synthesizer 合成;失败/不完整多回合自适应重规划;成本闸常开。
-- **并行写隔离**:无依赖且文件不重叠的子任务在 fs 拷贝隔离工作区并行,快照一致性校验 + 每子任务原子事务合并回主区,零残留。
-- **跨任务经验记忆**(`crossTaskLearning`,默认 off):独立经验库 + 三级分化衰减 + Jaccard 去重,风险经验单调升级权限(只 allow→ask)。
-- **持久化恢复**(`recovery.enabled`,默认关):进程崩溃后凭项目锁 + 事务日志 + 暂停 sidecar 恢复未完成回合,含**跨进程编排级**续跑。
+### 支柱② 多智能体调度（默认开，简单任务零开销）
+- **分层路由器**：明显档免费启发式直判，模糊中间档调一次便宜模型判复杂度（`router.model.enabled=false` 可退回纯启发式）。
+- **编排闭环**：Planner 拆子任务 → 串行 Worker 执行 → **两级独立审核**（子自审 + 只读 Reviewer）→ Synthesizer 合成；失败/不完整多回合自适应重规划；成本闸常开。
+- **并行写隔离**：无依赖且文件不重叠的子任务在 fs 拷贝隔离工作区并行，快照一致性校验 + 每子任务原子事务合并回主区，零残留。
+- **跨任务经验记忆**（`crossTaskLearning`，默认 off）：独立经验库 + 三级分化衰减 + Jaccard 去重，风险经验单调升级权限（只 allow→ask）。
+- **持久化恢复**（`recovery.enabled`，默认关）：进程崩溃后凭项目锁 + 事务日志 + 暂停 sidecar 恢复未完成回合，含**跨进程编排级**续跑。
 
 ### 支柱③ 前端三端
-- **桌面 GUI**(Electron + React + Vite,**原创手写 VS Code 风格设计系统**,不用成品 UI 套件;双语 zh/en 默认中文):真文件树 · Monaco 编辑器(本地 worker)· node-pty 交互终端 · 设置页(API 列表管理 / 模型获取 / 编辑保存 / 分支切换 / 检查点 rewind)· SCM「AGENT 改动」跟踪(前后对比 + hunk 跳转)。渲染层沙箱化,仅经 preload 白名单 IPC 通信。
-- **终端 TUI**(claude code 式行内滚动流):历史进终端原生滚动区,底部固定输入 / 状态栏;流式打字机预览 · 工具/diff/审批/编排卡片 · slash 命令补全 · `/config` 与 GUI 共享 API 列表(激活重建 kernel 保上下文);手写 ANSI/VT,双语。
-- **CLI**:`ask / chat / edit / test / scan / search / diff / config / changes / rollback / tui` 子命令;chat REPL 含 `/mode` `/recovery`(resume/cancel/clear);多 agent 编排摘要;`/recovery` 与 TUI 对齐。
+- **桌面 GUI**（Electron + React + Vite，**原创手写 VS Code 风格设计系统**，不用成品 UI 套件；双语 zh/en 默认中文）：真文件树 · Monaco 编辑器（本地 worker）· 设置页（API 列表管理 / 模型获取 / 编辑保存 / 分支切换 / 检查点 rewind）· SCM「AGENT 改动」跟踪（前后对比 + hunk 跳转）。渲染层沙箱化，仅经 preload 白名单 IPC 通信。
+- **终端 TUI**（claude code 式行内滚动流）：历史进终端原生滚动区，底部固定输入 / 状态栏；流式打字机预览 · 工具/diff/审批/编排卡片 · slash 命令补全 · `/config` 与 GUI 共享 API 列表（激活重建 kernel 保上下文）；手写 ANSI/VT，双语。
+- **CLI**：`ask / chat / edit / test / scan / search / diff / config / changes / rollback / tui` 子命令；chat REPL 含 `/mode` `/recovery`（resume/cancel/clear）；多 agent 编排摘要。
 
 ### 安全基线
-- workspace 边界 realpath 校验 · shell 结构化 argv(无 shell 注入面)· web_fetch SSRF 防护(私网/回环封锁 + 每跳重校验)· 密钥脱敏 · GUI 沙箱化 · API Key 明文只落随仓忽略的 `.deepseek-code/`、渲染路径只出现掩码。
+- workspace 边界 realpath 校验 · shell 结构化 argv（无 shell 注入面）· web_fetch SSRF 防护（私网/回环封锁 + 每跳重校验）· 密钥脱敏 · GUI 沙箱化 · API Key 明文只落随仓忽略的 `.deepseek-code/`、渲染路径只出现掩码。
 
 ### 运行护栏
-- 工具/模型调用超时默认 120s 开启;token、模型调用次数、畸形 tool-call 重试均可配额;命中后优雅停止而非崩溃。
+- 工具/模型调用超时默认 120s 开启；token、模型调用次数、畸形 tool-call 重试均可配额；命中后优雅停止而非崩溃。
 
 ### 质量
-- **932 测试全绿**(node:test 原生),`npm run check` 通过;支柱①②③ 前端与编排全程守「kernel 核心 `src/core`/`src/index.js` 零改动」纪律。
+- **932 测试全绿**（node:test 原生），`npm run check` 通过；支柱①②③ 前端与编排全程守「kernel 核心 `src/core`/`src/index.js` 零改动」纪律。
 
-> **开发历程**(详见 [`docs/specs/`](specs/) · [`docs/plans/`](plans/) 与 git 历史):
-> **V1 原型**(2026-05,ask/edit/chat + 安全基线,已于内部重构删除)→ **V2 干净运行时**(2026-05–06,内核地基 / 审批恢复 / 验证修复 / 上下文引擎 / 事务编辑与分支 rewind / 持久化恢复 / 运行护栏)→ **V3 三支柱**(2026-06–07,语义级上下文 Phase B、多智能体调度 Phase C、前端三端重构 Phase D + CLI 对齐 D-G4)。
+> **开发历程**（详见 [`docs/specs/`](specs/) · [`docs/plans/`](plans/) 与 git 历史）：
+> **V1 原型**（2026-05，ask/edit/chat + 安全基线，已于内部重构删除）→ **V2 干净运行时**（2026-05–06，内核地基 / 审批恢复 / 验证修复 / 上下文引擎 / 事务编辑与分支 rewind / 持久化恢复 / 运行护栏）→ **V3 三支柱**（2026-06–07，语义级上下文 Phase B、多智能体调度 Phase C、前端三端重构 Phase D + CLI 对齐 D-G4）。
 >
-> 注:内部架构文档中的「V2 内核」指**运行时架构代号**(干净运行时),与本文的**产品版本号 v1.x** 是两条不同的轴,不要混淆。
+> 注：内部架构文档中的「V2 内核」指**运行时架构代号**（干净运行时），与本文的**产品版本号 v1.x** 是两条不同的轴，不要混淆。

@@ -1,4 +1,7 @@
 import { redactSecrets } from "../../security/redactor.js";
+// 公共内核 + 场景钩子：环/访问器/非 JSON/超限判定与上限来自 src/tools/schema.js，
+// 本模块只保留脱敏语义（敏感键替换、密钥串脱敏）与各自的错误消息文本、计费口径。
+import { mapJson, JSON_SAFE_LIMITS } from "../schema.js";
 import { validateOutputSchema } from "./output-schema.js";
 
 export function sanitizeIdentifier(str) {
@@ -175,32 +178,26 @@ export function summarizeToolResult(callResult) {
 
 /** Copy JSON metadata while redacting secret fields and token-like strings. */
 export function redactStructuredContent(value) {
-  let nodes = 0;
-  let bytes = 0;
-  const ancestors = new Set();
   const secretKey = /^(?:authorization|api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|password|passwd|secret|token)$/i;
-  function visit(item, depth = 0) {
-    if (++nodes > 20_000 || depth > 64 || bytes > 1_048_576) throw new Error("MCP structuredContent exceeds safety limits");
-    if (typeof item === "string") {
-      bytes += item.length * 3;
-      if (bytes > 1_048_576) throw new Error("MCP structuredContent exceeds safety limits");
-      return redactSecrets(item);
-    }
-    if (item === null || typeof item === "boolean" || typeof item === "number" && Number.isFinite(item)) return item;
-    if (!item || typeof item !== "object" || ancestors.has(item)) throw new Error("MCP structuredContent must be acyclic JSON");
-    if (!Array.isArray(item) && Object.getPrototypeOf(item) !== Object.prototype && Object.getPrototypeOf(item) !== null) throw new Error("MCP structuredContent must be JSON");
-    ancestors.add(item);
-    const entries = [];
-    for (const key of Object.keys(item)) {
-      const descriptor = Object.getOwnPropertyDescriptor(item, key);
-      if (!descriptor || !Object.hasOwn(descriptor, "value")) throw new Error("MCP structuredContent accessors are unsupported");
-      bytes += key.length * 3;
-      entries.push([key, secretKey.test(key) ? "[REDACTED]" : visit(descriptor.value, depth + 1)]);
-    }
-    ancestors.delete(item);
-    return Array.isArray(item) ? entries.map(([, child]) => child) : Object.fromEntries(entries);
+  // 走查违规原因 → 本模块原有的错误消息（逐字保留）。
+  function walkFailure(kind) {
+    if (kind === "prototype") throw new Error("MCP structuredContent must be JSON");
+    if (kind === "accessor") throw new Error("MCP structuredContent accessors are unsupported");
+    if (kind === "limits" || kind === "bytes") throw new Error("MCP structuredContent exceeds safety limits");
+    throw new Error("MCP structuredContent must be acyclic JSON");
   }
-  return visit(value);
+  // 脱敏走查：先查环再查原型、进入每个节点与字符串计价后复查字节（沿用本模块原有时点），
+  // 计费口径不计标点；敏感键整体替换为 [REDACTED] 且不再递归其值。
+  return mapJson(value, {
+    limits: JSON_SAFE_LIMITS,
+    cost: { string: (length) => length * 3, key: (length) => length * 3, primitive: () => 0, number: () => 0 },
+    fail: walkFailure,
+    prototypeFirst: false,
+    checkBytesOnEntry: true,
+    checkBytesAfterChild: false,
+    onString: (item) => redactSecrets(item),
+    onKey: (key, recurse) => (secretKey.test(key) ? "[REDACTED]" : recurse())
+  });
 }
 
 /** Adapter for ToolExecutor's object contract; public callTool stays textual. */

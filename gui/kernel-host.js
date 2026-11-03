@@ -40,10 +40,10 @@ function loadConfigMod() {
   if (!configModPromise) configModPromise = import(pathToFileURL(path.join(__dirname, "..", "src", "config.js")).href);
   return configModPromise;
 }
-let providerModPromise = null;
-function loadProviderMod() {
-  if (!providerModPromise) providerModPromise = import(pathToFileURL(path.join(__dirname, "..", "src", "provider.js")).href);
-  return providerModPromise;
+let connectionTestModPromise = null;
+function loadConnectionTestMod() {
+  if (!connectionTestModPromise) connectionTestModPromise = import(pathToFileURL(path.join(__dirname, "..", "src", "deepseek", "model-gateway.js")).href);
+  return connectionTestModPromise;
 }
 
 let editServiceModPromise = null;
@@ -63,10 +63,10 @@ function loadChangeStoreMod() {
   if (!changeStoreModPromise) changeStoreModPromise = import(pathToFileURL(path.join(__dirname, "..", "src", "edits", "change-store.js")).href);
   return changeStoreModPromise;
 }
-let patchModPromise = null;
-function loadPatchMod() {
-  if (!patchModPromise) patchModPromise = import(pathToFileURL(path.join(__dirname, "..", "src", "patch.js")).href);
-  return patchModPromise;
+let diffParserModPromise = null;
+function loadDiffParserMod() {
+  if (!diffParserModPromise) diffParserModPromise = import(pathToFileURL(path.join(__dirname, "..", "src", "edits", "diff-parser.js")).href);
+  return diffParserModPromise;
 }
 let redactorModPromise = null;
 function loadRedactorMod() {
@@ -479,7 +479,7 @@ function createKernelHost({
   async function listChanges(opts = {}) {
     const limit = Number.isInteger(opts.limit) && opts.limit > 0 ? opts.limit : 50;
     const store = await getChangeStore();
-    const { parseUnifiedDiff } = await loadPatchMod();
+    const { parseUnifiedDiff } = await loadDiffParserMod();
     const [records, rolledBack] = await Promise.all([store.list({ limit }), readRolledBackIds()]);
     return records.map((r) => {
       const stats = diffFileStats(parseUnifiedDiff, r.diff);
@@ -495,7 +495,7 @@ function createKernelHost({
 
   async function describeChange(changeId, relPath) {
     const store = await getChangeStore();
-    const { parseUnifiedDiff } = await loadPatchMod();
+    const { parseUnifiedDiff } = await loadDiffParserMod();
     const { redactSecrets } = await loadRedactorMod();
     const redactForDisplay = (text) => redactSecrets(text);
     const record = await store.describe({ change_id: changeId || "latest" });
@@ -597,7 +597,7 @@ function createKernelHost({
   }
   async function testConnection(profileId) {
     const prof = profileId ? (await apiProfiles.list()).find((p) => p.id === profileId) : await apiProfiles.getActive();
-    const m = await loadProviderMod();
+    const m = await loadConnectionTestMod();
     return m.testDeepSeekConnection({ apiKey: prof && prof.apiKey, baseUrl: prof && prof.baseUrl });
   }
   async function activateBranch(id) {
@@ -745,11 +745,6 @@ function createKernelHost({
     return ready() && kernel?.mcp ? kernel.mcp.listServers() : [];
   }
 
-  const getMcpAuthStatus = (id) => callMcpAuth(requireKernel().mcp, "getAuthStatus", id);
-  const startMcpAuth = (id) => callMcpAuth(requireKernel().mcp, "startAuth", id, openMcpAuthorization);
-  const cancelMcpAuth = (id) => callMcpAuth(requireKernel().mcp, "cancelAuth", id);
-  const logoutMcpAuth = (id) => callMcpAuth(requireKernel().mcp, "logoutAuth", id);
-
   // v1.11.2:${input:*} 密钥引用。定义来自 .mcp.json / config.json 的 inputs,
   // 值优先显式 value → 凭据库(~/.deepseek-code/credentials,0600)→ default。
   function listMcpInputs() {
@@ -842,11 +837,40 @@ function createKernelHost({
     }
   }
 
-  const listMcpResources = (id, options) => mcpContent("listResources", id, [], options);
-  const listMcpResourceTemplates = (id, options) => mcpContent("listResourceTemplates", id, [], options);
-  const readMcpResource = (id, uri, options) => mcpContent("readResource", id, [uri], options);
-  const listMcpPrompts = (id, options) => mcpContent("listPrompts", id, [], options);
-  const getMcpPrompt = (id, name, args = {}, options) => mcpContent("getPrompt", id, [name, args], options);
+  // ── MCP Facade 委托表(表驱动收敛逐条手写的 IPC 转发样板)────────────
+  // 渲染进程经 IPC 送来的 MCP 请求统一汇到 kernel.mcp;同一 Facade 方法的
+  // 参数形状逐条不同,故每条声明 [宿主方法, Facade 方法, 参数映射]。
+  // 生成的函数与原先逐条手写的箭头函数逐字节等价(含默认值 / 可选链)。
+  const MCP_CONTENT_ROUTES = [
+    ["listMcpResources", "listResources", (id, options) => [id, [], options]],
+    ["listMcpResourceTemplates", "listResourceTemplates", (id, options) => [id, [], options]],
+    ["readMcpResource", "readResource", (id, uri, options) => [id, [uri], options]],
+    ["listMcpPrompts", "listPrompts", (id, options) => [id, [], options]],
+    ["getMcpPrompt", "getPrompt", (id, name, args = {}, options) => [id, [name, args], options]]
+  ];
+  const MCP_DIAGNOSTIC_ROUTES = [
+    ["getMcpLogs", "getLogs", (id = null, options) => [id, diagnosticOptions(options)]],
+    ["exportMcpLogs", "exportLogs", (id = null, options) => [id, diagnosticOptions(options)]],
+    ["listMcpTools", "listTools", (id) => [id]],
+    ["approveMcpToolTest", "approveToolTest", (id) => [id]]
+  ];
+  // 第三条 extra 为 callMcpAuth 的附加实参:startAuth 需要打开系统浏览器。
+  const MCP_AUTH_ROUTES = [
+    ["getMcpAuthStatus", "getAuthStatus", []],
+    ["startMcpAuth", "startAuth", [openMcpAuthorization]],
+    ["cancelMcpAuth", "cancelAuth", []],
+    ["logoutMcpAuth", "logoutAuth", []]
+  ];
+  const mcpRoutes = {};
+  for (const [name, method, args] of MCP_CONTENT_ROUTES) {
+    mcpRoutes[name] = (...callArgs) => mcpContent(method, ...args(...callArgs));
+  }
+  for (const [name, method, args] of MCP_DIAGNOSTIC_ROUTES) {
+    mcpRoutes[name] = (...callArgs) => mcpDiagnostic(method, args(...callArgs));
+  }
+  for (const [name, method, extra] of MCP_AUTH_ROUTES) {
+    mcpRoutes[name] = (id) => callMcpAuth(requireKernel().mcp, method, id, ...extra);
+  }
 
   const diagnosticStarts = new Map();
   async function mcpDiagnostic(method, args, sensitive, onStarted) {
@@ -857,9 +881,7 @@ function createKernelHost({
       throw error;
     }
   }
-  const getMcpLogs = (id = null, options) => mcpDiagnostic("getLogs", [id, diagnosticOptions(options)]);
-  const exportMcpLogs = (id = null, options) => mcpDiagnostic("exportLogs", [id, diagnosticOptions(options)]);
-  const listMcpTools = (id) => mcpDiagnostic("listTools", [id]);
+  // startMcpToolTest / cancelMcpToolTest 带请求 ID 校验与在途登记,保留显式实现。
   const startMcpToolTest = (id, name, params, options) => {
     if (!params || typeof params !== "object" || Array.isArray(params)) throw new Error("MCP tool arguments must be an object");
     if (typeof options?.requestId !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(options.requestId)) throw new Error("Invalid MCP test request ID");
@@ -869,7 +891,6 @@ function createKernelHost({
     return mcpDiagnostic("startToolTest", [id, name, params, { requestId: options.requestId }], params, entered)
       .finally(() => diagnosticStarts.delete(options.requestId));
   };
-  const approveMcpToolTest = (id) => mcpDiagnostic("approveToolTest", [id]);
   const cancelMcpToolTest = async (id) => {
     await diagnosticStarts.get(id);
     return mcpDiagnostic("cancelToolTest", [id]);
@@ -890,12 +911,12 @@ function createKernelHost({
            listModels, testConnection, activateBranch, listProjects, addProject, removeProject, switchProject, listSessions, deleteSession,
            getRecoveryList, getRecoveryReport, recoveryResume, recoveryCancel, recoveryClear,
            listMcpServers, restartMcpServer, toggleMcpServer, addMcpServer, removeMcpServer,
-           getMcpAuthStatus, startMcpAuth, cancelMcpAuth, logoutMcpAuth,
-           listMcpResources, listMcpResourceTemplates, readMcpResource, listMcpPrompts, getMcpPrompt,
-           getMcpLogs, exportMcpLogs, listMcpTools, startMcpToolTest, approveMcpToolTest, cancelMcpToolTest,
+           startMcpToolTest, cancelMcpToolTest,
            listMcpInputRequests, respondMcpInputRequest,
-    listMcpInputs, setMcpInput,
-           resolveSensitiveNotice, abortPendingSensitive, dispose };
+           listMcpInputs, setMcpInput,
+           resolveSensitiveNotice, abortPendingSensitive, dispose,
+           // MCP Facade 委托表生成(content / diagnostic / auth 三组,见上方声明)
+           ...mcpRoutes };
 }
 
 module.exports = { createKernelHost, resolveProjectRoot, zeroUsage, buildKernelOptions,

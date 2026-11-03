@@ -1,14 +1,15 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { describeChange, formatChange, listChanges, rollbackChange } from "./changes.js";
+import { describeChange, formatChange, listChanges } from "./edits/change-store.js";
+import { rollbackChange } from "./edits/rollback-service.js";
 import { configureProject, DEFAULT_CONFIG, loadConfig } from "./config.js";
-import { buildProjectContext } from "./context.js";
-import { showDiff } from "./git.js";
+import { buildProjectContext } from "./context/project-index.js";
 import { createKernel } from "./index.js";
-import { testDeepSeekConnection } from "./provider.js";
+import { testDeepSeekConnection } from "./deepseek/model-gateway.js";
 import { createMcpDisplayRedactor } from "./security/mcp-content.js";
-import { searchProject } from "./search.js";
-import { runTui } from "./tui.js";
+import { searchWorkspace } from "./tools/builtin/grep.js";
+import { showDiff } from "./tools/builtin/git.js";
+import { runTui } from "./apps/tui/tui-app.js";
 import { banner, color, commandLine, section, statusLine } from "./theme.js";
 import { buildEditPrompt, buildKernelOptions, runKernelAgentCommand, runKernelChatCommand, runKernelTestCommand } from "./apps/cli/kernel-runner.js";
 import { runMcpAuth } from "./apps/cli/mcp-auth.js";
@@ -182,7 +183,10 @@ async function runSearch(root, args, flags) {
     throw new Error("搜索命令需要输入关键词。");
   }
 
-  const matches = await searchProject(root, pattern, {
+  // 与内置 grep 工具共用同一套工作区检索实现（v1.19.0 起 src/search.js 删除）。
+  const { matches } = await searchWorkspace({
+    projectRoot: root,
+    pattern,
     maxMatches: numberFlag(flags, "max", 80)
   });
 

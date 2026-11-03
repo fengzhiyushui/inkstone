@@ -18,6 +18,7 @@ import { MCP_HUB_EVENTS, safeMcpEvent } from "./tools/mcp/diagnostics.js";
 import { createMcpToolTrials } from "./tools/mcp/tool-trials.js";
 import { mountMcpCapabilityTools } from "./tools/mcp/capability-tools.js";
 import { createPolicyStore, validateApprovalScope, normalizeApprovalScope } from "./tools/mcp/tool-policy.js";
+import { createMcpFacade } from "./tools/mcp/mcp-facade.js";
 import { createPermissionEngine } from "./tools/permissions/permission-engine.js";
 import { createApprovalCache } from "./tools/permissions/approval-cache.js";
 import { createPolicyContext } from "./tools/permissions/policy-loader.js";
@@ -668,34 +669,7 @@ export async function createKernel(root, options = {}) {
       try { sessionManager.dispose?.(); } catch { /* best-effort */ }
       try { await projectLock?.release?.(); } catch { /* best-effort */ }
     },
-    mcp: {
-      hub: mcpHub,
-      listInputRequests: () => mcpHub.listInputRequests(),
-      respondInputRequest: (requestId, response) => mcpHub.respondInputRequest(requestId, response),
-      getLogs: (serverId, options) => mcpHub.getLogs(serverId, options),
-      exportLogs: (serverId, options) => mcpHub.exportLogs(serverId, options),
-      listTools: (serverId) => mcpHub.listTools(serverId),
-      startToolTest: (serverId, toolName, params, options) => mcpTrials.start(serverId, toolName, params, options),
-      approveToolTest: (runId) => mcpTrials.approve(runId),
-      cancelToolTest: (runId) => mcpTrials.cancel(runId),
-      listServers: () => mcpHub.listServers(),
-      listInputs: () => mcpHub.listInputs(),
-      setInputValue: (name, value) => mcpHub.setInputValue(name, value),
-      getAuthStatus: (serverId) => mcpHub.getAuthStatus(serverId),
-      startAuth: (serverId) => mcpHub.startAuth(serverId),
-      cancelAuth: (serverId) => mcpHub.cancelAuth(serverId),
-      logoutAuth: (serverId) => { mcpTrials.cancelServer(serverId); return mcpHub.logoutAuth(serverId); },
-      restartServer: (serverId) => { mcpTrials.cancelServer(serverId); return mcpHub.restartServer(serverId); },
-      toggleServer: (serverId, enabled) => { mcpTrials.cancelServer(serverId); return mcpHub.toggleServer(serverId, enabled); },
-      addServer: (serverId, config, opts) => { mcpTrials.cancelServer(serverId); return mcpHub.addServer(serverId, config, opts); },
-      removeServer: (serverId) => { mcpTrials.cancelServer(serverId); return mcpHub.removeServer(serverId); },
-      listResources: (serverId, opts) => mcpHub.listResources(serverId, opts),
-      listResourceTemplates: (serverId, opts) => mcpHub.listResourceTemplates(serverId, opts),
-      readResource: (serverId, uri, opts) => mcpHub.readResource(serverId, uri, opts),
-      listPrompts: (serverId, opts) => mcpHub.listPrompts(serverId, opts),
-      getPrompt: (serverId, name, args, opts) => mcpHub.getPrompt(serverId, name, args, opts),
-      callTool: (namespacedName, params, options) => mcpHub.callTool(namespacedName, params, options)
-    },
+    mcp: createMcpFacade({ hub: mcpHub, trials: mcpTrials }),
     metrics: {
       getUsage() {
         return modelGateway?.getUsageStats?.() || zeroUsage();

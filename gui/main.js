@@ -485,107 +485,120 @@ async function createWindow() {
   return win;
 }
 
+// ── 表驱动 IPC 路由 ────────────────────────────────────────────────
+// 每条 = channel → (host, ...args) => 目标调用;渲染进程参数逐个透传,
+// 参数默认值 / 可选链兜底与原逐条 handle 一一对应。
+// 错误语义默认 { error: message }(即旧 wrap);需要其它兜底用 catchAs 声明;
+// passthrough: true = 不捕获异常(读快照类,host 未就绪时返回兜底值)。
+const IPC_ROUTES = [
+  // 文件桥(只读项目文件 + 编辑器保存)
+  { ch: "fs:tree", call: (h) => h.listTree() },
+  { ch: "fs:read", call: (h, rel) => h.readFile(rel) },
+  { ch: "fs:write", call: (h, rel, content) => h.writeFile(rel, content) },
+  // 设置 / 配置 / API 画像 / 模型
+  { ch: "settings:get", call: (h) => h.getSettings() },
+  { ch: "config:set", call: (h, patch) => h.setConfig(patch) },
+  { ch: "api:list", call: (h) => h.listApiProfiles() },
+  { ch: "api:save", call: (h, p) => h.saveApiProfile(p) },
+  { ch: "api:delete", call: (h, id) => h.deleteApiProfile(id) },
+  { ch: "api:activate", call: (h, id) => h.activateApiProfile(id) },
+  { ch: "models:list", call: (h, profileId) => h.listModels(profileId) },
+  { ch: "conn:test", call: (h, profileId) => h.testConnection(profileId) },
+  { ch: "session:branch-activate", call: (h, id) => h.activateBranch(id) },
+  { ch: "changes:list", call: (h, limit) => h.listChanges({ limit }) },
+  { ch: "changes:describe", call: (h, id, relPath) => h.describeChange(id, relPath) },
+  // Agent
+  { ch: "agent:send", call: (h, message, opts) => h.send(message, opts || {}) },
+  { ch: "agent:approve", call: (h, id, decision) => h.approve(id, decision) },
+  { ch: "agent:interrupt", call: (h) => h.interrupt() },
+  // #9.3 敏感文件提醒的回答通道。注意这**不是**审批通道:它不经权限引擎、
+  // 不进审批缓存,只解决主进程里那个挂起的 Promise。
+  { ch: "sensitive:respond", call: (h, requestId, allowed) => ({ resolved: h.resolveSensitiveNotice(requestId, allowed === true) }) },
+  // 会话 / 分支 / 检查点 / 回滚
+  { ch: "session:branches", call: (h) => h.listBranches() },
+  { ch: "session:branch-active", call: (h) => h.getActiveBranch() },
+  { ch: "session:checkpoints", call: (h, options) => h.listCheckpoints(options || {}) },
+  { ch: "session:rewind-preview", call: (h, options) => h.rewindPreview(options || {}) },
+  { ch: "session:rewind-apply", call: (h, options) => h.rewindApply(options || {}) },
+  // 恢复中心:list/report 失败时给空结构(不冒泡 { error }),resume/cancel/clear 附 code
+  { ch: "recovery:list", call: (h, options) => h.getRecoveryList(options || {}), catchAs: () => [] },
+  { ch: "recovery:report", call: (h) => h.getRecoveryReport(), catchAs: () => ({ found: [], done: [], blocked: [], next: [] }) },
+  { ch: "recovery:resume", call: (h, id, options) => h.recoveryResume(id, options || {}), catchAs: (e) => ({ error: e.message, code: e.code }) },
+  { ch: "recovery:cancel", call: (h, id) => h.recoveryCancel(id), catchAs: (e) => ({ error: e.message, code: e.code }) },
+  { ch: "recovery:clear", call: (h, id) => h.recoveryClear(id), catchAs: (e) => ({ error: e.message, code: e.code }) },
+  // 读快照直通:host 未就绪时返回兜底值,不捕获异常(与原实现一致)
+  { ch: "session:timeline", call: (h, count) => h?.getTimeline(count || 20) || [], passthrough: true },
+  { ch: "agent:list-paused", call: (h) => h?.listPaused() || [], passthrough: true },
+  { ch: "context:snapshot", call: (h) => h?.getSnapshot() || { units: [] }, passthrough: true },
+  { ch: "model:usage", call: (h) => h?.getUsage() || {}, passthrough: true },
+  { ch: "config:get", call: (h) => h?.getConfig() || {}, passthrough: true },
+  { ch: "orchestrator:state", call: (h) => h?.getState() || { current: "idle", channel: null }, passthrough: true },
+  // GUI 偏好(gui:preferences-set 需联动原生 titleBarOverlay,见下方显式注册)
+  { ch: "gui:preferences-get", call: (h) => h.getPreferences() },
+  // 项目 / 会话(projects:reveal / projects:pick 需 shell / dialog,见下方显式注册)
+  { ch: "projects:list", call: (h) => h.listProjects() },
+  { ch: "projects:add", call: (h, root) => h.addProject(root) },
+  { ch: "projects:remove", call: (h, root) => h.removeProject(root) },
+  { ch: "projects:switch", call: (h, root) => h.switchProject(root) },
+  { ch: "sessions:list", call: (h) => h.listSessions() },
+  { ch: "sessions:delete", call: (h, sessionId, options) => h.deleteSession(sessionId, options || {}) },
+  // MCP 外部服务管理通道
+  { ch: "mcp:list", call: (h) => h.listMcpServers() },
+  { ch: "mcp:restart", call: (h, serverId) => h.restartMcpServer(serverId) },
+  { ch: "mcp:toggle", call: (h, serverId, enabled) => h.toggleMcpServer(serverId, enabled) },
+  { ch: "mcp:add", call: (h, serverId, config) => h.addMcpServer(serverId, config) },
+  { ch: "mcp:remove", call: (h, serverId) => h.removeMcpServer(serverId) },
+  { ch: "mcp:inputs", call: (h) => h.listMcpInputs() },
+  { ch: "mcp:set-input", call: (h, name, value) => h.setMcpInput(name, value) },
+  { ch: "mcp:auth-status", call: (h, id) => h.getMcpAuthStatus(id) },
+  { ch: "mcp:auth-start", call: (h, id) => h.startMcpAuth(id) },
+  { ch: "mcp:auth-cancel", call: (h, id) => h.cancelMcpAuth(id) },
+  { ch: "mcp:auth-logout", call: (h, id) => h.logoutMcpAuth(id) },
+  { ch: "mcp:logs", call: (h, id, options) => h.getMcpLogs(id, options) },
+  { ch: "mcp:logs-export", call: (h, id, options) => saveDiagnosticExport({ host: h, serverId: id, options,
+    showSaveDialog: (settings) => dialog.showSaveDialog(mainWindow, settings), writeFile: fs.promises.writeFile }) },
+  { ch: "mcp:tools-list", call: (h, id) => h.listMcpTools(id) },
+  { ch: "mcp:tool-test", call: (h, id, name, params, options) => h.startMcpToolTest(id, name, params, options) },
+  { ch: "mcp:tool-test-approve", call: (h, id) => h.approveMcpToolTest(id) },
+  { ch: "mcp:tool-test-cancel", call: (h, id) => h.cancelMcpToolTest(id) },
+  { ch: "mcp:input-requests", call: (h) => h.listMcpInputRequests() },
+  { ch: "mcp:input-respond", call: (h, id, response) => h.respondMcpInputRequest(id, response) },
+  { ch: "mcp:resources-list", call: (h, id, options) => h.listMcpResources(id, options) },
+  { ch: "mcp:resource-templates-list", call: (h, id, options) => h.listMcpResourceTemplates(id, options) },
+  { ch: "mcp:resource-read", call: (h, id, uri, options) => h.readMcpResource(id, uri, options) },
+  { ch: "mcp:prompts-list", call: (h, id, options) => h.listMcpPrompts(id, options) },
+  { ch: "mcp:prompt-get", call: (h, id, name, args, options) => h.getMcpPrompt(id, name, args, options) }
+];
+
 function registerIpcHandlers() {
   if (ipcRegistered) return;
   ipcRegistered = true;
 
   // 白名单强制生效:未在 IPC_CHANNELS 登记的 channel 无法被注册(启动即抛错)。
+  // registered 同时用于收尾自检:白名单里每个 channel 都必须被注册到。
+  const registered = new Set();
   const handle = (channel, handler) => {
     if (!IPC_CHANNELS.includes(channel)) {
       throw new Error(`IPC channel "${channel}" is not in the IPC_CHANNELS allowlist`);
     }
     ipcMain.handle(channel, handler);
+    registered.add(channel);
+  };
+  // 通用转发管道:把渲染进程参数逐个透传给 call(host, ...args),抛错时收敛为
+  // { error: message } —— 与旧逐条 wrap(...) 的错误语义完全一致。
+  const forward = (call, catchAs) => async (_event, ...args) => {
+    try { return await call(host, ...args); }
+    catch (error) { return catchAs ? catchAs(error) : { error: error.message }; }
   };
 
-  // File bridge (read-only project files for the tree + editor).
-  handle("fs:tree", async () => {
-    try { return await host.listTree(); }
-    catch (error) { return { error: error.message }; }
-  });
-  handle("fs:read", async (_event, rel) => {
-    try { return await host.readFile(rel); }
-    catch (error) { return { error: error.message }; }
-  });
-  handle("fs:write", async (_event, rel, content) => {
-    try { return await host.writeFile(rel, content); }
-    catch (error) { return { error: error.message }; }
-  });
+  // 表驱动注册:一张映射表 + 一个循环,替代逐条 handle(...) 样板。
+  for (const { ch, call, passthrough, catchAs } of IPC_ROUTES) {
+    handle(ch, passthrough
+      ? async (_event, ...args) => call(host, ...args)
+      : forward(call, catchAs));
+  }
 
-  // Settings / config / API profiles / models.
-  const wrap = (fn) => async (...args) => { try { return await fn(...args); } catch (error) { return { error: error.message }; } };
-  handle("settings:get", wrap(() => host.getSettings()));
-  handle("config:set", wrap((_e, patch) => host.setConfig(patch)));
-  handle("api:list", wrap(() => host.listApiProfiles()));
-  handle("api:save", wrap((_e, p) => host.saveApiProfile(p)));
-  handle("api:delete", wrap((_e, id) => host.deleteApiProfile(id)));
-  handle("api:activate", wrap((_e, id) => host.activateApiProfile(id)));
-  handle("models:list", wrap((_e, profileId) => host.listModels(profileId)));
-  handle("conn:test", wrap((_e, profileId) => host.testConnection(profileId)));
-  handle("session:branch-activate", wrap((_e, id) => host.activateBranch(id)));
-  handle("changes:list", wrap((_e, limit) => host.listChanges({ limit })));
-  handle("changes:describe", wrap((_e, id, relPath) => host.describeChange(id, relPath)));
-
-  handle("agent:send", async (_event, message, opts) => {
-    try { return await host.send(message, opts || {}); }
-    catch (error) { return { error: error.message }; }
-  });
-  handle("agent:approve", async (_event, id, decision) => {
-    try { return await host.approve(id, decision); }
-    catch (error) { return { error: error.message }; }
-  });
-  // #9.3 敏感文件提醒的回答通道。注意这**不是**审批通道:它不经权限引擎、
-  // 不进审批缓存,只解决主进程里那个挂起的 Promise。
-  handle("sensitive:respond", async (_event, requestId, allowed) => {
-    try { return { resolved: host.resolveSensitiveNotice(requestId, allowed === true) }; }
-    catch (error) { return { error: error.message }; }
-  });
-  handle("agent:interrupt", () => {
-    try { return host.interrupt(); }
-    catch (error) { return { error: error.message }; }
-  });
-  handle("session:timeline", async (_event, count) => host?.getTimeline(count || 20) || []);
-  handle("agent:list-paused", () => host?.listPaused() || []);
-  handle("session:branches", async () => {
-    try { return await host.listBranches(); }
-    catch (error) { return { error: error.message }; }
-  });
-  handle("session:branch-active", async () => {
-    try { return await host.getActiveBranch(); }
-    catch (error) { return { error: error.message }; }
-  });
-  handle("session:checkpoints", async (_event, options) => {
-    try { return await host.listCheckpoints(options || {}); }
-    catch (error) { return { error: error.message }; }
-  });
-  handle("session:rewind-preview", async (_event, options) => {
-    try { return await host.rewindPreview(options || {}); }
-    catch (error) { return { error: error.message }; }
-  });
-  handle("session:rewind-apply", async (_event, options) => {
-    try { return await host.rewindApply(options || {}); }
-    catch (error) { return { error: error.message }; }
-  });
-  handle("recovery:list", async (_event, options) => {
-    try { return await host.getRecoveryList(options || {}); } catch { return []; }
-  });
-  handle("recovery:report", async () => {
-    try { return await host.getRecoveryReport(); } catch { return { found: [], done: [], blocked: [], next: [] }; }
-  });
-  handle("recovery:resume", async (_event, id, options) => {
-    try { return await host.recoveryResume(id, options || {}); } catch (error) { return { error: error.message, code: error.code }; }
-  });
-  handle("recovery:cancel", async (_event, id) => {
-    try { return await host.recoveryCancel(id); } catch (error) { return { error: error.message, code: error.code }; }
-  });
-  handle("recovery:clear", async (_event, id) => {
-    try { return await host.recoveryClear(id); } catch (error) { return { error: error.message, code: error.code }; }
-  });
-  handle("context:snapshot", async () => host?.getSnapshot() || { units: [] });
-  handle("model:usage", () => host?.getUsage() || {});
-  handle("gui:preferences-get", async () => {
-    try { return await host.getPreferences(); }
-    catch (error) { return { error: error.message }; }
-  });
+  // 模态框开关:决定原生窗控用透明 symbol 色(模态期)还是主题对应色。
   let modalActive = false;
   handle("gui:modal-active", async (_event, active) => {
     try {
@@ -633,17 +646,7 @@ function registerIpcHandlers() {
     }
     catch (error) { return { error: error.message }; }
   });
-  handle("config:get", () => host?.getConfig() || {});
-  handle("orchestrator:state", () => host?.getState() || { current: "idle", channel: null });
-  handle("projects:list", async () => { try { return await host.listProjects(); } catch (error) { return { error: error.message }; } });
-  handle("projects:add", async (_event, root) => { try { return await host.addProject(root); } catch (error) { return { error: error.message }; } });
-  handle("projects:remove", async (_event, root) => { try { return await host.removeProject(root); } catch (error) { return { error: error.message }; } });
-  handle("projects:switch", async (_event, root) => { try { return await host.switchProject(root); } catch (error) { return { error: error.message }; } });
-  handle("sessions:list", async () => { try { return await host.listSessions(); } catch (error) { return { error: error.message }; } });
-  handle("sessions:delete", async (_event, sessionId, options) => {
-    try { return await host.deleteSession(sessionId, options || {}); }
-    catch (error) { return { error: error.message }; }
-  });
+  // projects:reveal / projects:pick 需 shell / dialog，显式注册
   // 在系统文件管理器中显示项目目录(设计稿的「在终端打开」在无终端面板时降级为此)。
   handle("projects:reveal", async (_event, root) => {
     try {
@@ -669,32 +672,12 @@ function registerIpcHandlers() {
     } catch (error) { return { error: error.message }; }
   });
 
-  // MCP 外部服务管理通道
-  handle("mcp:list", wrap(() => host.listMcpServers()));
-  handle("mcp:auth-status", wrap((_e, id) => host.getMcpAuthStatus(id)));
-  handle("mcp:auth-start", wrap((_e, id) => host.startMcpAuth(id)));
-  handle("mcp:auth-cancel", wrap((_e, id) => host.cancelMcpAuth(id)));
-  handle("mcp:auth-logout", wrap((_e, id) => host.logoutMcpAuth(id)));
-  handle("mcp:restart", wrap((_e, serverId) => host.restartMcpServer(serverId)));
-  handle("mcp:toggle", wrap((_e, serverId, enabled) => host.toggleMcpServer(serverId, enabled)));
-  handle("mcp:add", wrap((_e, serverId, config) => host.addMcpServer(serverId, config)));
-  handle("mcp:remove", wrap((_e, serverId) => host.removeMcpServer(serverId)));
-  handle("mcp:resources-list", wrap((_e, id, options) => host.listMcpResources(id, options)));
-  handle("mcp:resource-templates-list", wrap((_e, id, options) => host.listMcpResourceTemplates(id, options)));
-  handle("mcp:resource-read", wrap((_e, id, uri, options) => host.readMcpResource(id, uri, options)));
-  handle("mcp:prompts-list", wrap((_e, id, options) => host.listMcpPrompts(id, options)));
-  handle("mcp:prompt-get", wrap((_e, id, name, args, options) => host.getMcpPrompt(id, name, args, options)));
-  handle("mcp:logs", wrap((_e, id, options) => host.getMcpLogs(id, options)));
-  handle("mcp:logs-export", wrap((_e, id, options) => saveDiagnosticExport({ host, serverId: id, options,
-    showSaveDialog: (settings) => dialog.showSaveDialog(mainWindow, settings), writeFile: fs.promises.writeFile })));
-  handle("mcp:tools-list", wrap((_e, id) => host.listMcpTools(id)));
-  handle("mcp:tool-test", wrap((_e, id, name, params, options) => host.startMcpToolTest(id, name, params, options)));
-  handle("mcp:tool-test-approve", wrap((_e, id) => host.approveMcpToolTest(id)));
-  handle("mcp:tool-test-cancel", wrap((_e, id) => host.cancelMcpToolTest(id)));
-  handle("mcp:input-requests", wrap(() => host.listMcpInputRequests()));
-  handle("mcp:input-respond", wrap((_e, id, response) => host.respondMcpInputRequest(id, response)));
-handle("mcp:inputs", wrap(() => host.listMcpInputs()));
-handle("mcp:set-input", wrap((_e, name, value) => host.setMcpInput(name, value)));
+  // 收尾自检:白名单里的每个 channel 都必须被注册(表 + 显式块合并覆盖),
+  // 防止重构时漏掉某条通道却无人报错。
+  const missing = IPC_CHANNELS.filter((channel) => !registered.has(channel));
+  if (missing.length) {
+    throw new Error(`IPC channels registered but missing handlers: ${missing.join(", ")}`);
+  }
 }
 
 app.whenReady().then(createWindow);

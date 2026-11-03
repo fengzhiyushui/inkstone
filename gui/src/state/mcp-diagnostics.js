@@ -1,5 +1,7 @@
 import { describeEvent } from "../../../src/apps/event-contract.js";
-const object = (value) => value && typeof value === "object" && !Array.isArray(value);
+// 公共内核 + 场景钩子：JSON 对象判定与对象 schema 字段提取复用 src/tools/schema.js
+// （Vite 以相对路径解析，零依赖可打包）；宽松类型校验与 JSON.stringify 枚举比较语义保持本模块原文。
+import { isJsonObject, objectSchemaFields as schemaFields } from "../../../src/tools/schema.js";
 
 export function includeMcpActivity(event) {
   return event?.type !== "mcp:log" || !describeEvent(event).quiet;
@@ -13,26 +15,23 @@ export function checkedDiagnosticResult(result) {
 
 export function checkedDiagnosticTools(result) {
   checkedDiagnosticResult(result);
-  if (!Array.isArray(result) || result.some((tool) => !object(tool) || typeof tool.name !== "string"
+  if (!Array.isArray(result) || result.some((tool) => !isJsonObject(tool) || typeof tool.name !== "string"
     || tool.description != null && typeof tool.description !== "string" || tool.originalName != null && typeof tool.originalName !== "string"
-    || tool.inputSchema != null && typeof tool.inputSchema !== "boolean" && !object(tool.inputSchema))) throw new Error("Invalid MCP tools response");
+    || tool.inputSchema != null && typeof tool.inputSchema !== "boolean" && !isJsonObject(tool.inputSchema))) throw new Error("Invalid MCP tools response");
   return result;
 }
 
 export function checkedDiagnosticLogs(result) {
   checkedDiagnosticResult(result);
-  if (!Array.isArray(result.entries) || result.entries.some((entry) => !object(entry))) throw new Error("Invalid MCP logs response");
+  if (!Array.isArray(result.entries) || result.entries.some((entry) => !isJsonObject(entry))) throw new Error("Invalid MCP logs response");
   // These are external data: stringify unexpected scalar types instead of letting React render objects.
   return { ...result, entries: result.entries.map((entry) => Object.fromEntries(Object.entries(entry).map(([key, value]) =>
     [key, value != null && typeof value === "object" ? JSON.stringify(value) : value]))) };
 }
 
-export function schemaFields(schema) {
-  if (!object(schema) || schema.type && schema.type !== "object" || schema.$ref || schema.oneOf || schema.anyOf || schema.allOf
-    || !object(schema.properties)) return null;
-  return Object.entries(schema.properties).map(([name, definition]) => ({ name,
-    definition: object(definition) ? definition : {}, required: Array.isArray(schema.required) && schema.required.includes(name) }));
-}
+// 对象 schema 字段提取来自公共内核：扁平 object schema → [{name, definition, required}]，
+// $ref/oneOf/anyOf/allOf 等组合 schema 返回 null（本模块原有语义与导出名不变）。
+export { schemaFields };
 
 export function toolParameters(schema, values, json) {
   let params;
@@ -51,13 +50,13 @@ export function toolParameters(schema, values, json) {
       Object.defineProperty(params, name, { value, enumerable: true, configurable: true });
     }
   }
-  if (!object(params)) throw new Error("object");
+  if (!isJsonObject(params)) throw new Error("object");
   for (const name of Array.isArray(schema?.required) ? schema.required : []) if (!Object.hasOwn(params, name)) throw new Error(`required: ${name}`);
   for (const [name, value] of Object.entries(params)) {
     const definition = schema?.properties?.[name];
     if (!definition || typeof definition !== "object") continue;
     const types = Array.isArray(definition.type) ? definition.type : [definition.type];
-    const validType = (type) => !type || (type === "object" ? object(value) : type === "array" ? Array.isArray(value)
+    const validType = (type) => !type || (type === "object" ? isJsonObject(value) : type === "array" ? Array.isArray(value)
       : type === "integer" ? Number.isInteger(value) : type === "null" ? value === null : typeof value === type && (type !== "number" || Number.isFinite(value)));
     if (!types.some(validType)) throw new Error(`type: ${name}`);
     if (Array.isArray(definition.enum) && !definition.enum.some((candidate) => JSON.stringify(candidate) === JSON.stringify(value))) throw new Error(`enum: ${name}`);

@@ -82,6 +82,7 @@ think 通道**不声明 `temperature`**：官方协议下 thinking 开启时 tem
 - **tool-call 规范化 + 畸形重试**（[`tool-call-repair.js`](../src/deepseek/tool-call-repair.js)）：参数非法 JSON 时按 `maxToolCallRepairs` 有界重试，发 `model:tool_call_repair`。
 - **用量遥测**（[`usage-tracker.js`](../src/deepseek/usage-tracker.js)）：token、reasoning token、cache hit/miss、latency；三端展示（GUI 状态行/检查器、TUI 状态行 `r:N tok`/tps、CLI `INKSTONE_SHOW_USAGE=1` 终局摘要）。
 - **超时**（[`model-gateway.js`](../src/deepseek/model-gateway.js)）：`invoke` / `stream` / `fimComplete` 支持 `timeoutMs`，超时抛 `MODEL_TIMEOUT`。定时器在 body 读完之后才解除，SSE 流读与 `response.json()` 悬挂同样受约束；不传 `timeoutMs` 则不设超时。
+- **连接测试**（[`model-gateway.js`](../src/deepseek/model-gateway.js) 的 `testDeepSeekConnection(config)`）：`inkstone config test`、TUI `/config` 测试按钮与 GUI `conn:test` 共用；发一次 `max_tokens: 8` 的最小 chat/completions 往返，走网关 `invoke` 的同一套路由 / 超时 / 退避 / 错误分类。v1.19.0 起由原顶层 `src/provider.js` 迁入（该文件的 `askDeepSeek` / streaming / 错误文案是无人调用的 V1 死代码）。
 
 ---
 
@@ -104,7 +105,8 @@ think 通道**不声明 `temperature`**：官方协议下 thinking 开启时 tem
 
 安全相关工具行为：
 
-- `grep`：每文件 2s + 总 10s 协作式超时，超时优雅返回并在 metadata 标 `timed_out` 等字段。
+- `grep`：每文件 2s + 总 10s 协作式超时，超时优雅返回并在 metadata 标 `timed_out` 等字段。CLI `inkstone search` 复用同一 `searchWorkspace()` 实现（v1.19.0 起 `src/search.js` 删除），与 agent 的 `grep` 工具口径一致。
+- 工作区遍历（[`workspace/path-safety.js`](../src/workspace/path-safety.js) 的 `walkWorkspaceFiles`）：构建产物（`dist` / `build` / `coverage` / `.next` / `.nuxt` / `.turbo` / `.cache` / `target` / `vendor` / `__pycache__`）与其它 AI 助手的本地状态目录（`.claude` / `.cursor` / `.vscode` / `.idea` / `.codex` / `.gemini`）一律不进入遍历，`ls`/`glob`/`read`/`grep` 工具与 `inkstone search` 同口径；显式指定起点路径时不受限。忽略表是单一来源，`context/workspace-indexer.js` 复用之。
 - `shell` / `test` / `git`：子进程环境白名单继承（`buildChildEnv`：PATH、系统、用户/临时目录、区域键；密钥与代理变量默认不可见）。
 - 命令级策略（[`security/command-policy.js`](../src/security/command-policy.js)，v1.3.1）：forbidden（format / mkfs* / diskpart / bcdedit / dd）映射 `destructive`，各档一律拒绝且审批缓存不可放行；dangerous（删除类 / 系统类 / curl / wget / npm publish / git push 强推 / 包装 shell / 解释器执行参数）映射 `execute_dangerous`，supervised–full-auto 一律人工确认。`runProcess` spawn 前兜底拒绝 forbidden。审批 summary 附 argv 预览。
 
@@ -149,17 +151,17 @@ Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（
   - **信任模型**：server 未受信时其 annotations **一律不参与判定**；只有显式 `trust: true` 的 server 才采纳其 annotations。
 - **权限**：`autoApprove` 白名单（**不看类别**，列入即放行；destructive 仍由引擎硬拒）+ 既有三级审批流 + 上述治理。
 - **v1.14 接线修复**：持久授权进入正常 runtime 的 permission context 及公开 `tools.execute`，重建 kernel 后仍生效；tools 配置统一归一化并保留 risk；动态 add 保留 headers/allowlist/trust/tools；公开 kernel 增 add/remove，GUI 添加失败会呈现错误。
-- **资源与提示词**：Client、Hub、`kernel.mcp` 提供资源 list/templates/read、提示词 list/get；缺少 capability 不发业务 RPC，只含内容能力的服务可独立连接。Hub 支持内容调用按需连接目标服务。列表分页默认 5 页 / 200 项 / 1 MiB，内容默认 64 KiB；同客户端缓存最多 64 项 / 2 MiB / 5 分钟。边界与游标有效期见 [规格 §4.1.1](specs/architecture/2026-09-29-mcp-client-v2-design.md)。
+- **资源与提示词**：Client、Hub、`kernel.mcp` 提供资源 list/templates/read、提示词 list/get；缺少 capability 不发业务 RPC，只含内容能力的服务可独立连接。Hub 支持内容调用按需连接目标服务。列表分页默认 5 页 / 200 项 / 1 MiB，内容默认 64 KiB；同客户端缓存最多 64 项 / 2 MiB / 5 分钟。边界与游标有效期见 [规格 §4.1.1](specs/architecture/mcp-subsystem.md)。
 - **模型上下文桥**（[`capability-tools.js`](../src/tools/mcp/capability-tools.js)）：按连接状态动态挂载 `mcp_resources` / `mcp_prompts`，走现有 read 权限与参数校验；外部内容以 tool 消息引用，不能将返回的 system 角色提升成模型系统指令。已知密钥、错误及 binary 经共享 [`security/mcp-content.js`](../src/security/mcp-content.js) 处理。
-- **输出契约**（[`output-schema.js`](../src/tools/mcp/output-schema.js)）：有界 JSON Schema 2020-12 子集检查原始 structuredContent，未知关键词/远程引用/超预算明确报错；随后脱敏进 metadata。挂载工具返回标准 `{status,content,metadata}`，修复 ToolExecutor 丢文本；`isError` / 校验失败均为 error。公开 `kernel.mcp.callTool` 保持字符串兼容。
+- **输出契约**（[`output-schema.js`](../src/tools/mcp/output-schema.js)）：有界 JSON Schema 2020-12 子集检查原始 structuredContent，未知关键词/远程引用/超预算明确报错；随后脱敏进 metadata。挂载工具返回标准 `{status,content,metadata}`，修复 ToolExecutor 丢文本；`isError` / 校验失败均为 error。公开 `kernel.mcp.callTool` 保持字符串兼容。v1.19.2 起其 JSON 安全走查、类型判定、canonical 序列化与安全 pattern 编译统一复用 [`tools/schema.js`](../src/tools/schema.js) 的零依赖公共内核（keyword 白名单、`$ref` 解析与 `MCP_OUTPUT_SCHEMA_*` 错误码仍留在本模块），与 elicitation、schema-converter 脱敏走查及 GUI 试跑校验同源。
 - **三端**：GUI `McpView`（接入方式选择、风险徽章、信任开关、密钥面板）加资源树、URI 模板、提示词参数浏览；结果只填入对话草稿，不自动发送。CLI 增 `inkstone mcp resources|prompts`，与 GUI 默认均为 1 页 / 50 项 / 64 KiB；命令见 [部署与使用](DEPLOYMENT_AND_USAGE.md)。v1.16 TUI 增 `/mcp` 管理与日志，GUI 增日志/试跑，CLI 增历史诊断读取；管理命令不调用模型。
-- **OAuth（v1.15）**：`auth/` 负责 PR/AS 与 401 challenge 发现、CIDM/预注册公共客户端、DCR 兼容、S256 PKCE、state/iss 校验及加密凭据。凭据按 server/issuer/resource/client/scopes 隔离；并发刷新合并、401 最多一次重试，失败重新登录。OAuth HTTP 请求不跟随重定向，仍走 DNS 固定与 SSRF。GUI 主进程打开浏览器，CLI `mcp auth` 提供登录/状态/注销；成功后 Hub 自动重连，注销/禁用/移除阻止旧请求重新挂载工具。`mcp:auth_required` / `mcp:auth_status` 进入统一会话事件。完整边界见 [规格 §3.4.1](specs/architecture/2026-09-29-mcp-client-v2-design.md#341-v115-实际契约2026-10-06)。
+- **OAuth（v1.15）**：`auth/` 负责 PR/AS 与 401 challenge 发现、CIDM/预注册公共客户端、DCR 兼容、S256 PKCE、state/iss 校验及加密凭据。凭据按 server/issuer/resource/client/scopes 隔离；并发刷新合并、401 最多一次重试，失败重新登录。OAuth HTTP 请求不跟随重定向，仍走 DNS 固定与 SSRF。GUI 主进程打开浏览器，CLI `mcp auth` 提供登录/状态/注销；成功后 Hub 自动重连，注销/禁用/移除阻止旧请求重新挂载工具。`mcp:auth_required` / `mcp:auth_status` 进入统一会话事件。完整边界见 [规格 §3.4.1](specs/architecture/mcp-subsystem.md#341-v115-实际契约2026-10-06)。
 - **诊断（v1.16）**：[`diagnostics.js`](../src/tools/mcp/diagnostics.js) 每进程最多 500 条 / 1 MiB，100 ms 合并写入 `.deepseek-code/mcp-logs/`，停止 flush，保留最近 8 个运行文件。仅保存结构摘要/请求 ID/耗时/分类，不含参数、结果正文、OAuth 交换、HTTP 头或原始 stderr；采集与读取时动态脱敏。`getLogs` 默认 100、最多 4000 条；CLI/TUI 默认 50、最多 500 条。CLI `autoInitMcp:false`，新进程可查询已移除服务历史；存储问题显示 `storageError`。
 - **工具试跑（v1.16）**：[`tool-trials.js`](../src/tools/mcp/tool-trials.js) 复用 ToolExecutor、权限引擎与原始 inputSchema 子集校验，固定 supervised，destructive 拒绝。GUI 可填写字段或 JSON，按需连接指定服务；审批绑定单个 runId 和固定参数，仅本次有效。32 个待处理上限、5 分钟批准期限，参数/显示结果 64 KiB 上限；重复批准、过期与连接/配置身份变化不能重放旧调用。
-- **取消与事件（v1.16）**：工具、资源/提示词 signal 贯通 JSON-RPC 与 HTTP，请求级取消及时清除 pending，HTTP 中止对应请求，迟到响应丢弃，其它服务与并行请求不受影响。17 类 MCP 事件统一登记/schema/fixtures/三端描述符；普通诊断不刷对话流，warn/error 显示。TUI 模型回合 Esc 中断保留；restart/enable/disable 等管理操作等待结束，明确提示不支持取消。详见 [规格 §6.1](specs/architecture/2026-09-29-mcp-client-v2-design.md#61-v116-实际契约2026-10-06)。
+- **取消与事件（v1.16）**：工具、资源/提示词 signal 贯通 JSON-RPC 与 HTTP，请求级取消及时清除 pending，HTTP 中止对应请求，迟到响应丢弃，其它服务与并行请求不受影响。17 类 MCP 事件统一登记/schema/fixtures/三端描述符；普通诊断不刷对话流，warn/error 显示。TUI 模型回合 Esc 中断保留；restart/enable/disable 等管理操作等待结束，明确提示不支持取消。详见 [规格 §6.1](specs/architecture/mcp-subsystem.md#61-v116-实际契约2026-10-06)。
 - **MRTR 人工输入（v1.17）**：[`input-broker.js`](../src/tools/mcp/input-broker.js) 为显式启用 `elicitation.enabled:true` 的 Modern 服务提供 tools/call、resources/read、prompts/get 多轮表单；最多 4 轮、每轮 8 份、32 份待处理。确认后以新请求 ID 回送本轮 state，只有 state 的继续请求也需确认。CLI/TUI 在模型等待期间服务独立表单，隐藏输入且不进入聊天历史；GUI 全局弹窗需勾选确认，非交互 CLI 立即拒绝。默认 120 秒表单期限可配 1000–300000 ms，外围工具超时仍优先；重启/禁用/移除/注销/工具定义变更使旧请求失效，内核关闭同步取消所有待处理表单。
-- **表单与隐私（v1.17）**：[`elicitation-schema.js`](../src/tools/mcp/elicitation-schema.js) 严格接受 MCP 平面标量、单选与枚举数组 schema，最多 64 字段、schema/输入各 64 KiB UTF-8、字符串 16 KiB；校验 email/uri/date/date-time，不填 default，未知/嵌套约束和额外字段拒绝。表单、输入和 requestState 只留内存，输入事件不含正文；已提交内容及 opaque state 加入动态脱敏集合，避免远端回显泄漏。`input_required`、`input_resolved`、`subscription_status` 连同既有事件共 19 类 MCP 契约完整登记。
-- **列表订阅（v1.17）**：[`subscriptions.js`](../src/tools/mcp/subscriptions.js) 在 `subscriptions.enabled:true` 时，仅订阅 Modern 服务声明 `listChanged:true` 的 tools/prompts/resources 列表；10 秒确认，严格关联 subscriptionId 和服务接受的过滤项。HTTP 采用单帧 64 KiB 的有界 SSE 解析，断流不自动重试；状态进入服务卡与诊断，用户重启服务可重新订阅。两项能力均默认关闭，Legacy 不宣告 elicitation；不包含 URL-mode、Sampling、Roots、Logging，详见 [规格 §6.2](specs/architecture/2026-09-29-mcp-client-v2-design.md#62-v117-mrtr人工表单与订阅2026-10-06)。
+- **表单与隐私（v1.17）**：[`elicitation-schema.js`](../src/tools/mcp/elicitation-schema.js) 严格接受 MCP 平面标量、单选与枚举数组 schema，最多 64 字段、schema/输入各 64 KiB UTF-8、字符串 16 KiB；校验 email/uri/date/date-time，不填 default，未知/嵌套约束和额外字段拒绝。表单、输入和 requestState 只留内存，输入事件不含正文；已提交内容及 opaque state 加入动态脱敏集合，避免远端回显泄漏。`input_required`、`input_resolved`、`subscription_status` 连同既有事件共 19 类 MCP 契约完整登记。v1.19.2 起其 JSON 安全走查（上限/计费/检查时点）与 output-schema 共用 [`tools/schema.js`](../src/tools/schema.js) 内核，平面 schema 校验与大小限制仍留在本模块。
+- **列表订阅（v1.17）**：[`subscriptions.js`](../src/tools/mcp/subscriptions.js) 在 `subscriptions.enabled:true` 时，仅订阅 Modern 服务声明 `listChanged:true` 的 tools/prompts/resources 列表；10 秒确认，严格关联 subscriptionId 和服务接受的过滤项。HTTP 采用单帧 64 KiB 的有界 SSE 解析，断流不自动重试；状态进入服务卡与诊断，用户重启服务可重新订阅。两项能力均默认关闭，Legacy 不宣告 elicitation；不包含 URL-mode、Sampling、Roots、Logging，详见 [规格 §6.2](specs/architecture/mcp-subsystem.md#62-v117-mrtr人工表单与订阅2026-10-06)。
 
 ---
 
@@ -176,7 +178,7 @@ Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（
 
 ### 记录卫生（v1.6.2 / v1.7.x）
 
-- **大小上限**：单文件超过 `maxCaptureBytes`（默认 1 MiB）时只存 `sha256` + 原始大小，不存全文（`before`/`after` 为 `null`，`truncated: true`）。回滚是硬约束：`truncated` 记录缺 before 全文时，`rollbackChange` 与 `applyRollbackRecord` 抛 `ROLLBACK_TRUNCATED`，绝不写 `before ?? ""` 清空文件。`createEditService({ edits })` 可覆盖（`maxCaptureBytes: null` 关闭上限）。
+- **大小上限**：单文件超过 `maxCaptureBytes`（默认 1 MiB）时只存 `sha256` + 原始大小，不存全文（`before`/`after` 为 `null`，`truncated: true`）。回滚是硬约束：`truncated` 记录缺 before 全文时抛 `ROLLBACK_TRUNCATED`，绝不写 `before ?? ""` 清空文件。`createEditService({ edits })` 可覆盖（`maxCaptureBytes: null` 关闭上限）。v1.19.0 起该守卫收敛为 [`edits/edit-transaction.js`](../src/edits/edit-transaction.js) 的单一 `assertRollbackableRecord()`（此前 `changes.js` 的 `rollbackChange` 与 `applyRollbackRecord` 各复制一份），`before_size`（capture 路径）与 `before_bytes`（enhance 路径）两个字段都参与判定；`rollbackChange` 现由 [`edits/rollback-service.js`](../src/edits/rollback-service.js) 提供并直接复用 `applyRollbackRecord` 做逐字节复原。
 - **保留期**：`finalizeChange` 后按 `changeRetention = { maxRecords, maxAgeDays }` 清理，只删 `.deepseek-code/changes/*.json`。
 - **目录限权**：`changes/` 以 `0o700` 创建；Windows 上 `fs.chmod` 基本无效，此条仅在类 Unix 生效。
 - **生产接线（v1.7.1）**：`config.edits` 进入 `DEFAULT_CONFIG`，经 `buildKernelOptions` / `createKernel` → `createEditService` 全链路生效。默认 `maxCaptureBytes: 1 MiB`、`changeRetention: { maxRecords: 200, maxAgeDays: 90 }`。
@@ -234,7 +236,7 @@ Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（
 - **编排级 durable 恢复**（C-Durable，依赖 `recovery.enabled`）：编排回合中串行主区 worker 命中审批暂停时，另落 `orchestration-paused/<approvalId>.json`；重启后 `/recovery` 呈现 `orchestration_paused` 项。详见 [§14.5](#145-跨进程编排级-durable-恢复)。
 - **`task` 父子委派 durable 恢复**（v1.18.0，依赖 `recovery.enabled`）：`task` 子 Worker 命中写工具审批暂停时，除父 `paused/<approvalId>.json` 外同步落 `task-paused/<approvalId>.json`（含 schema/fingerprint/归属 ID 及 State 5 完成检查点）；启动扫描交叉校验父子双记录，孤儿或指纹不匹配一律 `blocked_recovery` 并保全证据。
 
-设计见 [`specs/backend/2026-06-01-v2-18-durable-recovery-resume-hardening-design.md`](specs/backend/2026-06-01-v2-18-durable-recovery-resume-hardening-design.md)。
+设计见 [`specs/backend/edits-sessions-recovery.md`](specs/backend/edits-sessions-recovery.md)。
 
 ---
 
@@ -252,7 +254,7 @@ Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（
 | `maxModelCalls` | `null`（关） | 单 turn 模型调用次数上限 |
 | `maxToolCallRepairs` | `null`（关） | 畸形 tool-call 有界重试次数 |
 
-`maxTurnTokens` / `maxModelCalls` 计数含 repair 阶段与 `task` 子委派。`maxToolCallRepairs` 同时覆盖主执行循环（`executor-loop`）与验证修复执行器（`repair-executor`，v1.18.0 补齐：整批工具语法预校验通过前不执行任何工具副作用，仅对 JSON/结构畸形做有界纠正，跨审批暂停与恢复保持计数）。取值语义（`toLimit`）：省略取默认；`null` / `≤0` / 非法关闭；否则取整。
+`maxTurnTokens` / `maxModelCalls` 计数含 repair 阶段与 `task` 子委派。`maxToolCallRepairs` 同时覆盖主执行循环（`executor-loop`）与验证修复执行器（`repair-executor`，v1.18.0 补齐：整批工具语法预校验通过前不执行任何工具副作用，仅对 JSON/结构畸形做有界纠正，跨审批暂停与恢复保持计数）。取值语义（`toLimit`）：省略取默认；`null` / `≤0` / 非法关闭；否则取整。v1.19.2 起两者的执行循环骨架（模型调用 → 预算检查 → 事件发射 → 整批预校验与有界重试 → 顺序执行与审批挂起）收敛到 [`execution/execution-cycle.js`](../src/core/execution/execution-cycle.js)，场景差异（purpose 命名、预算检查条件、`BUDGET_EXCEEDED` 特判、修复消息文本、`assistantToolCallMessage` 容错映射、`resume_state` 字段）以钩子注入逐字保留。
 
 覆盖方式：`config.json` 的 `limits`，或环境变量 `DEEPSEEK_TOOL_TIMEOUT_MS` / `DEEPSEEK_MODEL_TIMEOUT_MS`。`loadConfig` 对用户 `limits` 做 per-field 深合并。
 
@@ -272,7 +274,7 @@ Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（
 - `shell` 只接受结构化 argv，以 `shell:false` 执行（[`security/shell-policy.js`](../src/security/shell-policy.js)）。
 - `web_fetch` 阻断 localhost / 私网 / link-local / CGNAT / 保留与组播网段，以及 IPv4-mapped IPv6；校验全部 DNS A 记录，每跳 redirect 重新校验；默认网络层固定到已验证 IP 直连（原 hostname 作 Host/SNI），避免 DNS rebinding/TOCTOU（[`security/ssrf.js`](../src/security/ssrf.js)）。
 - 输出密钥脱敏（[`security/redactor.js`](../src/security/redactor.js)）：Bearer / 常见 key/token/secret/password 赋值、AWS/GitHub/sk- 前缀、多行私钥块；不做易误伤的通用高熵猜测。
-- GUI：`nodeIntegration:false` + `contextIsolation:true` + `sandbox:true` + IPC 白名单强制生效（`IPC_CHANNELS` 唯一权威清单，未登记 channel 的 handle 注册即抛错）。
+- GUI：`nodeIntegration:false` + `contextIsolation:true` + `sandbox:true` + IPC 白名单强制生效（`IPC_CHANNELS` 唯一权威清单，未登记 channel 的 handle 注册即抛错）。v1.19.3 起全部 69 个 IPC 通道统一经 `IPC_ROUTES` 声明式路由表驱动分发，消除显式 `handle()` 注册散落，并在启动阶段执行白名单 69 ↔ 注册 69 双向互锁自检。
 - 敏感文件写入前独立风险提醒（见 [§4](#4-编辑与回滚)），任何自治档位都不能跳过。
 
 ---
@@ -315,31 +317,31 @@ Inkstone 在 `src/tools/mcp/` 提供零外部依赖的 MCP 原生接入底座（
 src/
   index.js        createKernel() 组合根
   core/
-    runtime/      agent-runtime · lifecycle · cost-budget · request-budget
-    execution/    executor-loop · repair-executor · tool-call-adapter · tool-result-router
+    runtime/      agent-runtime · resume-coordinator · lifecycle · cost-budget · request-budget
+    execution/    executor-loop · repair-executor · execution-cycle · tool-call-adapter · tool-result-router
     verification/ verifier · repair-loop · repair-decision · repair-prompt · verification-policy
     protocol/     agent-turn · agent-step · tool-call · tool-result · approval-request · artifact
     planning/     classifier · keywords
     approval/     paused-turn-store
-    recovery/     项目锁 · 收件箱 · 暂停持久化 · task 暂停持久化 · 事务日志 · 恢复服务
+    recovery/     项目锁 · 收件箱 · sidecar-store · 暂停持久化 · task 暂停持久化 · 事务日志 · 恢复服务
     orchestration/ router · planner · worker · reviewer · merge · iso · task 委派 · experience 接线
     memory/       experience-* · risk-rules
-  deepseek/       model-gateway · model-router · json-mode · streaming · fim-client · usage-tracker · tool-call-repair · prompt-assembler · api-errors
-  tools/          registry · schema · executor · builtin/* · permissions/*
-  edits/          diff-parser · change-store · rollback-service · edit-transaction · edit-service · sensitive-notice
+  deepseek/       model-gateway（含 testDeepSeekConnection 连接测试）· model-router · json-mode · streaming · fim-client · usage-tracker · tool-call-repair · prompt-assembler · api-errors
+  tools/          registry · schema（JSON Schema 子集校验与字段提取公共内核）· executor · builtin/*（grep 内含 searchWorkspace、git 内含 showDiff）· permissions/* · mcp/*（含 mcp-facade）
+  edits/          diff-parser（unified diff 解析与应用）· change-store（变更台账）· rollback-service · edit-transaction · edit-service · sensitive-notice
   sessions/       event-types · event-log · branch-store · checkpoint-index · rewind-* · session-manager
-  context/        context-* · token-budget · workspace-indexer · semantic/*
-  workspace/      path-safety
+  context/        context-* · token-budget · workspace-indexer · project-index · semantic/*
+  workspace/      path-safety（路径边界 + 遍历忽略策略单一来源）
   security/       shell-policy · command-policy · ssrf · redactor
-  apps/           kernel-options · api-profiles · model-catalog · event-contract · sensitive-notice-contract · project-registry · session-index · cli/ · tui/
+  apps/           kernel-options · api-profiles · model-catalog · event-contract · sensitive-notice-contract · project-registry · session-index · cli/ · tui/（含 runTui 入口）
   shared/         id · time · event-bus
-  (顶层)         cli.js · config.js · context.js · git.js · patch.js · changes.js · provider.js · search.js · theme.js · tui.js
+  (顶层入口)      index.js · cli.js · config.js · theme.js
 gui/              Electron main/preload/kernel-host + React/Vite 渲染层（v1.8 三列壳）
-docs/             specs · plans · CHANGELOG · README
-tests/            单元 / 集成 / e2e
+docs/             specs（7 篇 Living Spec）· plans（现役计划 + 历史归档）· CHANGELOG · README · project-overview · DEPLOYMENT_AND_USAGE
+tests/            单元（14 个扁平领域文件，91 例）· 集成（2 个端到端闭环文件，8 例）· e2e（CLI/TUI/GUI 冒烟，4 例），共 103 项高内聚用例
 ```
 
-顶层 `cli.js` / `config.js` / `context.js` / `git.js` / `patch.js` / `changes.js` / `provider.js` / `search.js` / `theme.js` 是 V2 共享工具模块。`tui.js` 是薄入口，实现全在 `src/apps/tui/`。V1 并存内核（`src/kernel/*`、`agent.js`、`chat.js`、`ui.js`）已删除。
+顶层只保留 4 个入口文件：`index.js`（`createKernel()` 组合根）、`cli.js`（CLI 命令分发）、`config.js`（配置加载与归一）、`theme.js`（品牌 / 版本 / 终端配色）。v1.19.0 起原顶层的 `provider.js` / `context.js` / `search.js` / `git.js` / `tui.js` / `patch.js` / `changes.js` 全部内聚到所属域（见 [CHANGELOG v1.19.0](CHANGELOG.md)），V1 并存内核（`src/kernel/*`、`agent.js`、`chat.js`、`ui.js`）更早已删除。
 
 ---
 
@@ -358,8 +360,8 @@ tests/            单元 / 集成 / e2e
 ## 12. 开发与文档维护
 
 ```bash
-npm test            # node --test：tests/ 全部用例
-npm run check       # node --check 语法校验
+npm test            # node --test：tests/ 全部用例（103 项高内聚测试全绿）
+npm run check       # node --check 语法校验（297 个 JS 文件）
 git diff --check
 ```
 
@@ -388,7 +390,7 @@ V3 Phase B 引入（B+1 方法消歧、B+3 query 统一抽取 + Python）。默�
 
 ## 14. 多智能体编排
 
-设计见 [C1+C2](specs/backend/2026-06-27-v3-phase-c1-c2-orchestration-design.md)。`kernel.agent.send()` 经确定性路由器（`task-router`，可升级为 C-Router 分层）判复杂度：
+设计见 [C1+C2](specs/backend/orchestration.md)。`kernel.agent.send()` 经确定性路由器（`task-router`，可升级为 C-Router 分层）判复杂度：
 
 ```text
 kernel.send(message) → task-router
@@ -397,7 +399,7 @@ kernel.send(message) → task-router
                             Planner → Worker → 两级审核 → Synthesizer
 ```
 
-不变量：`agent-runtime.js` 不因编排改语义。Worker / Reviewer 都是 `createAgentRuntime` 实例（注入工具子集 + 作用域上下文），编排层只在 `send()` 之上组合。
+不变量：`agent-runtime.js` 不因编排改语义。Worker / Reviewer 都是 `createAgentRuntime` 实例（注入工具子集 + 作用域上下文），编排层只在 `send()` 之上组合。v1.19.2 起审批通过后的四条恢复路径（普通执行暂停、修复期暂停、`task` 子委派暂停、跨进程验证器续跑）的恢复/结算/验证衔接抽离至 [`runtime/resume-coordinator.js`](../src/core/runtime/resume-coordinator.js)（依赖注入，无循环 import）；`agent-runtime.js` 只保留入口/deny/中断语义与权限上下文归一化，事件顺序、错误码、预算续扣与 State 5 幂等检查点行为不变。
 
 | 单元 | 职责 |
 |------|------|
@@ -488,7 +490,7 @@ Electron（`gui/`），React + Vite。当前壳层为 v1.8.x：三列可拖拽 g
 
 ## 16. 终端 TUI
 
-`src/tui.js` 薄入口 + [`src/apps/tui/`](../src/apps/tui/) 十模块（手写 ANSI/VT）。形态是行内滚动流：历史进终端原生滚动区，底部固定输入与状态栏。
+[`src/apps/tui/tui-app.js`](../src/apps/tui/tui-app.js) 是 TUI 的唯一入口（v1.19.0 起原 12 行的 `src/tui.js` 薄入口合入此处）+ [`src/apps/tui/`](../src/apps/tui/) 十模块（手写 ANSI/VT）。形态是行内滚动流：历史进终端原生滚动区，底部固定输入与状态栏。
 
 - 纯逻辑：`tui-state` reducer · `event-cards` · `input` · `ansi`（CJK 宽 2）· `paint` · `tui-i18n` · `slash` / `config-flow` · `prefs` · `tui-app` 组合根。
 - kernel 零改动：流式 `send(..., { stream, onDelta })`；审批 `agent.approve`；busy 态 Esc 调 `agent.interrupt()`。

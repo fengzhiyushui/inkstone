@@ -4,13 +4,6 @@
 
 **简体中文** · [English](./README.en.md)
 
-[![version](https://img.shields.io/badge/version-v1.8.4-blue.svg)](./package.json)
-[![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
-[![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org/)
-[![deps](https://img.shields.io/badge/core%20runtime%20deps-0-success.svg)](./package.json)
-[![tests](https://img.shields.io/badge/tests-1152%20passed-brightgreen.svg)](./tests/)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/fengzhiyushui/inkstone/pulls)
-
 **面向 DeepSeek 模型的高性能本地 AI 编程智能体 (Coding Agent)**  
 *CLI · TUI · 现代化桌面 GUI —— 一套内核，三端体验*
 
@@ -244,23 +237,30 @@ inkstone/
 │   └── inkstone.js           # CLI / TUI 入口执行脚本
 ├── src/                      # 内核核心实现
 │   ├── index.js              # createKernel() 组合根入口
+│   ├── cli.js                # CLI 命令分发（inkstone / dsc）
+│   ├── config.js             # 配置加载、归一与默认值
+│   ├── theme.js              # 品牌 / 版本 / 终端配色
 │   ├── core/                 # 核心运行时 (Runtime, Orchestration, Recovery, Protocol)
-│   ├── context/              # 上下文引擎 (Manifest, Cache, WASM Tree-sitter)
-│   ├── deepseek/             # DeepSeek 协议网关 (Router, Streaming, FIM, Repair)
+│   ├── context/              # 上下文引擎 (Manifest, Cache, WASM Tree-sitter, project-index)
+│   ├── deepseek/             # DeepSeek 协议网关 (Router, Streaming, FIM, Repair, 连接测试)
 │   ├── tools/                # 工具注册表、权限引擎与 15 个内置安全工具
-│   ├── edits/                # 事务化编辑、Diff 解析与原子回滚服务
+│   ├── edits/                # 事务化编辑、Diff 解析、变更台账与原子回滚
 │   ├── sessions/             # 会话事件时间线、分支与 Checkpoint Rewind
 │   ├── security/             # SSRF 拦截、Shell 策略与敏感词脱敏
+│   ├── workspace/            # 工作区路径边界与遍历策略
 │   └── apps/                 # CLI / TUI 展现层与 GUI 宿主对接适配
 ├── gui/                      # 桌面 GUI 应用 (Electron + React 19 + Vite)
 │   ├── main.js               # Electron 主进程
 │   ├── preload.js            # 安全沙箱 Preload 脚本
 │   └── src/                  # React 前端 (AppFrame, Dock, Monaco, SCM, Chat)
-├── docs/                     # 完整项目文档中心
+├── docs/                     # 文档中心（v1.19.0 起 111 篇 → 15 篇）
+│   ├── README.md             # 文档索引与维护规范
 │   ├── DEPLOYMENT_AND_USAGE.md # 本地部署与使用完整手册
 │   ├── project-overview.md   # 深入技术架构说明
-│   └── CHANGELOG.md          # 版本发布日志
-└── tests/                    # 完整自动化测试套件 (1140+ 项用例)
+│   ├── CHANGELOG.md          # 版本发布日志
+│   ├── specs/                # 7 篇领域 Living Spec（架构 / MCP / 运行时 / 上下文记忆 / 编排 / 编辑恢复 / 三端）
+│   └── plans/                # 现役计划 + 63 篇历史计划压缩归档
+└── tests/                    # 完整自动化测试套件 (103 项高内聚用例，收敛为 18 个测试文件)
 ```
 
 ---
@@ -285,7 +285,7 @@ inkstone/
 我们非常欢迎社区贡献！为了保证内核的绝对稳定，Inkstone 实行严格的**五项准入测试闸门（Five Gates）**：
 
 ```bash
-# 1. 运行全部单元与集成测试套件（当前 1141 项测试全绿）
+# 1. 运行全部单元与集成测试套件（当前 103 项高内聚测试全绿，18 个领域测试文件）
 npm test
 
 # 2. 源码语法校验
@@ -315,8 +315,13 @@ git diff --stat main..HEAD -- src/core src/deepseek src/tools src/edits src/sess
 - [x] **v1.2.0**：工具平面安全加固，白名单环境继承，协作式超时。
 - [x] **v1.4.0**：智能上下文引擎，多智能体分层编排与并行写隔离。
 - [x] **v1.8.0**：桌面 GUI 现代三栏式重构，双向把手折叠，Monaco 深度集成与多 Profile 切换。
-- [x] **v1.8.3**：GUI 深度代码审查与缺陷修复，状态同步强固，全套部署使用指南发布。
-- [x] **v1.8.4**：前端布局工效重构与遥测体系落地（Rail 零抖动平滑开合、消息与 Composer 双遥测、原创高对比调色板与 Plan 专属面板）。
+- [x] **v1.9.0**：契约冻结与模型适配，GUI Agent Inspector，TUI `/branch` `/rewind` `/fim`。
+- [x] **v1.11.0 – v1.17.0**：MCP Client v2 全量落地 —— 外部工具接入、dual-era 协议、Streamable HTTP、工具治理与三级批准、资源与提示词、OAuth 登录、诊断与工具试跑、多轮人工输入（MRTR）与 Modern 列表订阅。
+- [x] **v1.18.0**：运行能力闭环 —— 请求级编排总预算与全树取消、真实 `task` 子任务委派与父子恢复、`repair` 路径有界语法重试、安全加固。
+- [x] **v1.19.0**：架构收敛与全栈精简 —— 清除 `src/` 顶层 V1 双轨遗留（11 → 4 个入口）、内聚 `src/edits/`、统一工作区遍历策略、文档体系 111 篇 → 15 篇。功能面零增减。
+- [x] **v1.19.1**：测试套件深度精简与 GUI 打包/胶水收敛 —— `tests/` 311 个碎片文件归并为 62 个领域测试文件（减少 80%）、Monaco 裁剪至 `editor.api` + 单 worker（`gui/renderer-dist` 12.17 MB → 3.36 MB，-72.4%）、`mcp.*` 门面提取与 GUI IPC 表驱动收敛、`SecondaryViews.jsx` 按职责拆解。功能面零增减。
+- [x] **v1.19.2**：深层同构重复逻辑合并 —— 统一全仓 JSON Schema 子集校验内核、合并恢复子系统 3 套 Sidecar 持久化存储（-57%）、收敛执行循环与 `agent-runtime.js` 四路审批恢复协调器（-51%）。功能面零增减。
+- [x] **v1.19.3**：测试套件极致浓缩与 IPC 表驱动全覆盖 —— 62 个碎片文件与 299 个机械 `describe` 包装层深度浓缩为 18 个扁平领域测试文件，1,842 个微断言重构为 103 个端到端高内聚用例（用例数 -94.4%），测试执行更轻更快；`gui/main.js` 遗留的 23 处 explicit `handle()` 彻底消除，全部入表。功能面零增减。
 - [ ] **未来规划**：支持插件扩展体系、更多语言语义分析适配、团队多端协作能力。
 
 完整版本历史见 [**`docs/CHANGELOG.md`**](docs/CHANGELOG.md)。

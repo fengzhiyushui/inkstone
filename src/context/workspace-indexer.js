@@ -1,5 +1,7 @@
 import { createContextUnit } from "./context-unit.js";
 import {
+  HIDDEN_TOOL_DIR_SEGMENTS,
+  IGNORED_BUILD_SEGMENTS,
   normalizeRelativePath,
   readWorkspaceTextFile,
   walkWorkspaceFiles
@@ -11,30 +13,9 @@ const DEFAULT_OPTIONS = Object.freeze({
   maxSnippetBytes: 4000
 });
 
-const IGNORED_SEGMENTS = new Set([
-  ".git",
-  ".deepseek-code",
-  "node_modules",
-  "dist",
-  "build",
-  "coverage",
-  ".next",
-  ".nuxt",
-  ".turbo",
-  ".cache",
-  "target",
-  "vendor",
-  "__pycache__"
-]);
-
-const HIDDEN_TOOL_DIRS = new Set([
-  ".claude",
-  ".cursor",
-  ".vscode",
-  ".idea",
-  ".codex",
-  ".gemini"
-]);
+// 目录级忽略表与遍历侧同源（path-safety），此处只补「跳过原因」的分类口径。
+const IGNORED_SEGMENTS = new Set(IGNORED_BUILD_SEGMENTS);
+const HIDDEN_TOOL_DIRS = new Set(HIDDEN_TOOL_DIR_SEGMENTS);
 
 const CREDENTIAL_BASENAMES = new Set([
   ".npmrc",

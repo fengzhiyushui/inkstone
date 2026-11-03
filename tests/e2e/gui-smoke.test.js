@@ -1,14 +1,42 @@
+// tests/e2e/gui-smoke.test.js — GUI 构建与 Electron 冒烟测试
 import test from "node:test";
 import assert from "node:assert/strict";
-import { access } from "node:fs/promises";
-import { rmSync } from "node:fs";
+import { access, rm } from "node:fs/promises";
+import { existsSync, rmSync } from "node:fs";
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { once } from "node:events";
 import { mkdtemp } from "../helpers/tmp.js";
 
-test("gui electron shell starts against a temp project", { timeout: 40000 }, async (t) => {
+const guiDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "gui");
+const viteInstalled = existsSync(path.join(guiDir, "node_modules", "vite"));
+
+test("GUI 渲染层:构建配置存在且能从源码干净编译", { skip: !viteInstalled ? "gui deps not installed" : false, timeout: 240000 }, async () => {
+  const builtIndex = path.join(guiDir, "renderer-dist", "index.html");
+  assert.ok(existsSync(path.join(guiDir, "vite.renderer.config.mjs")), "vite config present");
+  assert.ok(existsSync(builtIndex), "renderer-dist/index.html present");
+
+  const require = createRequire(import.meta.url);
+  const { build } = require(path.join(guiDir, "node_modules", "vite", "dist", "node", "index.js"));
+  const outDir = await mkdtemp(path.join(os.tmpdir(), "dsc-gui-build-"));
+  try {
+    const result = await build({
+      root: guiDir,
+      logLevel: "error",
+      build: { outDir, emptyOutDir: true },
+      configFile: path.join(guiDir, "vite.renderer.config.mjs")
+    });
+    assert.ok(result, "vite build resolves");
+    assert.ok(existsSync(path.join(outDir, "index.html")), "index.html emitted");
+  } finally {
+    await rm(outDir, { recursive: true, force: true });
+  }
+});
+
+test("GUI 桌面端冒烟:Electron 启动、全视图切换与事件链路验证", { timeout: 40000 }, async (t) => {
   const electronCli = path.resolve("gui", "node_modules", "electron", "cli.js");
   try {
     await access(electronCli);
@@ -19,19 +47,16 @@ test("gui electron shell starts against a temp project", { timeout: 40000 }, asy
 
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), "dsc-gui-smoke-"));
   const userData = await mkdtemp(path.join(os.tmpdir(), "dsc-gui-userdata-"));
-  // 冒烟是"分离进程 + 子进程自回收"的结构:临时脚手架由主进程在退出前删除,
-  // 测试侧只做兜底(正常路径下这里已是空操作)。
   t.after(() => {
     for (const p of [projectRoot, userData]) {
-      try { rmSync(p, { recursive: true, force: true }); } catch { /* 已被主进程回收 */ }
+      try { rmSync(p, { recursive: true, force: true }); } catch { /* ignore */ }
     }
   });
+
   const env = {
     ...process.env,
     DEEPSEEK_CODE_GUI_SMOKE: "1",
     DEEPSEEK_CODE_GUI_USER_DATA: userData,
-    // 隔离全局项目 MRU 登记表(否则测试会把临时项目写进开发者真实项目列表),
-    // 并授权主进程回收本次脚手架目录。
     DEEPSEEK_CODE_GUI_PROJECT_REGISTRY_DIR: path.join(userData, "registry"),
     DEEPSEEK_CODE_GUI_SMOKE_CLEANUP_DIRS: [projectRoot, userData].join(path.delimiter),
     ELECTRON_ENABLE_LOGGING: "1"

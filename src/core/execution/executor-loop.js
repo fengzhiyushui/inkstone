@@ -1,15 +1,24 @@
 import { assembleReplyMessages } from "../../deepseek/prompt-assembler.js";
-import { adaptDeepSeekToolCalls, isToolCallSyntaxError } from "./tool-call-adapter.js";
 import { toolResultsToMessages } from "./tool-result-router.js";
+import {
+  runToolCallCycle,
+  runToolCallsInOrder,
+  toolCallRepairPrompt,
+  withBudgetSpent
+} from "./execution-cycle.js";
 
-function abortFromSignal(signal) {
-  const reason = signal?.reason;
-  if (reason instanceof Error) return reason;
-  const err = new Error(typeof reason === "string" && reason ? reason : "Operation was aborted");
-  err.name = "AbortError";
-  err.code = "ABORT";
-  return err;
-}
+// v1.19.2 补丁版(纯重构):执行循环骨架(模型调用/预算检查/事件发射/整批预校验与
+// maxToolCallRepairs 有界重试/顺序执行工具与审批挂起)收敛到 execution-cycle.js。
+// 本文件只保留 executor 场景差异:
+//   - model:request 恒 purpose "act";model:response 与 invoke 首轮 "plan"、
+//     其余 "act";
+//   - 每轮迭代都查 budget?.exceeded(),stopped 返回带 iterations/toolResults;
+//   - executor 版 assistantToolCallMessage(无容错映射,与 repair 版行为不同);
+//   - executor 字段的 resume_state(turn_id/message/classification/messages/...);
+//   - resumeExecutorLoop 的 resumeToolCallRepairs/effectiveMaxToolCallRepairs
+//     归一化与 pendingAndRemaining 拼接逻辑原样保留。
+
+const EXECUTOR_ABORT_MESSAGE = "Operation was aborted";
 
 export async function runExecutorLoop({
   message,
@@ -36,7 +45,7 @@ export async function runExecutorLoop({
   if (typeof executeTool !== "function") throw new Error("executeTool is required");
   if (typeof createPolicyContext !== "function") throw new Error("createPolicyContext is required");
 
-  let messages = assembleReplyMessages({
+  const messages = assembleReplyMessages({
     message,
     classification,
     context,
@@ -44,194 +53,102 @@ export async function runExecutorLoop({
     history: options.history
   });
   const toolResults = [];
-  let toolCallRepairs = 0;
 
-  for (let iteration = 0; iteration < maxIterations; iteration++) {
-    if (signal?.aborted) {
-      throw abortFromSignal(signal);
-    }
-    const over = budget?.exceeded();
-    if (over) {
-      return { status: "stopped", reason: over, content: `Stopped: cost budget exceeded (${over.reason}).`, iterations: iteration, toolResults };
-    }
-    eventBus?.publish?.("model:request", { turn_id: turnId, purpose: "act", iteration });
-    const modelResult = await modelGateway.invoke(messages, {
+  return runToolCallCycle({
+    turnId,
+    messages,
+    modelGateway,
+    eventBus,
+    budget,
+    signal,
+    abortMessage: EXECUTOR_ABORT_MESSAGE,
+    sessionId,
+    maxToolCallRepairs,
+    maxIterations,
+    requestPurpose: "act",
+    responsePurpose: (iteration) => (iteration === 0 ? "plan" : "act"),
+    checkBudget: () => budget?.exceeded(),
+    onBudgetExceeded: (over, ctx) => ({
+      status: "stopped",
+      reason: over,
+      content: `Stopped: cost budget exceeded (${over.reason}).`,
+      iterations: ctx.iteration,
+      toolResults
+    }),
+    buildInvokeOptions: ({ iteration }) => ({
       purpose: iteration === 0 ? "plan" : "act",
       tools: toolSchemas,
       toolChoice: "auto",
       signal,
       ...options,
       timeoutMs: modelTimeoutMs ?? options.timeoutMs
-    });
-    if (budget) budget.recordModelResult(modelResult);
-    if (signal?.aborted) {
-      throw abortFromSignal(signal);
-    }
-    eventBus?.publish?.("model:response", {
-      turn_id: turnId,
-      purpose: iteration === 0 ? "plan" : "act",
-      iteration,
+    }),
+    onComplete: (ctx, modelResult) => ({
+      status: "complete",
       content: modelResult.content || "",
-      tool_call_count: modelResult.tool_calls?.length || 0,
-      usage: modelResult.usage || null,
-      model: modelResult.model,
-      channel: modelResult.channel,
-      ...modelResponseExtras(modelResult, sessionId)
-    });
-
-    const rawToolCalls = modelResult.tool_calls || [];
-    if (!rawToolCalls.length) {
+      iterations: ctx.iteration + 1,
+      toolResults
+    }),
+    requestedByStepId: ({ iteration }) => `model:${turnId}:${iteration}`,
+    onToolCallRepair: (ctx, error) => ({
+      event: { turn_id: turnId, iteration: ctx.iteration, attempt: ctx.attempt, reason: error.message },
+      message: toolCallRepairPrompt(error.message)
+    }),
+    buildAssistantMessage: assistantToolCallMessage,
+    onToolCallsReady: async (ctx, modelResult, rawToolCalls, toolCalls) => {
+      // 顺序执行工具(阶段 "execute");approval_required 时构造 executor 字段的
+      // resume_state 并挂起,已耗预算经 withBudgetSpent 写入续跑种子。
+      const next = await runToolCallsInOrder({
+        toolCalls,
+        turnId,
+        executeTool,
+        createPolicyContext,
+        phase: "execute",
+        signal,
+        abortMessage: EXECUTOR_ABORT_MESSAGE,
+        onResult: (result) => { toolResults.push(result); },
+        onApproval: ({ result, toolCall, index, results }) => ({
+          status: "awaiting_approval",
+          content: result.content?.[0]?.text || "Approval required",
+          approval: result.metadata?.approval || null,
+          toolResults,
+          iterations: ctx.iteration + 1,
+          resume_state: {
+            turn_id: turnId,
+            message,
+            classification,
+            messages: ctx.messages,
+            model_result: modelResult,
+            raw_tool_calls: rawToolCalls,
+            pending_tool_call: toolCall,
+            remaining_tool_calls: toolCalls.slice(index + 1),
+            iteration: ctx.iteration,
+            tool_results: results.slice(0, -1),
+            tool_schemas: toolSchemas,
+            max_iterations: maxIterations,
+            tool_call_repairs: ctx.toolCallRepairs,
+            max_tool_call_repairs: maxToolCallRepairs,
+            options,
+            context,
+            permission_context: permissionContext,
+            ...(result.metadata?.task_delegation ? { task_delegation: result.metadata.task_delegation } : {})
+          }
+        })
+      });
+      if (next.status === "awaiting_approval") {
+        return { kind: "result", result: { ...next, resume_state: withBudgetSpent(next.resume_state, budget) } };
+      }
       return {
-        status: "complete",
-        content: modelResult.content || "",
-        iterations: iteration + 1,
-        toolResults
+        kind: "continue",
+        messages: [
+          ...ctx.messages,
+          assistantToolCallMessage(modelResult, rawToolCalls),
+          ...toolResultsToMessages(next.results)
+        ]
       };
-    }
-
-    let toolCalls;
-    try {
-      toolCalls = adaptDeepSeekToolCalls(rawToolCalls, { requestedByStepId: `model:${turnId}:${iteration}` });
-    } catch (error) {
-      if (!isToolCallSyntaxError(error) || toolCallRepairs >= maxToolCallRepairs) throw error;
-      toolCallRepairs += 1;
-      eventBus?.publish?.("model:tool_call_repair", { turn_id: turnId, iteration, attempt: toolCallRepairs, reason: error.message });
-      messages = [
-        ...messages,
-        assistantToolCallMessage(modelResult, rawToolCalls),
-        { role: "user", content: `Your previous tool call had invalid arguments (${error.message}). Re-issue the tool call with valid JSON arguments.` }
-      ];
-      continue;
-    }
-    const next = await continueToolIteration({
-      turnId,
-      message,
-      classification,
-      messages,
-      modelResult,
-      rawToolCalls,
-      toolCalls,
-      iteration,
-      toolResults,
-      toolSchemas,
-      maxIterations,
-      toolCallRepairs,
-      maxToolCallRepairs,
-      options,
-      context,
-      permissionContext,
-      executeTool,
-      createPolicyContext
-    });
-    if (next.status === "awaiting_approval") {
-      return { ...next, resume_state: withBudgetSpent(next.resume_state, budget) };
-    }
-    messages = [
-      ...messages,
-      assistantToolCallMessage(modelResult, rawToolCalls),
-      ...toolResultsToMessages(next.iterationResults)
-    ];
-  }
-
-  throw new Error(`maximum tool iterations exceeded: ${maxIterations}`);
-}
-
-// 暂停时把已消耗的预算(不计 max)写入 resume_state,续跑时按 spent 续扣,
-// 避免审批暂停/续跑重置每回合 token/调用次数预算。
-function withBudgetSpent(resumeState, budget) {
-  if (!resumeState || !budget?.snapshot) return resumeState;
-  const spent = budget.snapshot();
-  return { ...resumeState, budget_spent: { tokens: spent.tokens, model_calls: spent.model_calls } };
-}
-
-// v1.9.0 M1 契约冻结:model:response 顶层键集一次定稿。既有八键
-// {turn_id,purpose,iteration,content,tool_call_count,usage,model,channel}
-// 逐字节不动;本 helper 产出的四个新键一律「仅非 null 时附键」(不用 undefined
-// 占位),旧 mock/旧时间线因此逐字节兼容。cache hit/miss 与 reasoning tokens
-// 不加顶层键,继续走 usage 子对象。
-//   reasoning  : modelResult.reasoning_content 截断 500 字符(超长结尾补「…」);
-//   tps        : usage.completion_tokens / (latency_ms/1000),保留 1 位小数,
-//                缺 usage/latency 或 latency<=0 时不附键;
-//   session_id : sessionId 非空才附;
-//   latency_ms : modelResult.latency_ms 为有限数才附。
-function modelResponseExtras(modelResult, sessionId) {
-  const extras = {};
-  const reasoning = modelResult?.reasoning_content;
-  if (typeof reasoning === "string" && reasoning.length > 0) {
-    extras.reasoning = reasoning.length > 500 ? `${reasoning.slice(0, 500)}…` : reasoning;
-  }
-  const completionTokens = modelResult?.usage?.completion_tokens;
-  const latencyMs = modelResult?.latency_ms;
-  if (Number.isFinite(completionTokens) && Number.isFinite(latencyMs) && latencyMs > 0) {
-    extras.tps = Math.round((completionTokens / (latencyMs / 1000)) * 10) / 10;
-  }
-  if (typeof sessionId === "string" && sessionId.length > 0) {
-    extras.session_id = sessionId;
-  }
-  if (Number.isFinite(latencyMs)) {
-    extras.latency_ms = latencyMs;
-  }
-  return extras;
-}
-
-async function continueToolIteration({
-  turnId,
-  message,
-  classification,
-  messages,
-  modelResult,
-  rawToolCalls,
-  toolCalls,
-  iteration,
-  toolResults,
-  toolSchemas,
-  maxIterations,
-  toolCallRepairs = 0,
-  maxToolCallRepairs = 0,
-  options,
-  context,
-  permissionContext,
-  executeTool,
-  createPolicyContext
-}) {
-  const iterationResults = [];
-  for (let index = 0; index < toolCalls.length; index += 1) {
-    const toolCall = toolCalls[index];
-    const policyContext = createPolicyContext({ turnId, toolCall, phase: "execute" });
-    const result = await executeTool(toolCall, policyContext);
-    iterationResults.push(result);
-    toolResults.push(result);
-    if (result.status === "approval_required") {
-      return {
-        status: "awaiting_approval",
-        content: result.content?.[0]?.text || "Approval required",
-        approval: result.metadata?.approval || null,
-        toolResults,
-        iterations: iteration + 1,
-        resume_state: {
-          turn_id: turnId,
-          message,
-          classification,
-          messages,
-          model_result: modelResult,
-          raw_tool_calls: rawToolCalls,
-          pending_tool_call: toolCall,
-          remaining_tool_calls: toolCalls.slice(index + 1),
-          iteration,
-          tool_results: iterationResults.slice(0, -1),
-          tool_schemas: toolSchemas,
-          max_iterations: maxIterations,
-          tool_call_repairs: toolCallRepairs,
-          max_tool_call_repairs: maxToolCallRepairs,
-          options,
-          context,
-          permission_context: permissionContext,
-          ...(result.metadata?.task_delegation ? { task_delegation: result.metadata.task_delegation } : {})
-        }
-      };
-    }
-  }
-  return { status: "continued", iterationResults };
+    },
+    onExhausted: () => { throw new Error(`maximum tool iterations exceeded: ${maxIterations}`); }
+  });
 }
 
 export async function resumeExecutorLoop({
@@ -253,6 +170,7 @@ export async function resumeExecutorLoop({
   if (typeof executeTool !== "function") throw new Error("executeTool is required");
   if (typeof createPolicyContext !== "function") throw new Error("createPolicyContext is required");
 
+  // 续跑的修复计数归一化:resume_state 里的有效值优先,否则回退入参。
   let resumeToolCallRepairs = Number.isFinite(resumeState.tool_call_repairs) && resumeState.tool_call_repairs >= 0
     ? resumeState.tool_call_repairs
     : 0;
@@ -267,126 +185,159 @@ export async function resumeExecutorLoop({
     ...(resumeState.remaining_tool_calls || [])
   ].filter(Boolean);
 
-  for (let index = 0; index < pendingAndRemaining.length; index += 1) {
-    const toolCall = pendingAndRemaining[index];
-    const policyContext = createPolicyContext({ turnId: resumeState.turn_id, toolCall, phase: "resume" });
-    const result = await executeTool(toolCall, policyContext);
-    iterationResults.push(result);
-    toolResults.push(result);
-    if (result.status === "approval_required") {
-      return {
-        status: "awaiting_approval",
-        content: result.content?.[0]?.text || "Approval required",
-        approval: result.metadata?.approval || null,
-        toolResults,
-        iterations: resumeState.iteration + 1,
-        resume_state: withBudgetSpent({
-          turn_id: resumeState.turn_id,
-          message: resumeState.message,
-          classification: resumeState.classification,
-          messages: resumeState.messages,
-          model_result: resumeState.model_result,
-          raw_tool_calls: resumeState.raw_tool_calls,
-          pending_tool_call: toolCall,
-          remaining_tool_calls: pendingAndRemaining.slice(index + 1),
-          iteration: resumeState.iteration,
-          tool_results: toolResults.slice(0, -1),
-          tool_schemas: resumeState.tool_schemas || [],
-          max_iterations: resumeState.max_iterations || 5,
-          tool_call_repairs: resumeToolCallRepairs,
-          max_tool_call_repairs: effectiveMaxToolCallRepairs,
-          options: resumeState.options || {},
-          context: resumeState.context || null,
-          permission_context: resumeState.permission_context || resumeState.options?.permission_context || null,
-          ...(result.metadata?.task_delegation ? { task_delegation: result.metadata.task_delegation } : {})
-        }, budget)
-      };
-    }
+  // 先跑完暂停点的 pending + remaining(阶段 "resume");再次审批挂起时
+  // remaining 从当前下标之后重新切片,resume_state 字段与首暂停一致。
+  const pending = await runToolCallsInOrder({
+    toolCalls: pendingAndRemaining,
+    turnId: resumeState.turn_id,
+    executeTool,
+    createPolicyContext,
+    phase: "resume",
+    signal,
+    abortMessage: EXECUTOR_ABORT_MESSAGE,
+    onResult: (result) => {
+      iterationResults.push(result);
+      toolResults.push(result);
+    },
+    onApproval: ({ result, toolCall, index }) => ({
+      status: "awaiting_approval",
+      content: result.content?.[0]?.text || "Approval required",
+      approval: result.metadata?.approval || null,
+      toolResults,
+      iterations: resumeState.iteration + 1,
+      resume_state: {
+        turn_id: resumeState.turn_id,
+        message: resumeState.message,
+        classification: resumeState.classification,
+        messages: resumeState.messages,
+        model_result: resumeState.model_result,
+        raw_tool_calls: resumeState.raw_tool_calls,
+        pending_tool_call: toolCall,
+        remaining_tool_calls: pendingAndRemaining.slice(index + 1),
+        iteration: resumeState.iteration,
+        tool_results: toolResults.slice(0, -1),
+        tool_schemas: resumeState.tool_schemas || [],
+        max_iterations: resumeState.max_iterations || 5,
+        tool_call_repairs: resumeToolCallRepairs,
+        max_tool_call_repairs: effectiveMaxToolCallRepairs,
+        options: resumeState.options || {},
+        context: resumeState.context || null,
+        permission_context: resumeState.permission_context || resumeState.options?.permission_context || null,
+        ...(result.metadata?.task_delegation ? { task_delegation: result.metadata.task_delegation } : {})
+      }
+    })
+  });
+  if (pending.status === "awaiting_approval") {
+    return { ...pending, resume_state: withBudgetSpent(pending.resume_state, budget) };
   }
 
-  let messages = [
+  const messages = [
     ...resumeState.messages,
     assistantToolCallMessage(resumeState.model_result, resumeState.raw_tool_calls),
     ...toolResultsToMessages([...resumeState.tool_results, ...iterationResults])
   ];
 
-  for (let iteration = resumeState.iteration + 1; iteration < (resumeState.max_iterations || 5); iteration += 1) {
-    if (signal?.aborted) {
-      throw abortFromSignal(signal);
-    }
-    const over = budget?.exceeded();
-    if (over) {
-      return { status: "stopped", reason: over, content: `Stopped: cost budget exceeded (${over.reason}).`, iterations: iteration, toolResults };
-    }
-    eventBus?.publish?.("model:request", { turn_id: resumeState.turn_id, purpose: "act", iteration });
-    const modelResult = await modelGateway.invoke(messages, {
+  return runToolCallCycle({
+    turnId: resumeState.turn_id,
+    messages,
+    modelGateway,
+    eventBus,
+    budget,
+    signal,
+    abortMessage: EXECUTOR_ABORT_MESSAGE,
+    sessionId,
+    maxToolCallRepairs: effectiveMaxToolCallRepairs,
+    initialToolCallRepairs: resumeToolCallRepairs,
+    startIteration: resumeState.iteration + 1,
+    maxIterations: resumeState.max_iterations || 5,
+    requestPurpose: "act",
+    responsePurpose: "act",
+    checkBudget: () => budget?.exceeded(),
+    onBudgetExceeded: (over, ctx) => ({
+      status: "stopped",
+      reason: over,
+      content: `Stopped: cost budget exceeded (${over.reason}).`,
+      iterations: ctx.iteration,
+      toolResults
+    }),
+    buildInvokeOptions: () => ({
       purpose: "act",
       tools: resumeState.tool_schemas || [],
       toolChoice: "auto",
       signal,
       ...(resumeState.options || {}),
       timeoutMs: modelTimeoutMs ?? resumeState.options?.timeoutMs
-    });
-    if (budget) budget.recordModelResult(modelResult);
-    if (signal?.aborted) {
-      throw abortFromSignal(signal);
-    }
-    eventBus?.publish?.("model:response", {
-      turn_id: resumeState.turn_id,
-      purpose: "act",
-      iteration,
+    }),
+    onComplete: (ctx, modelResult) => ({
+      status: "complete",
       content: modelResult.content || "",
-      tool_call_count: modelResult.tool_calls?.length || 0,
-      usage: modelResult.usage || null,
-      model: modelResult.model,
-      channel: modelResult.channel,
-      ...modelResponseExtras(modelResult, sessionId)
-    });
-    const rawToolCalls = modelResult.tool_calls || [];
-    if (!rawToolCalls.length) {
-      return { status: "complete", content: modelResult.content || "", iterations: iteration + 1, toolResults };
-    }
-    let toolCalls;
-    try {
-      toolCalls = adaptDeepSeekToolCalls(rawToolCalls, { requestedByStepId: `model:${resumeState.turn_id}:${iteration}` });
-    } catch (error) {
-      if (!isToolCallSyntaxError(error) || resumeToolCallRepairs >= effectiveMaxToolCallRepairs) throw error;
-      resumeToolCallRepairs += 1;
-      eventBus?.publish?.("model:tool_call_repair", { turn_id: resumeState.turn_id, iteration, attempt: resumeToolCallRepairs, reason: error.message });
-      messages = [
-        ...messages,
-        assistantToolCallMessage(modelResult, rawToolCalls),
-        { role: "user", content: `Your previous tool call had invalid arguments (${error.message}). Re-issue the tool call with valid JSON arguments.` }
-      ];
-      continue;
-    }
-    const next = await continueToolIteration({
-      turnId: resumeState.turn_id,
-      message: resumeState.message,
-      classification: resumeState.classification,
-      messages,
-      modelResult,
-      rawToolCalls,
-      toolCalls,
-      iteration,
-      toolResults,
-      toolSchemas: resumeState.tool_schemas || [],
-      maxIterations: resumeState.max_iterations || 5,
-      toolCallRepairs: resumeToolCallRepairs,
-      maxToolCallRepairs: effectiveMaxToolCallRepairs,
-      options: resumeState.options || {},
-      context: resumeState.context || null,
-      permissionContext: resumeState.permission_context || resumeState.options?.permission_context || null,
-      executeTool,
-      createPolicyContext
-    });
-    if (next.status === "awaiting_approval") {
-      return { ...next, resume_state: withBudgetSpent(next.resume_state, budget) };
-    }
-    messages = [...messages, assistantToolCallMessage(modelResult, rawToolCalls), ...toolResultsToMessages(next.iterationResults)];
-  }
-
-  throw new Error(`maximum tool iterations exceeded: ${resumeState.max_iterations || 5}`);
+      iterations: ctx.iteration + 1,
+      toolResults
+    }),
+    requestedByStepId: ({ iteration }) => `model:${resumeState.turn_id}:${iteration}`,
+    onToolCallRepair: (ctx, error) => ({
+      event: {
+        turn_id: resumeState.turn_id,
+        iteration: ctx.iteration,
+        attempt: ctx.attempt,
+        reason: error.message
+      },
+      message: toolCallRepairPrompt(error.message)
+    }),
+    buildAssistantMessage: assistantToolCallMessage,
+    onToolCallsReady: async (ctx, modelResult, rawToolCalls, toolCalls) => {
+      // 顺序执行工具(阶段 "execute");resume 后的再次挂起同样套 withBudgetSpent。
+      const next = await runToolCallsInOrder({
+        toolCalls,
+        turnId: resumeState.turn_id,
+        executeTool,
+        createPolicyContext,
+        phase: "execute",
+        signal,
+        abortMessage: EXECUTOR_ABORT_MESSAGE,
+        onResult: (result) => { toolResults.push(result); },
+        onApproval: ({ result, toolCall, index, results }) => ({
+          status: "awaiting_approval",
+          content: result.content?.[0]?.text || "Approval required",
+          approval: result.metadata?.approval || null,
+          toolResults,
+          iterations: ctx.iteration + 1,
+          resume_state: {
+            turn_id: resumeState.turn_id,
+            message: resumeState.message,
+            classification: resumeState.classification,
+            messages: ctx.messages,
+            model_result: modelResult,
+            raw_tool_calls: rawToolCalls,
+            pending_tool_call: toolCall,
+            remaining_tool_calls: toolCalls.slice(index + 1),
+            iteration: ctx.iteration,
+            tool_results: results.slice(0, -1),
+            tool_schemas: resumeState.tool_schemas || [],
+            max_iterations: resumeState.max_iterations || 5,
+            tool_call_repairs: ctx.toolCallRepairs,
+            max_tool_call_repairs: effectiveMaxToolCallRepairs,
+            options: resumeState.options || {},
+            context: resumeState.context || null,
+            permission_context: resumeState.permission_context || resumeState.options?.permission_context || null,
+            ...(result.metadata?.task_delegation ? { task_delegation: result.metadata.task_delegation } : {})
+          }
+        })
+      });
+      if (next.status === "awaiting_approval") {
+        return { kind: "result", result: { ...next, resume_state: withBudgetSpent(next.resume_state, budget) } };
+      }
+      return {
+        kind: "continue",
+        messages: [
+          ...ctx.messages,
+          assistantToolCallMessage(modelResult, rawToolCalls),
+          ...toolResultsToMessages(next.results)
+        ]
+      };
+    },
+    onExhausted: () => { throw new Error(`maximum tool iterations exceeded: ${resumeState.max_iterations || 5}`); }
+  });
 }
 
 function assistantToolCallMessage(modelResult, rawToolCalls) {
