@@ -297,7 +297,8 @@ export async function testDeepSeekConnection(config = {}) {
     apiKey: config.apiKey || "",
     baseUrl: config.baseUrl || "https://api.deepseek.com",
     betaBase: config.betaBase,
-    models: config.models
+    models: config.models,
+    ...(config.fetchImpl ? { fetchImpl: config.fetchImpl } : {})
   });
   return gateway.invoke([
     {

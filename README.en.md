@@ -4,7 +4,7 @@
 
 [简体中文](./README.md) · **English**
 
-[![version](https://img.shields.io/badge/version-v1.19.2-blue.svg)](./package.json)
+[![version](https://img.shields.io/badge/version-v1.19.3-blue.svg)](./package.json)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org/)
 [![deps](https://img.shields.io/badge/core%20runtime%20deps-0-success.svg)](./package.json)
@@ -267,7 +267,7 @@ inkstone/
 │   ├── CHANGELOG.md          # Release history
 │   ├── specs/                # 7 domain Living Specs (architecture / MCP / runtime / context & memory / orchestration / edits & recovery / three frontends)
 │   └── plans/                # Active plan + compressed archive of 63 historical plans
-└── tests/                    # Comprehensive test suite (1842 unit & integration tests; consolidated into 62 domain test files as of v1.19.1)
+└── tests/                    # Comprehensive test suite (103 high-cohesion test cases across 18 domain test files)
 ```
 
 ---
@@ -322,6 +322,7 @@ git diff --stat main..HEAD -- src/core src/deepseek src/tools src/edits src/sess
 - [x] **v1.19.0**: Architecture convergence & full-stack streamlining — removed the V1 dual-track leftovers at the `src/` top level (11 → 4 entry files), consolidated `src/edits/`, unified the workspace traversal policy, and condensed the documentation set from 111 to 15 files. Zero functional change.
 - [x] **v1.19.1**: Test-suite deep consolidation & GUI bundle/glue convergence — 311 fragmented test files merged into 62 domain test files (−80%), Monaco trimmed to `editor.api` with a single worker (`gui/renderer-dist` 12.17 MB → 3.36 MB, −72.4%), the `mcp.*` facade extracted and GUI IPC forwarding made table-driven, and `SecondaryViews.jsx` split by responsibility. Zero functional change.
 - [x] **v1.19.2**: Deep isomorphic kernel consolidation — unified the JSON Schema subset validation kernel across backend and GUI, merged 3 recovery sidecar stores into a single generic store (−57%), and converged the execution loop and 4-way approval resume coordinator (`agent-runtime.js` −51%). Zero functional change.
+- [x] **v1.19.3**: Test suite deep condensation & 100% table-driven IPC — 62 test files and 299 mechanical `describe` wrappers consolidated into 18 flat domain test files, 1,842 micro assertions restructured into 103 high-cohesion end-to-end cases (−94.4% test count); remaining 23 explicit `handle()` registrations in `gui/main.js` fully folded into `IPC_ROUTES`. Zero functional change.
 - [ ] **Future**: Plugin extension ecosystem, additional language AST support, collaborative multi-device agents.
 
 See [**`docs/CHANGELOG.md`**](docs/CHANGELOG.md) for detailed release notes.

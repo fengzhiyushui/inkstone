@@ -541,14 +541,33 @@ const IPC_ROUTES = [
   { ch: "projects:remove", call: (h, root) => h.removeProject(root) },
   { ch: "projects:switch", call: (h, root) => h.switchProject(root) },
   { ch: "sessions:list", call: (h) => h.listSessions() },
-  // MCP:未被下方「冻结注册形态」清单覆盖的通道
+  { ch: "sessions:delete", call: (h, sessionId, options) => h.deleteSession(sessionId, options || {}) },
+  // MCP 外部服务管理通道
   { ch: "mcp:list", call: (h) => h.listMcpServers() },
   { ch: "mcp:restart", call: (h, serverId) => h.restartMcpServer(serverId) },
   { ch: "mcp:toggle", call: (h, serverId, enabled) => h.toggleMcpServer(serverId, enabled) },
   { ch: "mcp:add", call: (h, serverId, config) => h.addMcpServer(serverId, config) },
   { ch: "mcp:remove", call: (h, serverId) => h.removeMcpServer(serverId) },
   { ch: "mcp:inputs", call: (h) => h.listMcpInputs() },
-  { ch: "mcp:set-input", call: (h, name, value) => h.setMcpInput(name, value) }
+  { ch: "mcp:set-input", call: (h, name, value) => h.setMcpInput(name, value) },
+  { ch: "mcp:auth-status", call: (h, id) => h.getMcpAuthStatus(id) },
+  { ch: "mcp:auth-start", call: (h, id) => h.startMcpAuth(id) },
+  { ch: "mcp:auth-cancel", call: (h, id) => h.cancelMcpAuth(id) },
+  { ch: "mcp:auth-logout", call: (h, id) => h.logoutMcpAuth(id) },
+  { ch: "mcp:logs", call: (h, id, options) => h.getMcpLogs(id, options) },
+  { ch: "mcp:logs-export", call: (h, id, options) => saveDiagnosticExport({ host: h, serverId: id, options,
+    showSaveDialog: (settings) => dialog.showSaveDialog(mainWindow, settings), writeFile: fs.promises.writeFile }) },
+  { ch: "mcp:tools-list", call: (h, id) => h.listMcpTools(id) },
+  { ch: "mcp:tool-test", call: (h, id, name, params, options) => h.startMcpToolTest(id, name, params, options) },
+  { ch: "mcp:tool-test-approve", call: (h, id) => h.approveMcpToolTest(id) },
+  { ch: "mcp:tool-test-cancel", call: (h, id) => h.cancelMcpToolTest(id) },
+  { ch: "mcp:input-requests", call: (h) => h.listMcpInputRequests() },
+  { ch: "mcp:input-respond", call: (h, id, response) => h.respondMcpInputRequest(id, response) },
+  { ch: "mcp:resources-list", call: (h, id, options) => h.listMcpResources(id, options) },
+  { ch: "mcp:resource-templates-list", call: (h, id, options) => h.listMcpResourceTemplates(id, options) },
+  { ch: "mcp:resource-read", call: (h, id, uri, options) => h.readMcpResource(id, uri, options) },
+  { ch: "mcp:prompts-list", call: (h, id, options) => h.listMcpPrompts(id, options) },
+  { ch: "mcp:prompt-get", call: (h, id, name, args, options) => h.getMcpPrompt(id, name, args, options) }
 ];
 
 function registerIpcHandlers() {
@@ -627,7 +646,7 @@ function registerIpcHandlers() {
     }
     catch (error) { return { error: error.message }; }
   });
-  handle("sessions:delete", forward((h, sessionId, options) => h.deleteSession(sessionId, options || {})));
+  // projects:reveal / projects:pick 需 shell / dialog，显式注册
   // 在系统文件管理器中显示项目目录(设计稿的「在终端打开」在无终端面板时降级为此)。
   handle("projects:reveal", async (_event, root) => {
     try {
@@ -652,31 +671,6 @@ function registerIpcHandlers() {
       return { root: result.filePaths[0] };
     } catch (error) { return { error: error.message }; }
   });
-
-  // MCP 外部服务管理通道。
-  // ⚠ 注册形态冻结:以下 17 个 channel 的 `handle("<channel>"` 字面量被
-  //   tests/unit/gui/mcp-gui.test.js(mcp-content / mcp-diagnostics /
-  //   mcp-input-requests / mcp-oauth 四个 describe)逐条按源码文本断言,
-  //   因此不能并入上方路由表,只能显式注册。转发行为与表中路由共用同一条
-  //   forward() 管道(参数逐个透传 + 统一 { error } 收敛),并无行为差异。
-  handle("mcp:auth-status", forward((h, id) => h.getMcpAuthStatus(id)));
-  handle("mcp:auth-start", forward((h, id) => h.startMcpAuth(id)));
-  handle("mcp:auth-cancel", forward((h, id) => h.cancelMcpAuth(id)));
-  handle("mcp:auth-logout", forward((h, id) => h.logoutMcpAuth(id)));
-  handle("mcp:logs", forward((h, id, options) => h.getMcpLogs(id, options)));
-  handle("mcp:logs-export", forward((h, id, options) => saveDiagnosticExport({ host, serverId: id, options,
-    showSaveDialog: (settings) => dialog.showSaveDialog(mainWindow, settings), writeFile: fs.promises.writeFile })));
-  handle("mcp:tools-list", forward((h, id) => h.listMcpTools(id)));
-  handle("mcp:tool-test", forward((h, id, name, params, options) => h.startMcpToolTest(id, name, params, options)));
-  handle("mcp:tool-test-approve", forward((h, id) => h.approveMcpToolTest(id)));
-  handle("mcp:tool-test-cancel", forward((h, id) => h.cancelMcpToolTest(id)));
-  handle("mcp:input-requests", forward((h) => h.listMcpInputRequests()));
-  handle("mcp:input-respond", forward((h, id, response) => h.respondMcpInputRequest(id, response)));
-  handle("mcp:resources-list", forward((h, id, options) => h.listMcpResources(id, options)));
-  handle("mcp:resource-templates-list", forward((h, id, options) => h.listMcpResourceTemplates(id, options)));
-  handle("mcp:resource-read", forward((h, id, uri, options) => h.readMcpResource(id, uri, options)));
-  handle("mcp:prompts-list", forward((h, id, options) => h.listMcpPrompts(id, options)));
-  handle("mcp:prompt-get", forward((h, id, name, args, options) => h.getMcpPrompt(id, name, args, options)));
 
   // 收尾自检:白名单里的每个 channel 都必须被注册(表 + 显式块合并覆盖),
   // 防止重构时漏掉某条通道却无人报错。

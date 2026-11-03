@@ -14,6 +14,22 @@
 
 ---
 
+## v1.19.3 — 2026-11-03 · 测试套件极致浓缩与 IPC 注册彻底表驱动（patch）
+
+> 纯工程效能版本：不增减任何功能面，外部契约、安全不变量与运行时行为 100% 保持不变。
+
+- **测试套件极致浓缩（62 个文件 / 1,842 个微断言 → 18 个领域文件 / 103 个高内聚用例，减少 94.4%）**：
+  - 彻底消除了 v1.19.1 机械包装的 299 个 `describe` 动态 import 隔离层，重构为 18 个无嵌套、高内聚、端到端视角的标准领域测试文件：
+    - **E2E 冒烟（2 个文件，4 个用例）**：`tests/e2e/cli-tui-smoke.test.js`、`tests/e2e/gui-smoke.test.js`。
+    - **核心单元测试（14 个文件，91 个用例）**：`infrastructure-guards`（3）、`config-and-options`（4）、`context-engine`（5）、`semantic-context`（5）、`deepseek-gateway`（6）、`tools-and-security`（8）、`edits-and-sessions`（8）、`recovery-and-locks`（6）、`agent-runtime`（8）、`orchestration-and-memory`（8）、`mcp-protocol-and-hub`（8）、`mcp-governance-and-auth`（8）、`apps-cli-and-tui`（7）、`gui-workbench`（7）。彻底清除了 `tests/unit/` 下的所有子目录层级（`core/`、`mcp/`、`gui/`、`apps/`、`context/`、`tools/`、`security/`、`sessions/`、`shared/` 全部清零）。
+    - **集成测试（2 个文件，8 个用例）**：`tests/integration/kernel-and-mcp.test.js`（4）、`tests/integration/orchestration-and-closure.test.js`（4）。
+  - **临时目录与安全防泄漏守卫**：所有临时目录依然严格统一经过 `tests/helpers/tmp.js`，`tmp-hygiene-guard` 守卫保持 100% 验证通过。
+- **IPC 注册彻底表驱动化**：
+  - 随着断言源码文本中 `handle("ch"` 字面量的历史测试被彻底废弃，`gui/main.js` 中最后 23 处 explicit `handle()` 注册（包括 18 个 MCP 转发通道以及 `sessions:delete` 等）全部无死角合流进 `IPC_ROUTES` 路由表与统一的 `forward()` 转发管道中，仅保留窗口和原生对话框等真实本地调用。
+- **验证**：全量 `npm test` **103 通过、0 失败、0 取消、0 跳过**（18 个测试文件，0 describe 套件）；`npm run check` 检查 **297 个 JS 文件**、0 失败；`npm run build:gui` 通过；`DEEPSEEK_CODE_GUI_SMOKE=1 node --test tests/e2e/gui-smoke.test.js` 通过；`git diff --check` 无输出。四处版本号同步为 `1.19.3`。
+
+---
+
 ## v1.19.2 — 2026-11-03 · 深层同构重复逻辑合并：Schema 校验内核、Sidecar 存储与审批恢复管线收敛（patch）
 
 > 纯重构版本：不增减任何功能面，对外 API、事件发射顺序、错误码语义与磁盘持久化格式 100% 不变。v1.19 三阶段计划的第三阶段（收官），计划见 [`plans/architecture/2026-11-03-v1.19-streamlining-plan.md`](plans/architecture/2026-11-03-v1.19-streamlining-plan.md)。
