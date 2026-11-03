@@ -4,11 +4,11 @@
 
 **简体中文** · [English](./README.en.md)
 
-[![version](https://img.shields.io/badge/version-v1.19.0-blue.svg)](./package.json)
+[![version](https://img.shields.io/badge/version-v1.19.1-blue.svg)](./package.json)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org/)
 [![deps](https://img.shields.io/badge/core%20runtime%20deps-0-success.svg)](./package.json)
-[![tests](https://img.shields.io/badge/tests-1845%20passed-brightgreen.svg)](./tests/)
+[![tests](https://img.shields.io/badge/tests-1842%20passed-brightgreen.svg)](./tests/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/fengzhiyushui/inkstone/pulls)
 
 **面向 DeepSeek 模型的高性能本地 AI 编程智能体 (Coding Agent)**  
@@ -267,7 +267,7 @@ inkstone/
 │   ├── CHANGELOG.md          # 版本发布日志
 │   ├── specs/                # 7 篇领域 Living Spec（架构 / MCP / 运行时 / 上下文记忆 / 编排 / 编辑恢复 / 三端）
 │   └── plans/                # 现役计划 + 63 篇历史计划压缩归档
-└── tests/                    # 完整自动化测试套件 (1845 项用例)
+└── tests/                    # 完整自动化测试套件 (1842 项用例，v1.19.1 起归并为 62 个领域测试文件)
 ```
 
 ---
@@ -292,7 +292,7 @@ inkstone/
 我们非常欢迎社区贡献！为了保证内核的绝对稳定，Inkstone 实行严格的**五项准入测试闸门（Five Gates）**：
 
 ```bash
-# 1. 运行全部单元与集成测试套件（当前 1845 项测试全绿）
+# 1. 运行全部单元与集成测试套件（当前 1842 项测试全绿）
 npm test
 
 # 2. 源码语法校验
@@ -326,6 +326,7 @@ git diff --stat main..HEAD -- src/core src/deepseek src/tools src/edits src/sess
 - [x] **v1.11.0 – v1.17.0**：MCP Client v2 全量落地 —— 外部工具接入、dual-era 协议、Streamable HTTP、工具治理与三级批准、资源与提示词、OAuth 登录、诊断与工具试跑、多轮人工输入（MRTR）与 Modern 列表订阅。
 - [x] **v1.18.0**：运行能力闭环 —— 请求级编排总预算与全树取消、真实 `task` 子任务委派与父子恢复、`repair` 路径有界语法重试、安全加固。
 - [x] **v1.19.0**：架构收敛与全栈精简 —— 清除 `src/` 顶层 V1 双轨遗留（11 → 4 个入口）、内聚 `src/edits/`、统一工作区遍历策略、文档体系 111 篇 → 15 篇。功能面零增减。
+- [x] **v1.19.1**：测试套件深度精简与 GUI 打包/胶水收敛 —— `tests/` 311 个碎片文件归并为 62 个领域测试文件（减少 80%）、Monaco 裁剪至 `editor.api` + 单 worker（`gui/renderer-dist` 12.17 MB → 3.36 MB，-72.4%）、`mcp.*` 门面提取与 GUI IPC 表驱动收敛、`SecondaryViews.jsx` 按职责拆解。功能面零增减。
 - [ ] **未来规划**：支持插件扩展体系、更多语言语义分析适配、团队多端协作能力。
 
 完整版本历史见 [**`docs/CHANGELOG.md`**](docs/CHANGELOG.md)。

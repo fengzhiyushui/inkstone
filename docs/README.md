@@ -127,7 +127,7 @@ docs/
 
 ### plans/
 - [HISTORICAL_PLANS_ARCHIVE](plans/HISTORICAL_PLANS_ARCHIVE.md) — 63 篇历史过程计划的压缩归档（roadmap / architecture / backend / frontend 八张索引表）+ 7 篇 Living Spec 索引
-- [2026-11-03-v1.19-streamlining-plan](plans/architecture/2026-11-03-v1.19-streamlining-plan.md) — v1.19「架构收敛与全栈精简优化专项」三阶段计划（阶段一 v1.19.0 已实施）
+- [2026-11-03-v1.19-streamlining-plan](plans/architecture/2026-11-03-v1.19-streamlining-plan.md) — v1.19「架构收敛与全栈精简优化专项」三阶段计划（阶段一 v1.19.0、阶段二 v1.19.1 已实施）
 
 > 已删除：`docs/plans/{roadmap,backend,frontend}/` 与 `docs/plans/architecture/` 下的 63 篇过程碎片、`docs/specs/` 下的 44 篇碎片化历史 spec（v1.19.0 整合为上述 7 篇 Living Spec 与单篇归档）。需要时查 git 历史。
 
@@ -135,6 +135,6 @@ docs/
 
 ## 版本与里程碑
 
-当前产品版本以 [`package.json`](../package.json) 与 [`CHANGELOG.md`](CHANGELOG.md) 为准（**v1.19.0**，2026-11-03）。`package.json`、`package-lock.json`、`src/theme.js`、`gui/src/App.jsx` 四处版本应一致。
+当前产品版本以 [`package.json`](../package.json) 与 [`CHANGELOG.md`](CHANGELOG.md) 为准（**v1.19.1**，2026-11-03）。`package.json`、`package-lock.json`、`src/theme.js`、`gui/src/App.jsx` 四处版本应一致。
 
 开发历程简记：V1 原型 → V2 干净运行时（内核统一、工具平面、编辑回滚、验证修复、上下文、分支 rewind、持久化恢复、护栏）→ V3 三支柱（语义上下文、多智能体调度、三端前端）→ v1.x 产品化（v1.4 会话优先 UI，v1.8 工学换肤与壳层重构，v1.9–v1.17 MCP Client v2 全量落地，v1.18 运行能力闭环）→ **v1.19 架构收敛与全栈精简**（消除 V1 双轨遗留、内聚 `src/edits/`、文档体系 111 篇 → 15 篇）。
