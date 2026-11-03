@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { applyUnifiedDiff } from "../../src/patch.js";
-import { captureChangePlan, finalizeChange, rollbackChange } from "../../src/changes.js";
+import { applyUnifiedDiff } from "../../src/edits/diff-parser.js";
+import { captureChangePlan, finalizeChange } from "../../src/edits/change-store.js";
+import { rollbackChange } from "../../src/edits/rollback-service.js";
 import { createRollbackService } from "../../src/edits/rollback-service.js";
 import { mkdtemp } from "../helpers/tmp.js";
 

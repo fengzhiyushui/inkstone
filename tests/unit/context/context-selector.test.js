@@ -20,12 +20,12 @@ test("detectMentionedPaths resolves exact paths and unique basenames", () => {
     ["README.md", unit("README.md")],
     ["src/index.js", unit("src/index.js")],
     ["lib/index.js", unit("lib/index.js")],
-    ["src/tui.js", unit("src/tui.js")]
+    ["src/apps/tui/tui-app.js", unit("src/apps/tui/tui-app.js")]
   ]);
 
   assert.deepEqual(
-    detectMentionedPaths("please inspect README.md and tui.js", index),
-    new Set(["README.md", "src/tui.js"])
+    detectMentionedPaths("please inspect README.md and tui-app.js", index),
+    new Set(["README.md", "src/apps/tui/tui-app.js"])
   );
   assert.deepEqual(
     detectMentionedPaths("look at index.js", index),

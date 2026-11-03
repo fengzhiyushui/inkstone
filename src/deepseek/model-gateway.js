@@ -287,6 +287,36 @@ export function createDeepSeekGateway({ apiKey = process.env.DEEPSEEK_API_KEY ||
   return { _isDeepSeekGateway: true, buildChatRequest, invoke, stream, fimComplete, reply, getUsageStats: usageTracker.getUsageStats };
 }
 
+// v1.19.0 由顶层 src/provider.js 迁入：`inkstone config test` 与 TUI「测试连接」
+// 走的是一次最小 chat/completions 往返。原先 provider.js 自带一份 askDeepSeek
+// （含 streaming / 错误文案）作为唯一调用方，实际只有这个连通性探测在用，
+// 故直接复用网关的 invoke —— 同一套路由、超时、重试与错误分类，少一份平行实现。
+// 传 { apiKey, baseUrl }（TUI 配置档）或完整 config（CLI）均可。
+export async function testDeepSeekConnection(config = {}) {
+  const gateway = createDeepSeekGateway({
+    apiKey: config.apiKey || "",
+    baseUrl: config.baseUrl || "https://api.deepseek.com",
+    betaBase: config.betaBase,
+    models: config.models
+  });
+  return gateway.invoke([
+    {
+      role: "system",
+      content: "Reply with OK."
+    },
+    {
+      role: "user",
+      content: "ping"
+    }
+  ], {
+    purpose: "reply",
+    explicitModel: config.model,
+    maxTokens: 8,
+    stream: false,
+    timeoutMs: config.limits?.modelTimeoutMs
+  });
+}
+
 function processChatPayload(payload, route, latencyMs) {
   const choice = payload.choices?.[0] || {};
   const message = choice.message || {};

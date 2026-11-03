@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { resolveWorkspacePath } from "../workspace/path-safety.js";
-import { applyUnifiedDiff } from "../patch.js";
+import { applyUnifiedDiff } from "./diff-parser.js";
 
 export function hashContent(content) {
   const value = String(content ?? "");
@@ -168,12 +168,16 @@ export async function detectRollbackConflicts(projectRoot, record) {
   return conflicts;
 }
 
-export async function applyRollbackRecord(projectRoot, record) {
-  // 截断守卫(与 changes.js 的 rollbackChange 同语义):任何文件缺 before 全文
-  // 就无法安全回滚,绝不写 `before ?? ""` 把用户文件清空。
+// 回滚截断守卫的唯一实现。任何文件缺 before 全文就无法安全回滚 —— 先全部校验
+// 再动手，绝不写 `before ?? ""` 把用户文件清空。
+// before_size（captureChangePlan 记的原始大小）与 before_bytes（enhanceChangeRecord
+// 记的字节数）都参与判定：两条记录增强路径任一生效即可被识别。
+export function assertRollbackableRecord(record) {
   const truncated = (record.files || []).find((file) => {
     if (file.status === "create") return false;
-    return file.before_truncated || (file.truncated && (file.before == null || (file.before_bytes && file.before_bytes > (file.before?.length || 0))));
+    return file.before_truncated || (file.truncated && (file.before == null
+      || (file.before_size && file.before_size > (file.before?.length || 0))
+      || (file.before_bytes && file.before_bytes > (file.before?.length || 0))));
   });
   if (truncated) {
     const error = new Error(
@@ -182,6 +186,10 @@ export async function applyRollbackRecord(projectRoot, record) {
     error.code = "ROLLBACK_TRUNCATED";
     throw error;
   }
+}
+
+export async function applyRollbackRecord(projectRoot, record) {
+  assertRollbackableRecord(record);
   const restored = [];
   for (const file of record.files || []) {
     const filePath = file.newPath === "/dev/null" ? file.oldPath : file.newPath;

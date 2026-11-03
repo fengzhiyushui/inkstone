@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyPatchToText, extractUnifiedDiff, parseUnifiedDiff, summarizeDiff } from "../../src/patch.js";
+import { applyPatchToText, extractUnifiedDiff, parseUnifiedDiff, summarizeDiff } from "../../src/edits/diff-parser.js";
 
 test("extracts fenced diff", () => {
   const diff = extractUnifiedDiff("```diff\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new\n```");

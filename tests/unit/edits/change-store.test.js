@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { applyUnifiedDiff } from "../../../src/patch.js";
+import { applyUnifiedDiff } from "../../../src/edits/diff-parser.js";
 import { createChangeStore } from "../../../src/edits/change-store.js";
 import { createRollbackService } from "../../../src/edits/rollback-service.js";
 import { mkdtemp } from "../../helpers/tmp.js";

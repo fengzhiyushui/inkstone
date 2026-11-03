@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyPatchToText, parseUnifiedDiff } from "../../../src/patch.js";
+import { applyPatchToText, parseUnifiedDiff } from "../../../src/edits/diff-parser.js";
 
 test("byte fidelity: preserves absence of final newline", () => {
   const [patch] = parseUnifiedDiff("--- a/a.txt\n+++ b/a.txt\n@@ -1,2 +1,2 @@\n hello\n-old\n+new");

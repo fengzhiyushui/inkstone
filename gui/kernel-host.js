@@ -40,10 +40,10 @@ function loadConfigMod() {
   if (!configModPromise) configModPromise = import(pathToFileURL(path.join(__dirname, "..", "src", "config.js")).href);
   return configModPromise;
 }
-let providerModPromise = null;
-function loadProviderMod() {
-  if (!providerModPromise) providerModPromise = import(pathToFileURL(path.join(__dirname, "..", "src", "provider.js")).href);
-  return providerModPromise;
+let connectionTestModPromise = null;
+function loadConnectionTestMod() {
+  if (!connectionTestModPromise) connectionTestModPromise = import(pathToFileURL(path.join(__dirname, "..", "src", "deepseek", "model-gateway.js")).href);
+  return connectionTestModPromise;
 }
 
 let editServiceModPromise = null;
@@ -63,10 +63,10 @@ function loadChangeStoreMod() {
   if (!changeStoreModPromise) changeStoreModPromise = import(pathToFileURL(path.join(__dirname, "..", "src", "edits", "change-store.js")).href);
   return changeStoreModPromise;
 }
-let patchModPromise = null;
-function loadPatchMod() {
-  if (!patchModPromise) patchModPromise = import(pathToFileURL(path.join(__dirname, "..", "src", "patch.js")).href);
-  return patchModPromise;
+let diffParserModPromise = null;
+function loadDiffParserMod() {
+  if (!diffParserModPromise) diffParserModPromise = import(pathToFileURL(path.join(__dirname, "..", "src", "edits", "diff-parser.js")).href);
+  return diffParserModPromise;
 }
 let redactorModPromise = null;
 function loadRedactorMod() {
@@ -479,7 +479,7 @@ function createKernelHost({
   async function listChanges(opts = {}) {
     const limit = Number.isInteger(opts.limit) && opts.limit > 0 ? opts.limit : 50;
     const store = await getChangeStore();
-    const { parseUnifiedDiff } = await loadPatchMod();
+    const { parseUnifiedDiff } = await loadDiffParserMod();
     const [records, rolledBack] = await Promise.all([store.list({ limit }), readRolledBackIds()]);
     return records.map((r) => {
       const stats = diffFileStats(parseUnifiedDiff, r.diff);
@@ -495,7 +495,7 @@ function createKernelHost({
 
   async function describeChange(changeId, relPath) {
     const store = await getChangeStore();
-    const { parseUnifiedDiff } = await loadPatchMod();
+    const { parseUnifiedDiff } = await loadDiffParserMod();
     const { redactSecrets } = await loadRedactorMod();
     const redactForDisplay = (text) => redactSecrets(text);
     const record = await store.describe({ change_id: changeId || "latest" });
@@ -597,7 +597,7 @@ function createKernelHost({
   }
   async function testConnection(profileId) {
     const prof = profileId ? (await apiProfiles.list()).find((p) => p.id === profileId) : await apiProfiles.getActive();
-    const m = await loadProviderMod();
+    const m = await loadConnectionTestMod();
     return m.testDeepSeekConnection({ apiKey: prof && prof.apiKey, baseUrl: prof && prof.baseUrl });
   }
   async function activateBranch(id) {

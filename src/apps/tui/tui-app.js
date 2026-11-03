@@ -1,5 +1,7 @@
 // src/apps/tui/tui-app.js — TUI 组合根:kernel 接线、按键路由、重绘调度、终端态管理。
 // 唯一的副作用汇聚点;所有依赖可注入,node:test 直接驱动。
+// v1.19.0:原 12 行的顶层薄入口 src/tui.js 合入此处,TUI 只有一个入口文件。
+import { stdin, stdout } from "node:process";
 import { createKernel } from "../../index.js";
 import { buildKernelOptions } from "../kernel-options.js";
 import { createSensitiveNoticeHandler } from "../sensitive-notice-contract.js";
@@ -17,12 +19,12 @@ import { SLASH_COMMANDS, filterCommands, parseSlash } from "./slash.js";
 import { parseBranchArgs, formatBranchLines, parseRewindArgs, formatCheckpointLines, parseFimArgs } from "./session-actions.js";
 import { setTuiTheme, tuiThemeId, tuiThemeList } from "./theme.js";
 import { createSessionIndex } from "../session-index.js";
-import { showDiff } from "../../git.js";
-import { listChanges, formatChange } from "../../changes.js";
+import { showDiff } from "../../tools/builtin/git.js";
+import { listChanges, formatChange } from "../../edits/change-store.js";
 import path from "node:path";
 import { createApiProfiles, maskKey } from "../api-profiles.js";
 import { fetchModelIds } from "../model-catalog.js";
-import { testDeepSeekConnection } from "../../provider.js";
+import { testDeepSeekConnection } from "../../deepseek/model-gateway.js";
 import { configureProject } from "../../config.js";
 import { CONFIG_ACTIONS, CONFIG_FIELDS, initialConfigState, reduceConfig, renderConfigLines } from "./config-flow.js";
 import { createMcpDisplayRedactor } from "../../security/mcp-content.js";
@@ -30,6 +32,15 @@ import { parseMcpArgs, formatMcpServerLines, formatMcpLogLines, mcpText } from "
 import { cleanMcpLogResult } from "../cli/mcp-logs.js";
 import { createMcpInputResponder, inputFields, inputFieldHint, parseInputField, MCP_INPUT_MAX_LENGTH } from "../mcp-input-form.js";
 import { truncateToWidth } from "./ansi.js";
+
+// TUI 入口(原 src/tui.js 的 runTui)。启动前置错误早于语言偏好加载,文案保持不变。
+export async function runTui(root, kernel = null) {
+  if (!stdin.isTTY || !stdout.isTTY) {
+    throw new Error("TUI 需要在交互式终端中运行。");
+  }
+  const app = createTuiApp({ root, kernel, input: stdin, output: stdout });
+  await app.run();
+}
 
 const CTRLC_WINDOW_MS = 3000;
 const HISTORY_CAP = 20; // 与 kernel-runner appendHistory 同语义:10 轮

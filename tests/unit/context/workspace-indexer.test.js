@@ -94,5 +94,9 @@ test("indexWorkspace skips hidden tool directories", async () => {
   assert.ok(result.units.has("README.md"));
   assert.equal(result.units.has(".claude/settings.local.json"), false);
   assert.equal(result.units.has(".vscode/settings.json"), false);
-  assert.ok(result.stats.skipped_files >= 2);
+  // v1.19.0 起隐藏工具目录由遍历层（walkWorkspaceFiles 的 shouldSkipTraversalSegment）
+  // 直接排除，索引器根本不会看到它们，因此 scanned_files 只剩 README.md，
+  // skipped_files 也不再为它们记账（跳过原因分类仍由 shouldSkipContextPath 覆盖）。
+  assert.equal(result.stats.scanned_files, 1);
+  assert.equal(result.stats.skipped_files, 0);
 });

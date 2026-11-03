@@ -7,7 +7,8 @@ import {
   resolveWorkspacePath,
   readWorkspaceTextFile,
   walkWorkspaceFiles,
-  normalizeRelativePath
+  normalizeRelativePath,
+  shouldSkipTraversalSegment
 } from "../../../src/workspace/path-safety.js";
 import { symlinkTraversalSupported, SYMLINK_SKIP_REASON } from "../../helpers/symlink-capability.js";
 import { mkdtemp } from "../../helpers/tmp.js";
@@ -77,6 +78,42 @@ test("walkWorkspaceFiles returns normalized relative file paths", async () => {
   const files = await walkWorkspaceFiles(root, ".", { maxFiles: 10 });
 
   assert.deepEqual(files.sort(), ["README.md", "src/app.js"].sort());
+});
+
+test("walkWorkspaceFiles skips build output and other agents' state dirs", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "dsc-ws-skip-"));
+  await mkdir(path.join(root, "src"));
+  await writeFile(path.join(root, "src", "app.js"), "console.log(1)");
+  await mkdir(path.join(root, "dist"));
+  await writeFile(path.join(root, "dist", "bundle.js"), "built");
+  await mkdir(path.join(root, ".claude"));
+  await writeFile(path.join(root, ".claude", "settings.local.json"), "{}");
+  await mkdir(path.join(root, ".vscode"));
+  await writeFile(path.join(root, ".vscode", "settings.json"), "{}");
+
+  const files = await walkWorkspaceFiles(root, ".", { maxFiles: 50 });
+
+  assert.deepEqual(files, ["src/app.js"]);
+});
+
+test("walkWorkspaceFiles honours an explicitly requested skipped directory", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "dsc-ws-explicit-"));
+  await mkdir(path.join(root, ".claude"));
+  await writeFile(path.join(root, ".claude", "settings.local.json"), "{}");
+
+  // 显式指定起点时不受目录级忽略影响：调用方明确要看这里。
+  const files = await walkWorkspaceFiles(root, ".claude", { maxFiles: 50 });
+
+  assert.deepEqual(files, [".claude/settings.local.json"]);
+});
+
+test("shouldSkipTraversalSegment covers build output and hidden tool dirs", () => {
+  for (const name of ["node_modules", ".git", "dist", "build", "coverage", "__pycache__", ".claude", ".vscode", ".cursor"]) {
+    assert.equal(shouldSkipTraversalSegment(name), true, name);
+  }
+  for (const name of ["src", "docs", ".github", "app.js"]) {
+    assert.equal(shouldSkipTraversalSegment(name), false, name);
+  }
 });
 
 test("normalizeRelativePath uses forward slashes and rejects empty paths", () => {

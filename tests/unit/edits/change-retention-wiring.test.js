@@ -56,8 +56,8 @@ test("createChangeStore default (no edits) does not prune", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "dsc-edits-noprune-"));
   await writeFile(path.join(root, "a.txt"), "old\n");
   const store = createChangeStore({ projectRoot: root });
-  const { applyUnifiedDiff } = await import("../../../src/patch.js");
-  const { captureChangePlan, finalizeChange } = await import("../../../src/changes.js");
+  const { applyUnifiedDiff } = await import("../../../src/edits/diff-parser.js");
+  const { captureChangePlan, finalizeChange } = await import("../../../src/edits/change-store.js");
   for (let i = 0; i < 3; i += 1) {
     const plan = await captureChangePlan(root, DIFF, `c${i}`);
     await applyUnifiedDiff(DIFF, root);
