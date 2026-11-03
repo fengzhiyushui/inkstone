@@ -4,7 +4,7 @@
 
 [简体中文](./README.md) · **English**
 
-[![version](https://img.shields.io/badge/version-v1.19.1-blue.svg)](./package.json)
+[![version](https://img.shields.io/badge/version-v1.19.2-blue.svg)](./package.json)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org/)
 [![deps](https://img.shields.io/badge/core%20runtime%20deps-0-success.svg)](./package.json)
@@ -321,6 +321,7 @@ git diff --stat main..HEAD -- src/core src/deepseek src/tools src/edits src/sess
 - [x] **v1.18.0**: Runtime capability closure — request-level orchestration budget with tree-wide cancellation, real `task` sub-delegation with parent-child recovery, bounded tool-call syntax repair in the repair path, security hardening.
 - [x] **v1.19.0**: Architecture convergence & full-stack streamlining — removed the V1 dual-track leftovers at the `src/` top level (11 → 4 entry files), consolidated `src/edits/`, unified the workspace traversal policy, and condensed the documentation set from 111 to 15 files. Zero functional change.
 - [x] **v1.19.1**: Test-suite deep consolidation & GUI bundle/glue convergence — 311 fragmented test files merged into 62 domain test files (−80%), Monaco trimmed to `editor.api` with a single worker (`gui/renderer-dist` 12.17 MB → 3.36 MB, −72.4%), the `mcp.*` facade extracted and GUI IPC forwarding made table-driven, and `SecondaryViews.jsx` split by responsibility. Zero functional change.
+- [x] **v1.19.2**: Deep isomorphic kernel consolidation — unified the JSON Schema subset validation kernel across backend and GUI, merged 3 recovery sidecar stores into a single generic store (−57%), and converged the execution loop and 4-way approval resume coordinator (`agent-runtime.js` −51%). Zero functional change.
 - [ ] **Future**: Plugin extension ecosystem, additional language AST support, collaborative multi-device agents.
 
 See [**`docs/CHANGELOG.md`**](docs/CHANGELOG.md) for detailed release notes.

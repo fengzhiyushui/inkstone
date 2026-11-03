@@ -49,9 +49,27 @@ import "monaco-editor/esm/vs/base/browser/ui/codicons/codiconStyles.js";
 // ---- 主流语言高亮(GUI 的 EXT_LANGUAGE 覆盖集 + 常见语言) ----
 // kernel-host.js 的 EXT_LANGUAGE:js/ts/py/md/css/scss/html/yaml/sh/plaintext,
 // 这里全部覆盖(plaintext 由 monaco 内核 modesRegistry 默认注册,无需引入)。
-// JSON 例外:monaco 的 JSON 分词器不在 basic-languages,而在 language/json 语言服务里,
-// 必须配 json.worker 才能工作——本任务按「只保留 editor.worker」裁剪,JSON diff 因此
-// 退回 plaintext 兜底(不高亮但可读);如需恢复高亮须重新引入 json.worker(约 +0.39 MB)。
+// JSON 采用轻量主线程 Monarch 语法分词器注册,无需引入 0.39 MB 的 json.worker 语言服务即可支持只读与 Diff 高亮。
+monaco.languages.register({ id: "json", extensions: [".json", ".jsonc"], aliases: ["JSON", "json"], mimetypes: ["application/json"] });
+monaco.languages.setMonarchTokensProvider("json", {
+  tokenizer: {
+    root: [
+      [/[{}[\]]/, "@brackets"],
+      [/[,:]/, "delimiter"],
+      [/"([^"\\]|\\.)*"(?=\s*:)/, "type.identifier"],
+      [/"([^"\\]|\\.)*"/, "string"],
+      [/-?\d+(\.\d+)?([eE][+-]?\d+)?/, "number"],
+      [/\b(true|false|null)\b/, "keyword"],
+      [/\/\/.*$/, "comment"],
+      [/\/\*/, "comment", "@comment"]
+    ],
+    comment: [
+      [/[^/*]+/, "comment"],
+      [/\*\//, "comment", "@pop"],
+      [/[/*]/, "comment"]
+    ]
+  }
+});
 import "monaco-editor/esm/vs/basic-languages/bat/bat.contribution.js";
 import "monaco-editor/esm/vs/basic-languages/cpp/cpp.contribution.js";
 import "monaco-editor/esm/vs/basic-languages/csharp/csharp.contribution.js";

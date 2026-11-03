@@ -4,7 +4,7 @@
 
 **简体中文** · [English](./README.en.md)
 
-[![version](https://img.shields.io/badge/version-v1.19.1-blue.svg)](./package.json)
+[![version](https://img.shields.io/badge/version-v1.19.2-blue.svg)](./package.json)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org/)
 [![deps](https://img.shields.io/badge/core%20runtime%20deps-0-success.svg)](./package.json)
@@ -327,6 +327,7 @@ git diff --stat main..HEAD -- src/core src/deepseek src/tools src/edits src/sess
 - [x] **v1.18.0**：运行能力闭环 —— 请求级编排总预算与全树取消、真实 `task` 子任务委派与父子恢复、`repair` 路径有界语法重试、安全加固。
 - [x] **v1.19.0**：架构收敛与全栈精简 —— 清除 `src/` 顶层 V1 双轨遗留（11 → 4 个入口）、内聚 `src/edits/`、统一工作区遍历策略、文档体系 111 篇 → 15 篇。功能面零增减。
 - [x] **v1.19.1**：测试套件深度精简与 GUI 打包/胶水收敛 —— `tests/` 311 个碎片文件归并为 62 个领域测试文件（减少 80%）、Monaco 裁剪至 `editor.api` + 单 worker（`gui/renderer-dist` 12.17 MB → 3.36 MB，-72.4%）、`mcp.*` 门面提取与 GUI IPC 表驱动收敛、`SecondaryViews.jsx` 按职责拆解。功能面零增减。
+- [x] **v1.19.2**：深层同构重复逻辑合并 —— 统一全仓 JSON Schema 子集校验内核、合并恢复子系统 3 套 Sidecar 持久化存储（-57%）、收敛执行循环与 `agent-runtime.js` 四路审批恢复协调器（-51%）。功能面零增减。
 - [ ] **未来规划**：支持插件扩展体系、更多语言语义分析适配、团队多端协作能力。
 
 完整版本历史见 [**`docs/CHANGELOG.md`**](docs/CHANGELOG.md)。
