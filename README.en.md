@@ -4,11 +4,11 @@
 
 [简体中文](./README.md) · **English**
 
-[![version](https://img.shields.io/badge/version-v1.8.4-blue.svg)](./package.json)
+[![version](https://img.shields.io/badge/version-v1.19.0-blue.svg)](./package.json)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org/)
 [![deps](https://img.shields.io/badge/core%20runtime%20deps-0-success.svg)](./package.json)
-[![tests](https://img.shields.io/badge/tests-1152%20passed-brightgreen.svg)](./tests/)
+[![tests](https://img.shields.io/badge/tests-1845%20passed-brightgreen.svg)](./tests/)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/fengzhiyushui/inkstone/pulls)
 
 **High-Performance Local AI Coding Agent for DeepSeek Models**  
@@ -244,23 +244,30 @@ inkstone/
 │   └── inkstone.js           # CLI / TUI entrypoint
 ├── src/                      # Core runtime and kernel implementation
 │   ├── index.js              # createKernel() composition root
+│   ├── cli.js                # CLI command dispatch (inkstone / dsc)
+│   ├── config.js             # Config loading, normalization and defaults
+│   ├── theme.js              # Brand / version / terminal palette
 │   ├── core/                 # Runtime lifecycle, orchestration, protocol, recovery
-│   ├── context/              # Context engine (file scans, caching, WASM AST parser)
-│   ├── deepseek/             # DeepSeek gateway (routing, streaming, FIM, repair)
+│   ├── context/              # Context engine (file scans, caching, WASM AST parser, project-index)
+│   ├── deepseek/             # DeepSeek gateway (routing, streaming, FIM, repair, connection test)
 │   ├── tools/                # Tool registry, permission engine, 15 built-in tools
-│   ├── edits/                # Transactional editing, diff parser, atomic rollback
+│   ├── edits/                # Transactional editing, diff parser, change ledger, atomic rollback
 │   ├── sessions/             # Immutable session event log, branching, rewinding
 │   ├── security/             # SSRF prevention, shell command safety, redactions
+│   ├── workspace/            # Workspace path boundary and traversal policy
 │   └── apps/                 # CLI / TUI adapters and GUI kernel host
 ├── gui/                      # Desktop GUI application (Electron + React 19 + Vite)
 │   ├── main.js               # Electron main process
 │   ├── preload.js            # Sandboxed preload bridge
 │   └── src/                  # React UI (AppFrame, Dock, Monaco, SCM, Chat)
-├── docs/                     # Documentation center
+├── docs/                     # Documentation center (111 → 15 files as of v1.19.0)
+│   ├── README.md             # Documentation index and maintenance rules
 │   ├── DEPLOYMENT_AND_USAGE.md # Local deployment & usage manual
 │   ├── project-overview.md   # Deep architectural specification
-│   └── CHANGELOG.md          # Release history
-└── tests/                    # Comprehensive test suite (1140+ unit & E2E tests)
+│   ├── CHANGELOG.md          # Release history
+│   ├── specs/                # 7 domain Living Specs (architecture / MCP / runtime / context & memory / orchestration / edits & recovery / three frontends)
+│   └── plans/                # Active plan + compressed archive of 63 historical plans
+└── tests/                    # Comprehensive test suite (1845 unit & integration tests)
 ```
 
 ---
@@ -285,7 +292,7 @@ Security is central to local agent design:
 Contributions are welcome! To safeguard stability, Inkstone enforces strict **Five Quality Gates**:
 
 ```bash
-# 1. Run full unit and integration test suite (1141 tests all green)
+# 1. Run full unit and integration test suite (1845 tests all green)
 npm test
 
 # 2. Syntax and type check across all source files
@@ -309,8 +316,10 @@ git diff --stat main..HEAD -- src/core src/deepseek src/tools src/edits src/sess
 - [x] **v1.2.0**: Tool security hardening, environment whitelists, cooperative grep timeouts.
 - [x] **v1.4.0**: Tiered context engine, multi-agent orchestration, parallel write sandboxing.
 - [x] **v1.8.0**: Modern three-column desktop workbench redesign, Monaco integration, profile switcher.
-- [x] **v1.8.3**: Comprehensive GUI code review, state synchronization fixes, deployment documentation.
-- [x] **v1.8.4**: Frontend ergonomics and telemetry overhaul (zero-jitter Rail collapse/expand, dual message & composer telemetry, bespoke high-contrast theme palettes, dedicated Plan dock panel).
+- [x] **v1.9.0**: Contract freeze and model adaptation, GUI Agent Inspector, TUI `/branch` `/rewind` `/fim`.
+- [x] **v1.11.0 – v1.17.0**: Full MCP Client v2 rollout — external tool integration, dual-era protocol, Streamable HTTP, tool governance with three-tier approval, resources & prompts, OAuth login, diagnostics & tool trials, multi-round human input (MRTR) and Modern list subscriptions.
+- [x] **v1.18.0**: Runtime capability closure — request-level orchestration budget with tree-wide cancellation, real `task` sub-delegation with parent-child recovery, bounded tool-call syntax repair in the repair path, security hardening.
+- [x] **v1.19.0**: Architecture convergence & full-stack streamlining — removed the V1 dual-track leftovers at the `src/` top level (11 → 4 entry files), consolidated `src/edits/`, unified the workspace traversal policy, and condensed the documentation set from 111 to 15 files. Zero functional change.
 - [ ] **Future**: Plugin extension ecosystem, additional language AST support, collaborative multi-device agents.
 
 See [**`docs/CHANGELOG.md`**](docs/CHANGELOG.md) for detailed release notes.

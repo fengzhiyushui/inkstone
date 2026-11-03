@@ -1,6 +1,6 @@
 # Inkstone 文档中心
 
-本目录收录 Inkstone 全部项目文档。按类型分目录：设计（`specs/`）与实施计划（`plans/`）再按前端 / 后端 / 架构细分。根目录 [`README.md`](../README.md) 是项目入口；本文件是索引与维护规范。
+本目录收录 Inkstone 全部项目文档。按类型分目录：**设计（`specs/`，7 篇领域 Living Spec）**与**实施（`plans/`，现役计划 + 历史归档）**。根目录 [`README.md`](../README.md) 是项目入口；本文件是索引与维护规范。
 
 ---
 
@@ -8,22 +8,28 @@
 
 ```text
 docs/
-  README.md                 文档索引与维护规范
+  README.md                 文档索引与维护规范（本文件）
   DEPLOYMENT_AND_USAGE.md   本地部署与使用指南
   project-overview.md       维护者深入说明（架构/工具/编辑/恢复/安全/事件/目录）
   CHANGELOG.md              变更日志
-  specs/                    设计：做成什么样、为什么
-    architecture/           跨端架构
-    backend/                内核 / runtime / 工具 / 编辑 / 会话 / 恢复
-    frontend/               GUI / CLI / TUI
-  plans/                    实施：分几步、怎么验证
-    roadmap/                宏观阶段 phase-0..5
-    architecture/           跨端 / 仓库级计划
+  specs/                    设计：做成什么样、为什么（Living Specs，随实现更新）
+    architecture/
+      system-architecture.md      架构演进、路线图与一核三端原则
+      mcp-subsystem.md            MCP Client v2 全量设计（v1.11–v1.17）
     backend/
+      runtime-and-execution.md    运行时、审批、验证修复、成本护栏、v1.18 运行闭环
+      context-and-memory.md       文件/WASM 语义上下文、多语言、分层记忆与经验库
+      orchestration.md            分层路由、Planner/Worker/Reviewer、并行写隔离、重规划、task 委派
+      edits-sessions-recovery.md  事务编辑、分支 Rewind、跨进程恢复与审计台账
     frontend/
+      workbench-and-surfaces.md   GUI 三列壳层、Inspector、TUI 与三端事件契约
+  plans/                    实施：分几步、怎么验证
+    HISTORICAL_PLANS_ARCHIVE.md   63 篇历史过程计划的压缩归档（索引表）
+    architecture/
+      2026-11-03-v1.19-streamlining-plan.md   v1.19 架构收敛与全栈精简三阶段计划
 ```
 
-`specs/` 与 `plans/` 的分工：spec 写目标、架构与取舍；plan 写任务拆分与验收。一个特性通常先有 spec 再有 plan。历史已完成的 plan 已压缩为「目标 / 结果 / 关键决策 / 验证」摘要，不再保留逐步 checkbox。
+`specs/` 与 `plans/` 的分工：spec 写目标、架构与取舍，描述**当前实现**；plan 写任务拆分与验收。历史已完成的 plan 不再保留逐步 checkbox，统一压缩为 [`HISTORICAL_PLANS_ARCHIVE.md`](plans/HISTORICAL_PLANS_ARCHIVE.md) 的索引表；原始过程文件在 git 历史（pre-v1.19 `main`）中可查。
 
 ---
 
@@ -34,8 +40,8 @@ docs/
 | 顺序 | 文档 | 何时更新 |
 |------|------|----------|
 | 1 | 代码 | 先落地，并通过 `npm test` / `npm run check` / `git diff --check` |
-| 2 | `docs/specs/<area>/` | 设计变化时，改成与**实际实现**一致 |
-| 3 | `docs/plans/<area>/` | 登记新任务，或把已完成计划收成摘要 |
+| 2 | `docs/specs/<area>/` | 设计变化时，改成与**实际实现**一致（Living Spec 直接改正文，不新增历史碎片） |
+| 3 | `docs/plans/` | 登记新任务；已完成的计划收成摘要并入归档表 |
 | 4 | [`project-overview.md`](project-overview.md) | 架构 / 内核 / 工具 / 编辑回滚 / 恢复 / 安全 / 会话事件 / 配置 / 目录变化时 |
 | 5 | [`CHANGELOG.md`](CHANGELOG.md) | 在 `[Unreleased]` 累积；发布时按版本规则定级并写入版本小节 |
 | 6 | 根 [`README.md`](../README.md) | **仅大版本（major）更新时重写**，时机由维护者决定 |
@@ -43,9 +49,9 @@ docs/
 
 一句话顺序：代码 → specs/plans → project-overview → CHANGELOG → 索引。
 
-`<area>` 取值：`backend`、`frontend`、`architecture`。
+`<area>` 取值：`architecture`、`backend`、`frontend`。
 
-**命名**：plan 用 `YYYY-MM-DD-<topic>.md`，spec 用 `YYYY-MM-DD-<topic>-design.md`。spec 落 `docs/specs/<area>/`，plan 落 `docs/plans/<area>/`，不再增加其它分层。
+**命名**：Living Spec 用 `<topic>.md`（无日期前缀，因为内容是现状而非时点快照）；新计划用 `YYYY-MM-DD-<topic>.md`，落 `docs/plans/architecture/` 或对应 `<area>/`。不再增加其它分层。
 
 ---
 
@@ -107,94 +113,28 @@ docs/
 - [project-overview](project-overview.md) — 架构内核、DeepSeek 适配、工具平面、编辑/回滚、恢复、护栏、安全、事件、存储、目录
 
 ### specs/architecture
-- [deepseek-code-v1-design](specs/architecture/2026-05-29-deepseek-code-v1-design.md) — V1 整体设计
-- [deepseek-code-v2-clean-runtime-design](specs/architecture/2026-05-30-deepseek-code-v2-clean-runtime-design.md) — V2 干净运行时
-- [v3-roadmap-design](specs/architecture/2026-06-24-v3-roadmap-design.md) — V3 路线图：四阶段、三支柱、三层多 agent
-- [post-v3-roadmap-design](specs/architecture/2026-09-17-post-v3-roadmap-design.md) — V3 之后路线图（草案）
-- [v1.11.0-mcp-integration-design](specs/architecture/2026-09-28-v1.11.0-mcp-integration-design.md) — MCP 外部工具接入体系设计规格
-- [mcp-client-v2-design](specs/architecture/2026-09-29-mcp-client-v2-design.md) — MCP Client v2：dual-era / HTTP / 治理 / 内容 / OAuth / 诊断；v1.17 默认关闭的 MRTR 人工表单与 Modern 列表订阅已实现
+- [system-architecture](specs/architecture/system-architecture.md) — 架构演进（V1 原型 → V2 干净运行时 → V3 三支柱 → v1.x 产品化）、一核三端原则、`createKernel` 组合根、turn 生命周期与路线图
+- [mcp-subsystem](specs/architecture/mcp-subsystem.md) — MCP Client v2 全量设计：dual-era 协议、三种传输、工具治理、内容与提示词、OAuth、诊断、试跑、取消、MRTR 人工输入与列表订阅（实现至 v1.17.0）
 
 ### specs/backend
-- [v2-7 approval-resume](specs/backend/2026-05-30-v2-7-approval-resume-design.md)
-- [v2-8 verifier-repair-loop](specs/backend/2026-05-31-v2-8-verifier-repair-loop-design.md)
-- [v2-9 context-engine](specs/backend/2026-05-31-v2-9-context-engine-design.md)
-- [v2-10 context-cache-usage-telemetry](specs/backend/2026-05-31-v2-10-context-cache-usage-telemetry-design.md)
-- [v2-11 transactional-edit-dirty-workspace](specs/backend/2026-05-31-v2-11-transactional-edit-dirty-workspace-design.md)
-- [v2-12 branching-conversation-rewind](specs/backend/2026-05-31-v2-12-branching-conversation-rewind-design.md)
-- [v2-13 rewind-hardening-recovery](specs/backend/2026-05-31-v2-13-rewind-hardening-recovery-design.md)
-- [v2-17 chat-kernel-unification](specs/backend/2026-05-31-v2-17-chat-kernel-unification-bypass-closure-design.md)
-- [v2-18 durable-recovery-resume-hardening](specs/backend/2026-06-01-v2-18-durable-recovery-resume-hardening-design.md)
-- [agent-layered-memory](specs/backend/2026-06-24-agent-layered-memory-design.md) — 分层记忆设计
-- [v3-phase-b semantic-context](specs/backend/2026-06-26-v3-phase-b-semantic-context-design.md) — 语义上下文（WASM tree-sitter）
-- [v3-phase-b+1 method-hints](specs/backend/2026-06-26-v3-phase-b-plus1-method-hints-design.md) — 方法消歧
-- [v3-phase-b+3 multi-language](specs/backend/2026-06-26-v3-phase-b-plus3-multi-language-design.md) — JS/TS/Python
-- [v3-phase-c1+c2 orchestration](specs/backend/2026-06-27-v3-phase-c1-c2-orchestration-design.md) — 多智能体编排与两级审核
-- [v3-phase-c3 parallel-isolation](specs/backend/2026-06-27-v3-phase-c3-parallel-isolation-design.md) — 并行写隔离与合并
-- [v3-phase-c5 replan-resume](specs/backend/2026-06-27-v3-phase-c5-replan-resume-design.md) — 重规划与同进程续跑
-- [v3-phase-c-router tiered](specs/backend/2026-06-27-v3-phase-c-router-tiered-design.md) — 分层路由
-- [v3-phase-c4 experience-memory](specs/backend/2026-06-27-v3-phase-c4-experience-memory-design.md) — 跨任务经验记忆
-- [v3-phase-c-durable orchestration-recovery](specs/backend/2026-06-27-v3-phase-c-durable-orchestration-recovery-design.md) — 跨进程编排恢复
-- [agent-findings remediation](specs/backend/2026-07-12-agent-findings-remediation.md) — 审计补救台账
-- [v1.2.0 agent-findings-p2](specs/backend/2026-07-17-v1.2.0-agent-findings-p2-design.md)
-- [v1.3.0 agent-findings-p3](specs/backend/2026-07-26-v1.3.0-agent-findings-p3-design.md)
-- [v1.6.3 agent-runtime refactor](specs/backend/2026-08-09-v1.6.3-agent-runtime-refactor-design.md) — 阶段 1–2 成果；3–4 延后至大版本
-- [v1.18 r18-01 aggregate-budget-contract](specs/backend/2026-10-07-v1.18-r18-01-aggregate-budget-contract.md) — 请求级编排总预算、未知 usage 负债、全树取消与恢复续扣契约
-- [v1.18.0 runtime-closure](specs/backend/2026-10-23-v1.18.0-runtime-closure-design.md) — 运行能力闭环（编排总预算、真实 `task` 子委派与恢复、`repair` 有界语法重试、安全加固）
+- [runtime-and-execution](specs/backend/runtime-and-execution.md) — 执行循环、审批与恢复、验证-修复循环、畸形 tool-call 有界重试、运行护栏、用量遥测、请求级聚合总预算（R18-01）、v1.18.0 运行闭环与审计台账
+- [context-and-memory](specs/backend/context-and-memory.md) — 上下文引擎与缓存、workspace-indexer 跳过规则、WASM 语义上下文（JS/TS/Python）、多语言扩展、分层记忆与跨任务经验库
+- [orchestration](specs/backend/orchestration.md) — 确定性路由器与 C-Router 分层、Planner/Worker/Reviewer、两级审核、并行写隔离与 CAS 合并、重规划与同进程续跑、`task` 子委派、跨进程编排级 durable 恢复
+- [edits-sessions-recovery](specs/backend/edits-sessions-recovery.md) — EditService、事务编辑与脏工作区检测、变更记录卫生（大小上限 / 保留期 / 截断守卫）、敏感文件提醒、分支 Rewind、持久化恢复与事务日志
 
 ### specs/frontend
-- [v2-14 gui-workbench-branch-rewind](specs/frontend/2026-05-31-v2-14-gui-workbench-branch-rewind-design.md)
-- [v2-15 natural-agent-workbench](specs/frontend/2026-05-31-v2-15-natural-agent-workbench-design.md)
-- [v2-16 gui-interaction-hardening](specs/frontend/2026-05-31-v2-16-gui-interaction-hardening-design.md)
-- [v2-frontend-workbench-redesign](specs/frontend/2026-05-31-v2-frontend-workbench-redesign-design.md)
-- [v3-phase-d1 gui-react-shell](specs/frontend/2026-06-27-v3-phase-d1-gui-react-shell-design.md) — React 外壳
-- [v3-phase-d2 gui-functional](specs/frontend/2026-07-01-v3-phase-d2-gui-functional-design.md) — 文件树 / Monaco / 卡片
-- [v3-phase-d3 gui-full-functional](specs/frontend/2026-07-02-v3-phase-d3-gui-full-functional-design.md) — 设置页与全功能
-- [v3-phase-d4 change-tracking](specs/frontend/2026-07-02-v3-phase-d4-change-tracking-design.md) — 改动跟踪
-- [v3-phase-d5 tui-redesign](specs/frontend/2026-07-06-v3-phase-d5-tui-redesign-design.md) — TUI 行内滚动流
-- [v3-phase-dg4 cli-alignment](specs/frontend/2026-07-12-v3-phase-dg4-cli-alignment-design.md) — 三端事件展示契约
-- [v1.4.0 frontend-redesign](specs/frontend/2026-07-28-v1.4.0-frontend-redesign-design.md) — 会话优先 UI 重做定稿
-- [v1.8.0 ergo-restyle](specs/frontend/2026-09-17-v1.8.0-ergo-restyle-design.md) — 工学换肤（四段带主题）
-- [v1.8.1 dsh-shell](specs/frontend/2026-09-20-v1.8.1-dsh-shell-design.md) — 壳层三列 + dock + 设置模态
+- [workbench-and-surfaces](specs/frontend/workbench-and-surfaces.md) — GUI 演进与 v1.8.1 三列壳层规格、数据接入与 IPC 白名单、改动跟踪、Inspector、设置页、MCP GUI、TUI 十模块、三端共享事件展示契约
 
-### plans/roadmap
-- [phase-0 kernel-foundation](plans/roadmap/2026-05-29-phase-0-kernel-foundation.md)
-- [phase-1 core-intelligence](plans/roadmap/2026-05-29-phase-1-core-intelligence.md)
-- [phase-2 security-extension](plans/roadmap/2026-05-30-phase-2-security-extension.md)
-- [phase-3 experience](plans/roadmap/2026-05-30-phase-3-experience.md)
-- [phase-4 gui](plans/roadmap/2026-05-30-phase-4-gui.md)
-- [phase-5 polish](plans/roadmap/2026-05-30-phase-5-polish.md)
+### plans/
+- [HISTORICAL_PLANS_ARCHIVE](plans/HISTORICAL_PLANS_ARCHIVE.md) — 63 篇历史过程计划的压缩归档（roadmap / architecture / backend / frontend 八张索引表）+ 7 篇 Living Spec 索引
+- [2026-11-03-v1.19-streamlining-plan](plans/architecture/2026-11-03-v1.19-streamlining-plan.md) — v1.19「架构收敛与全栈精简优化专项」三阶段计划（阶段一 v1.19.0 已实施）
 
-### plans/architecture
-- [inkstone-rebrand](plans/architecture/2026-07-31-inkstone-rebrand.md) — DeepSeek Code → Inkstone
-- [v1.9.0 contract-freeze-and-visualization](plans/architecture/2026-09-23-v1.9.0-contract-freeze-and-visualization.md) — 契约冻结 + Inspector + 模型适配
-- [v1.11.0-mcp-integration](plans/architecture/2026-09-28-v1.11.0-mcp-integration.md) — MCP 外部工具接入实施计划（stdio 管道、动态装配、安全审批、三端协同）
-- [mcp-client-v2-multi-version-plan](plans/architecture/2026-09-29-mcp-client-v2-multi-version-plan.md) — MCP Client v2 分版本实施结果（v1.11.1 → v1.17.0，H1–H6 已落地）
-
-### plans/backend
-历史计划已收成摘要（目标 / 结果 / 关键决策 / 验证）。全目录见 [`plans/backend/`](plans/backend/)。
-
-**V2 内核与护栏**
-- [v2-0 skeleton](plans/backend/2026-05-30-v2-0-skeleton-protocol-foundation.md) · [v2-1 gateway](plans/backend/2026-05-30-v2-1-deepseek-gateway.md) · [v2-2 tool-plane](plans/backend/2026-05-30-v2-2-tool-plane.md) · [v2-3 edit-service](plans/backend/2026-05-30-v2-3-edit-service.md) · [v2-4 runtime-loop](plans/backend/2026-05-30-v2-4-runtime-loop.md) · [v2-6 release](plans/backend/2026-05-30-v2-6-release-closure.md) · [v2-7 approval](plans/backend/2026-05-30-v2-7-approval-resume.md) · [v2-8 verifier](plans/backend/2026-05-31-v2-8-verifier-repair-loop.md) · [v2-9 context](plans/backend/2026-05-31-v2-9-context-engine.md) · [v2-10 cache/usage](plans/backend/2026-05-31-v2-10-context-cache-usage-telemetry.md) · [v2-11 transactional-edit](plans/backend/2026-05-31-v2-11-transactional-edit-dirty-workspace.md) · [v2-12 rewind](plans/backend/2026-05-31-v2-12-branching-conversation-rewind.md) · [v2-13 rewind-hardening](plans/backend/2026-05-31-v2-13-rewind-hardening-recovery.md) · [v2-17 chat-kernel](plans/backend/2026-05-31-v2-17-chat-kernel-unification.md) · [v2-18 recovery](plans/backend/2026-06-01-v2-18-durable-recovery-resume-hardening.md) · [v2-18c journaling](plans/backend/2026-06-25-v2-18c-edit-rewind-journaling.md) · [v2-19 delete-v1](plans/backend/2026-06-25-v2-19-delete-v1-legacy.md)
-- [v2-20a](plans/backend/2026-06-24-v2-20a-runtime-cost-timeout-guardrails.md) · [v2-20b](plans/backend/2026-06-25-v2-20b-guardrail-injection-graceful-stop.md) · [v2-20c](plans/backend/2026-06-25-v2-20c-malformed-toolcall-retry.md) · [v2-20d](plans/backend/2026-06-25-v2-20d-resume-path-guardrail-alignment.md) · [v2-20e](plans/backend/2026-06-25-v2-20e-repair-path-model-timeout.md) · [v2-20f](plans/backend/2026-06-25-v2-20f-guardrail-defaults-config.md)
-
-**V3 支柱**
-- [b semantic](plans/backend/2026-06-26-v3-phase-b-semantic-context.md) · [b+1](plans/backend/2026-06-26-v3-phase-b-plus1-method-hints.md) · [b+3](plans/backend/2026-06-26-v3-phase-b-plus3-multi-language.md)
-- [c1+c2](plans/backend/2026-06-27-v3-phase-c1-c2-orchestration.md) · [c3](plans/backend/2026-06-27-v3-phase-c3-parallel-isolation.md) · [c4](plans/backend/2026-06-27-v3-phase-c4-experience-memory.md) · [c5](plans/backend/2026-06-27-v3-phase-c5-replan-resume.md) · [c-router](plans/backend/2026-06-27-v3-phase-c-router-tiered.md) · [c-durable](plans/backend/2026-06-27-v3-phase-c-durable-orchestration-recovery.md)
-
-**版本收口**
-- [v1.2.0 findings](plans/backend/2026-07-16-v1.2.0-agent-findings-p2.md) · [v1.3.0 findings](plans/backend/2026-07-26-v1.3.0-agent-findings-p3.md) · [v1.6 backlog](plans/backend/2026-08-09-v1.6-backlog-closure.md) · [v1.18.0 runtime-closure](plans/backend/2026-10-23-v1.18.0-runtime-closure.md)
-
-### plans/frontend
-- [v2-5 interface-migration](plans/frontend/2026-05-30-v2-5-interface-migration.md) · [v2-14](plans/frontend/2026-05-31-v2-14-gui-workbench-branch-rewind.md) · [v2-15](plans/frontend/2026-05-31-v2-15-natural-agent-workbench.md) · [v2-16](plans/frontend/2026-05-31-v2-16-gui-interaction-hardening.md) · [v2 workbench](plans/frontend/2026-05-31-v2-frontend-workbench-redesign.md)
-- [d1](plans/frontend/2026-06-27-v3-phase-d1-gui-react-shell.md) · [d2](plans/frontend/2026-07-01-v3-phase-d2-gui-functional.md) · [d3](plans/frontend/2026-07-02-v3-phase-d3-gui-full-functional.md) · [d4](plans/frontend/2026-07-02-v3-phase-d4-change-tracking.md) · [d5](plans/frontend/2026-07-06-v3-phase-d5-tui-redesign.md) · [dg4](plans/frontend/2026-07-12-v3-phase-dg4-cli-alignment.md)
-- [v1.4.0 plan](plans/frontend/2026-07-31-v1.4.0-frontend-redesign-plan.md) · [sensitive-file](plans/frontend/2026-08-09-sensitive-file-warning-and-display-redaction.md) · [d-g7 recovery](plans/frontend/2026-09-15-d-g7-gui-recovery-center.md) · [v1.7.2](plans/frontend/2026-09-17-v1.7.2-gui-defects.md) · [v1.8.0 plan](plans/frontend/2026-09-17-v1.8.0-ergo-restyle-plan.md) · [v1.8.1 plan](plans/frontend/2026-09-20-v1.8.1-dsh-shell-plan.md)
-
-> 已删除：`future-gui-deepseek-code-ide-redesign`、`gui-frontend-optimization-plan`（被 v1.8 现役壳层取代）；`docs/prototypes/` 整目录（v1.4 定稿 HTML、v1.8 截图、`DeepSeekCodeIDE.jsx`、`preview-deepseek-code/` 及其依赖残留）。需要时查 git 历史。
+> 已删除：`docs/plans/{roadmap,backend,frontend}/` 与 `docs/plans/architecture/` 下的 63 篇过程碎片、`docs/specs/` 下的 44 篇碎片化历史 spec（v1.19.0 整合为上述 7 篇 Living Spec 与单篇归档）。需要时查 git 历史。
 
 ---
 
 ## 版本与里程碑
 
-当前产品版本以 [`package.json`](../package.json) 与 [`CHANGELOG.md`](CHANGELOG.md) 为准（**v1.18.0 preview**，2026-10-23）。`package.json`、`package-lock.json`、`src/theme.js`、`gui/src/App.jsx` 四处版本应一致。
+当前产品版本以 [`package.json`](../package.json) 与 [`CHANGELOG.md`](CHANGELOG.md) 为准（**v1.19.0**，2026-11-03）。`package.json`、`package-lock.json`、`src/theme.js`、`gui/src/App.jsx` 四处版本应一致。
 
-开发历程简记：V1 原型 → V2 干净运行时（内核统一、工具平面、编辑回滚、验证修复、上下文、分支 rewind、持久化恢复、护栏）→ V3 三支柱（语义上下文、多智能体调度、三端前端）→ v1.x 产品化（v1.4 会话优先 UI，v1.8 工学换肤与壳层重构）。
+开发历程简记：V1 原型 → V2 干净运行时（内核统一、工具平面、编辑回滚、验证修复、上下文、分支 rewind、持久化恢复、护栏）→ V3 三支柱（语义上下文、多智能体调度、三端前端）→ v1.x 产品化（v1.4 会话优先 UI，v1.8 工学换肤与壳层重构，v1.9–v1.17 MCP Client v2 全量落地，v1.18 运行能力闭环）→ **v1.19 架构收敛与全栈精简**（消除 V1 双轨遗留、内聚 `src/edits/`、文档体系 111 篇 → 15 篇）。

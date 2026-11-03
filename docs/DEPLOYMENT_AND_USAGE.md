@@ -308,7 +308,7 @@ node ./bin/inkstone.js mcp resources filesystem list --max-pages 5 --max-items 2
 
 GUI 的服务卡片提供「资源 / URI 模板 / 提示词」标签。展开按需加载，模板需先填完整 URI，提示词需填必填参数；预览后点击「放入对话」生成引用草稿，检查后再发送。binary 不直接显示；文本、错误和结构化输出中的已知密钥会脱敏。对话中的模型也可调用 `mcp_resources` / `mcp_prompts` 读取同一内容。
 
-当工具定义 `outputSchema` 时，客户端校验返回的 structuredContent；不匹配、缺失或 schema 使用未支持的关键词都会报错。支持范围是有界 JSON Schema 2020-12 子集（见 [MCP 设计规格](specs/architecture/2026-09-29-mcp-client-v2-design.md)），不承诺任意 schema 兼容。
+当工具定义 `outputSchema` 时，客户端校验返回的 structuredContent；不匹配、缺失或 schema 使用未支持的关键词都会报错。支持范围是有界 JSON Schema 2020-12 子集（见 [MCP 设计规格](specs/architecture/mcp-subsystem.md)），不承诺任意 schema 兼容。
 
 ### MCP OAuth 登录（v1.15）
 
